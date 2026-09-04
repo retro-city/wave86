@@ -1,0 +1,20 @@
+build/
+toolchain/
+GAMES/
+.DS_Store
+*.BIN
+*.RAW
+shot/
+
+# compiled host tools
+tools/scene2imf
+tools/imf2wav
+
+# tunes that are not mine to redistribute
+music/SMKEREM.IMF
+music/awaken.mod
+music/razorgirl.xm
+music/techno.mod
+music/warrior.mod
+music/worms.mod
+build_*/
