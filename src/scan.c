@@ -14,7 +14,7 @@ char gamedir[PATH_LEN] = "GAMES";
 
 /* programs that are never the game itself (basename, no extension) */
 static const char *blacklist[] = {
-    "SETUP", "INSTALL", "SETSOUND", "SOUNDSET", "SETMAIN", "CONFIG",
+    "SETUP", "INSTALL", "SETSOUND", "SOUNDSET", "SETSND", "SETMAIN", "CONFIG",
     "UVCONFIG", "AUTODET", "DOS4GW", "DOS4G", "MPSCOPY", "PKUNZJR",
     "PKUNZIP", "SOUND", "SOUNDRV", "MUSIC", "INTRO", "CATALOG",
     "DEALERS", "ORDER", "HELPME", "README", "UPDATE", "UNINST",
@@ -90,6 +90,7 @@ static int setup_rank(const char *fn)
     split_name(fn, base, ext);
     if (stricmp(base, "SETUP") == 0)
         return stricmp(ext, "EXE") == 0 ? 5 : 4;
+    if (stricmp(base, "SETSND") == 0)   return 4;    /* Virgin/Disney games */
     if (stricmp(base, "INSTALL") == 0)  return 3;
     if (stricmp(base, "SETSOUND") == 0) return 2;
     if (stricmp(base, "SOUNDSET") == 0) return 2;
