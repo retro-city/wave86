@@ -22,6 +22,7 @@ void ui_keybar(const Game *sel);
 void ui_status(const char *msg);
 void ui_music_tick(void);
 void ui_music_volshow(void);
+void ui_edit_field(const char *text);
 
 #define K_UP    0x4800
 #define K_DOWN  0x5000
@@ -36,6 +37,7 @@ static int opt_dump = 0;
 static int opt_mustest = 0;
 static int opt_diag = 0;
 static const char *opt_launch = NULL;
+static int opt_name = 0;             /* argv index of /name */
 
 /* music.c / mod.c internals exposed for the self-test */
 extern volatile int mus_cseg;
@@ -68,13 +70,60 @@ static void write_bat(const Game *g, int use_setup)
     fprintf(f, "@echo off\n");
     fprintf(f, "%c:\n", gamedir[0]);
     fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
+    ini_emit_extras(f, g->dir, 0);     /* sound mode, env, pre */
     fprintf(f, "%s%s", is_bat ? "call " : "", prog);
     if (!use_setup && g->args[0])
         fprintf(f, " %s", g->args);
     fprintf(f, "\n");
+    ini_emit_extras(f, g->dir, 1);     /* post */
     fprintf(f, "%c:\n", launcher_dir[0]);
     fprintf(f, "cd %s\n", launcher_dir);
     fclose(f);
+}
+
+static void redraw(int sel, int top);
+
+/* type a new display name for the selected game; Enter saves it to the
+   INI and re-sorts, Esc leaves things alone */
+static void edit_name(int *sel, int *top)
+{
+    char buf[NAME_LEN], dir[FN_LEN], oldname[NAME_LEN];
+    unsigned len;
+
+    strcpy(buf, games[*sel].name);
+    strcpy(oldname, buf);
+    strcpy(dir, games[*sel].dir);
+    len = strlen(buf);
+    ui_status("TYPE THE NAME. ENTER SAVES, ESC CANCELS.");
+    for (;;) {
+        unsigned k;
+        ui_edit_field(buf);
+        k = getkey();
+        if (k == 0x1B)
+            break;
+        if (k == 0x0D) {
+            if (buf[0] && strcmp(buf, oldname)) {
+                int i = find_game(dir);
+                if (i >= 0) strcpy(games[i].name, buf);
+                ini_write_name(dir, buf);
+                sort_games();
+                i = find_game(dir);
+                *sel = i < 0 ? 0 : i;
+                if (*sel < *top || *sel >= *top + 14)
+                    *top = *sel > 6 ? *sel - 6 : 0;
+                if (*top > game_count - 14) *top = game_count - 14;
+                if (*top < 0) *top = 0;
+            }
+            break;
+        }
+        if (k == 0x08) {
+            if (len) buf[--len] = 0;
+        } else if (k >= 32 && k < 127 && len < NAME_LEN - 1) {
+            buf[len++] = (char)k;
+            buf[len] = 0;
+        }
+    }
+    redraw(*sel, *top);
 }
 
 static void redraw(int sel, int top)
@@ -145,6 +194,8 @@ int main(int argc, char **argv)
         }
         if (stricmp(argv[i], "/launch") == 0 && i + 1 < argc)
             opt_launch = argv[i + 1];   /* boot straight into a game */
+        if (stricmp(argv[i], "/name") == 0 && i + 2 < argc)
+            opt_name = i;               /* /name DIR New Name Words */
         if (stricmp(argv[i], "/diag") == 0)
             opt_diag = 1;
     }
@@ -192,6 +243,19 @@ int main(int argc, char **argv)
     scan_games();
     if (!opt_launch)
         cpu_identify();             /* ~0.25 s: measures the clock */
+
+    if (opt_name) {
+        char nm[NAME_LEN] = "";
+        for (i = opt_name + 2; i < argc; i++) {
+            if (nm[0] && strlen(nm) < NAME_LEN - 2) strcat(nm, " ");
+            strncat(nm, argv[i], NAME_LEN - 1 - strlen(nm));
+        }
+        if (ini_write_name(argv[opt_name + 1], nm) == 0)
+            printf("WAVE86: %s is now \"%s\"\n", argv[opt_name + 1], nm);
+        else
+            printf("WAVE86: could not update the INI\n");
+        return 0;
+    }
 
     if (opt_diag) {
         union REGS r;
@@ -268,6 +332,12 @@ int main(int argc, char **argv)
         case K_PGDN: sel += 14; break;
         case K_HOME: sel = 0; break;
         case K_END:  sel = game_count - 1; break;
+        case 0x3C00:                    /* F2: rename in place */
+            if (game_count) {
+                edit_name(&sel, &top);
+                old = -1;               /* force a list refresh */
+            }
+            break;
         case 0x1B:
             quit();
         case 0x0D:

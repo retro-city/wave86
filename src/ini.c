@@ -41,10 +41,18 @@ static char *trim(char *s)
     return s;
 }
 
+static char ini_path[PATH_LEN] = "WAVE86.INI";
+
 void ini_load(const char *fname)
 {
-    FILE *f = fopen(fname, "r");
+    FILE *f;
     char buf[LINE_LEN];
+
+    if (fname != ini_path) {
+        strncpy(ini_path, fname, PATH_LEN - 1);
+        ini_path[PATH_LEN - 1] = 0;
+    }
+    f = fopen(fname, "r");
 
     nlines = 0;
     if (!f)
@@ -107,6 +115,7 @@ void ini_apply(void)
             for (g = 0; g < game_count; g++) {
                 if (stricmp(games[g].dir, sect) == 0) {
                     cur = &games[g];
+                    cur->flags |= GF_INI;
                     break;
                 }
             }
@@ -126,9 +135,171 @@ void ini_apply(void)
                 set_field(cur->setup, FN_LEN, val);
             else if (stricmp(key, "args") == 0)
                 set_field(cur->args, sizeof(cur->args), val);
+            else if (stricmp(key, "sound") == 0)
+                set_field(cur->sound, sizeof(cur->sound), val);
             else if (stricmp(key, "hide") == 0 && val[0] == '1')
                 cur->flags |= GF_HIDE;
             *eq = '=';
         }
     }
+}
+
+/* value of a key that sits above the first [section], or NULL */
+const char *ini_global(const char *key)
+{
+    static char val[LINE_LEN];
+    unsigned kl = strlen(key);
+    int i;
+    for (i = 0; i < nlines; i++) {
+        char *s = lines[i];
+        if (s[0] == '[')
+            break;
+        if (strnicmp(s, key, kl) == 0 && s[kl] == '=') {
+            strcpy(val, trim(s + kl + 1));
+            return val;
+        }
+    }
+    return NULL;
+}
+
+static int section_is(const char *line, const char *dir)
+{
+    char sect[FN_LEN];
+    const char *e = strchr(line, ']');
+    unsigned n;
+    if (line[0] != '[' || !e)
+        return 0;
+    n = (unsigned)(e - line - 1);
+    if (n >= FN_LEN) n = FN_LEN - 1;
+    memcpy(sect, line + 1, n);
+    sect[n] = 0;
+    return stricmp(trim(sect), dir) == 0;
+}
+
+/*
+ * Set (or add) name= for a game, keeping every other line and comment.
+ * Streams the file to WAVE86.TMP and swaps it in, so it needs no more
+ * memory than one line.
+ */
+int ini_write_name(const char *dir, const char *name)
+{
+    char tmp[PATH_LEN + 4];
+    char buf[LINE_LEN], line[LINE_LEN];
+    FILE *in, *out;
+    int in_target = 0, seen = 0, done = 0;
+    char *dot;
+
+    strcpy(tmp, ini_path);
+    dot = strrchr(tmp, '.');
+    if (dot && !strchr(dot, '\\'))
+        *dot = 0;
+    strcat(tmp, ".TMP");
+
+    out = fopen(tmp, "w");
+    if (!out)
+        return 1;
+    in = fopen(ini_path, "r");
+    if (in) {
+        while (fgets(buf, sizeof(buf), in)) {
+            char *t;
+            strcpy(line, buf);
+            t = trim(line);
+            if (t[0] == '[') {
+                if (in_target && !done) {
+                    fprintf(out, "name=%s\n", name);
+                    done = 1;
+                }
+                in_target = section_is(t, dir);
+                if (in_target)
+                    seen = 1;
+            } else if (in_target && !done) {
+                if (strnicmp(t, "name=", 5) == 0) {
+                    fprintf(out, "name=%s\n", name);   /* replace */
+                    done = 1;
+                    continue;
+                }
+                if (t[0] == 0) {                    /* section ends */
+                    fprintf(out, "name=%s\n", name);
+                    done = 1;
+                }
+            }
+            fputs(buf, out);
+        }
+        fclose(in);
+        if (in_target && !done)
+            fprintf(out, "name=%s\n", name);
+    }
+    if (!seen)
+        fprintf(out, "\n[%s]\nname=%s\n", dir, name);
+    fclose(out);
+    remove(ini_path);
+    if (rename(tmp, ini_path) != 0)
+        return 1;
+    ini_load(ini_path);                 /* pick the change up */
+    return 0;
+}
+
+/*
+ * Extra lines for RUNGAME.BAT from a game's section:
+ *   before the game: the soundcmd_<mode> for its sound= (or the global
+ *   default), then env=VAR=value as SET, then pre=command
+ *   after the game: post=command
+ */
+void ini_emit_extras(FILE *bat, const char *dir, int after)
+{
+    char buf[LINE_LEN];
+    char mode[16] = "";
+    FILE *in = fopen(ini_path, "r");
+    int in_target = 0;
+
+    if (!after) {
+        const char *d = ini_global("sound");
+        if (d) { strncpy(mode, d, 15); mode[15] = 0; }
+    }
+    if (in) {
+        while (fgets(buf, sizeof(buf), in)) {
+            char *t = trim(buf);
+            if (t[0] == '[') {
+                if (in_target) break;
+                in_target = section_is(t, dir);
+                continue;
+            }
+            if (!in_target)
+                continue;
+            if (!after && strnicmp(t, "sound=", 6) == 0) {
+                strncpy(mode, trim(t + 6), 15);
+                mode[15] = 0;
+            }
+        }
+        fclose(in);
+    }
+    if (!after && mode[0]) {
+        char key[32];
+        const char *cmd;
+        sprintf(key, "soundcmd_%s", mode);
+        cmd = ini_global(key);
+        if (cmd && cmd[0])
+            fprintf(bat, "%s\n", cmd);
+    }
+    in = fopen(ini_path, "r");
+    if (!in)
+        return;
+    in_target = 0;
+    while (fgets(buf, sizeof(buf), in)) {
+        char *t = trim(buf);
+        if (t[0] == '[') {
+            if (in_target) break;
+            in_target = section_is(t, dir);
+            continue;
+        }
+        if (!in_target)
+            continue;
+        if (!after && strnicmp(t, "env=", 4) == 0)
+            fprintf(bat, "set %s\n", trim(t + 4));
+        else if (!after && strnicmp(t, "pre=", 4) == 0)
+            fprintf(bat, "%s\n", trim(t + 4));
+        else if (after && strnicmp(t, "post=", 5) == 0)
+            fprintf(bat, "%s\n", trim(t + 5));
+    }
+    fclose(in);
 }

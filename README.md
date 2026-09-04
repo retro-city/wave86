@@ -34,6 +34,7 @@ in dosbox-x before it goes onto the real machine.
 | Up/Down, PgUp/PgDn, Home/End | move (a letter jumps to the next game starting with it) |
 | Enter | run the game |
 | S | run its setup program |
+| F2 | rename the selected game (saved to the INI) |
 | M | music on/off |
 | + / - | volume |
 | < / > | previous / next track |
@@ -76,11 +77,38 @@ Lives next to the EXE. Example:
     name=UFO: Enemy Unknown
     exe=UFO.BAT
 
-Section names are game folder names. Per game you can set `name`, `exe`,
-`setup`, `args` and `hide=1`. Anything you leave out is detected: the
-launcher prefers an EXE named like the folder, then `START`/`PLAY`/`GO`
-batch files, and ignores the usual `SETUP`, `INSTALL`, `DOS4GW` and
-friends.
+Section names are game folder names. The launcher adds a section for
+every new folder it finds, so the file always lists your collection;
+press `F2` in the menu to give a game a proper name (or run
+`WAVE86 /name KEEN4 Commander Keen 4` from the prompt). Per game you can
+set `name`, `exe`, `setup`, `args` and `hide=1`. Anything you leave out
+is detected: the launcher prefers an EXE named like the folder, then
+`START`/`PLAY`/`GO` batch files, and ignores the usual `SETUP`,
+`INSTALL`, `DOS4GW` and friends.
+
+### Per-game setup: PicoGUS modes, environment, extra commands
+
+A game's section can also carry things that go into the batch file
+around the game:
+
+    [DOOM]
+    sound=gus
+    env=ULTRASND=240,1,1,5,5
+    pre=C:\UTILS\SLOWDOWN.EXE
+    post=C:\UTILS\SLOWDOWN.EXE /off
+
+`env=` becomes a `SET`, `pre=` runs before the game and `post=` after
+it. `sound=` names a mode; the command for each mode is defined once at
+the top of the INI, and `sound=` up there is the default for games that
+don't say:
+
+    soundcmd_sb=C:\PICOGUS\PGUSINIT.EXE /mode sb
+    soundcmd_gus=C:\PICOGUS\PGUSINIT.EXE /mode gus
+    sound=sb
+
+With that, a PicoGUS switches to GUS for Doom and back to Sound Blaster
+for everything else, on every launch, whether you start from the menu
+or with `WAVE86 /launch DOOM`. The details pane shows the mode.
 
 ## Music
 

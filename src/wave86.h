@@ -5,6 +5,8 @@
 #ifndef WAVE86_H
 #define WAVE86_H
 
+#include <stdio.h>
+
 #define VERSION_STR "0.1"
 
 #define MAX_GAMES   128
@@ -18,11 +20,13 @@ typedef struct {
     char exe[FN_LEN];       /* main executable (or .BAT) */
     char setup[FN_LEN];     /* setup/config program, "" if none */
     char args[32];          /* extra command line args */
+    char sound[8];          /* sound= mode name (PicoGUS etc.) */
     unsigned char flags;
 } Game;
 
 #define GF_DOS4GW  0x01     /* needs 386+ (DOS/4GW extender present) */
 #define GF_HIDE    0x02     /* hidden via ini */
+#define GF_INI     0x04     /* has a [section] in WAVE86.INI */
 
 /* --- video (vga.c) --- */
 extern int vid_is_vga;      /* 1 if VGA/MCGA detected */
@@ -50,6 +54,11 @@ int scan_games(void);
 /* --- config (ini.c) --- */
 void ini_load(const char *fname);   /* reads gamedir= */
 void ini_apply(void);               /* per-game [sections] onto games[] */
+int ini_write_name(const char *dir, const char *name); /* set/add name= */
+void ini_emit_extras(FILE *bat, const char *dir, int after); /* env/pre/post/sound */
+const char *ini_global(const char *key);   /* value of a global key, or NULL */
+void sort_games(void);
+int find_game(const char *dir);
 
 /* --- music (music.c) --- */
 extern int mus_present;         /* AdLib or Sound Blaster usable */

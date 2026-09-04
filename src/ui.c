@@ -4,6 +4,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <i86.h>
 #include "wave86.h"
 
@@ -98,9 +99,10 @@ void ui_keybar(const Game *sel)
 
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
     updown[0] = CH_UP; updown[1] = CH_DOWN; updown[2] = 0;
-    keychip(&x, updown, "MOVE", 0);
+    (void)updown;
     keychip(&x, "ENTER", "RUN", game_count == 0);
     keychip(&x, "S", "SETUP", !sel || !sel->setup[0]);
+    keychip(&x, "F2", "NAME", game_count == 0);
     keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
     keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
     keychip(&x, "<>", "TRACK", !mus_present || mus_ntracks < 2);
@@ -311,11 +313,33 @@ void ui_details(int sel)
     field(14, "SETUP", g->setup[0] ? g->setup : "none",
           g->setup[0] ? A(7, 0) : A(8, 0));
     if (g->args[0])
-        field(15, "ARGS", g->args, A(7, 0));
+        field(16, "ARGS", g->args, A(7, 0));
+    {
+        const char *m = g->sound[0] ? g->sound : ini_global("sound");
+        if (m && m[0]) {
+            char up[16];
+            int k;
+            for (k = 0; m[k] && k < 15; k++)
+                up[k] = (char)toupper((unsigned char)m[k]);
+            up[k] = 0;
+            field(15, "SOUND", up, A(7, 0));
+        }
+    }
 
     if (g->flags & GF_DOS4GW)
         scr_puts(PANE_X + 2, 18, "\xAE 386+ PROTECTED MODE \xAF", A(12, 0));
 
     scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
     scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
+}
+
+/* F2: the name being typed, white on the selection colour, gold cursor */
+void ui_edit_field(const char *text)
+{
+    int w = PANE_W - 4;
+    unsigned len = strlen(text);
+    scr_fill(PANE_X + 2, 9, w, 1, ' ', A(15, 5));
+    scr_puts(PANE_X + 2, 9, text, A(15, 5));
+    if ((int)len < w)
+        scr_put(PANE_X + 2 + len, 9, CH_BLOCK, A(14, 5));
 }

@@ -182,6 +182,15 @@ int scan_games(void)
 
     ini_apply();
 
+    /* a folder we have not seen before gets its own section, so the
+       name can be edited (F2) and the file documents the collection */
+    {
+        int i;
+        for (i = 0; i < game_count; i++)
+            if (!(games[i].flags & GF_INI))
+                ini_write_name(games[i].dir, games[i].name);
+    }
+
     /* drop hidden entries */
     {
         int i, n = 0;
@@ -193,4 +202,18 @@ int scan_games(void)
 
     qsort(games, game_count, sizeof(Game), cmp_games);
     return game_count;
+}
+
+void sort_games(void)
+{
+    qsort(games, game_count, sizeof(Game), cmp_games);
+}
+
+int find_game(const char *dir)
+{
+    int i;
+    for (i = 0; i < game_count; i++)
+        if (stricmp(games[i].dir, dir) == 0)
+            return i;
+    return -1;
 }
