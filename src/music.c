@@ -464,8 +464,7 @@ void mus_diag(void)
                sb_dsp_major, sb_dsp_minor,
                sb_rate ? "on" : "off", sb_rate);
     printf("\n");
-    printf("CPU    : %s\n", cpu_level() >= 3 ? "386 or better" :
-                            (cpu_level() == 2 ? "286" : "8086/8088"));
+    printf("CPU    : %s\n", cpu_desc);
     printf("Tracks : %d in MUSIC\\ (IMF/WLF need FM, MOD needs a DSP)\n",
            mus_ntracks);
 }

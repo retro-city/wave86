@@ -32,38 +32,7 @@
 
 /* ----------------------------------------------------------- CPU */
 
-/* 0xF000 -> 8086/88, 0 -> 286, anything else -> 386 or better */
-unsigned cpu_flag_probe(void);
-#pragma aux cpu_flag_probe = \
-    "pushf"             \
-    "pop  ax"           \
-    "mov  cx,ax"        \
-    "and  ax,0fffh"     \
-    "push ax"           \
-    "popf"              \
-    "pushf"             \
-    "pop  ax"           \
-    "and  ax,0f000h"    \
-    "mov  dx,ax"        \
-    "mov  ax,cx"        \
-    "or   ax,0f000h"    \
-    "push ax"           \
-    "popf"              \
-    "pushf"             \
-    "pop  ax"           \
-    "and  ax,0f000h"    \
-    "or   ax,dx"        \
-    "push cx"           \
-    "popf"              \
-    value [ax] modify [cx dx];
-
-int cpu_level(void)
-{
-    unsigned r = cpu_flag_probe();
-    if (r == 0xF000) return 0;
-    if (r == 0) return 2;
-    return 3;
-}
+/* cpu_level() lives in cpu.c */
 
 /* ----------------------------------------------------------- SB */
 

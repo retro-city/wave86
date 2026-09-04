@@ -10,7 +10,7 @@ export INCLUDE := $(WATCOM)/h
 CFLAGS = -q -bcl=dos -0 -ms -os -wx
 
 SRCS = src/wave86.c src/ui.c src/vga.c src/scan.c src/ini.c src/music.c \
-       src/mod.c
+       src/mod.c src/cpu.c
 
 MUSIC = $(wildcard music/*.IMF music/*.imf music/*.WLF music/*.wlf \
                    music/*.MOD music/*.mod)

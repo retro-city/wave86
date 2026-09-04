@@ -21,6 +21,11 @@ in dosbox-x before it goes onto the real machine.
   while you adjust it.
 - VGA gets a custom palette. EGA, CGA and mono cards get the standard
   colours and the layout still holds up.
+- Tells you what it is running on. The header line comes from CPUID and
+  a clock measurement (exact via RDTSC on Pentium-class CPUs, estimated
+  from a timed loop and marked with `~` on 486s and older) plus the
+  BIOS memory count, so a K6-2 shows up as `AMD-K6 3D 400MHZ 64MB` and a
+  DX2 as `80486 ~66MHZ 8MB`.
 
 ## Keys
 
@@ -160,6 +165,7 @@ single `call`.
     src/ini.c      WAVE86.INI
     src/music.c    AdLib detection, IMF player, playlist, volume
     src/mod.c      Sound Blaster DMA, ProTracker loader, sequencer, mixer
+src/cpu.c      CPU and memory identification for the header line
     tools/         composers, converters, renderers (host side)
     music/         the soundtrack
     docs/          screenshot

@@ -69,7 +69,11 @@ extern int sb_dsp_major, sb_dsp_minor;
 extern unsigned sb_rate;
 extern int mod_playing, mod_done, mod_order, mod_row;
 extern int mod_vu;              /* peak of the last mixed buffer */
+/* --- cpu.c --- */
+extern char cpu_desc[32];       /* "AMD K6-2 400MHZ 64MB" */
+extern int cpu_lvl;
 int cpu_level(void);            /* 0 = 8086, 2 = 286, 3 = 386+ */
+void cpu_identify(void);        /* fills cpu_desc; takes ~0.25 s */
 int sb_init(void);
 void sb_shutdown(void);
 void sb_release(void);          /* free DMA buffer + tables */

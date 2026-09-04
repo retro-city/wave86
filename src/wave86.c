@@ -190,6 +190,8 @@ int main(int argc, char **argv)
 
     vid_detect();
     scan_games();
+    if (!opt_launch)
+        cpu_identify();             /* ~0.25 s: measures the clock */
 
     if (opt_diag) {
         union REGS r;

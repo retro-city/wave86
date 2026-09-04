@@ -54,9 +54,7 @@ static void draw_logo(void)
                 scr_put(2 + i, 1 + r, CH_BLOCK, A(logo_clr[r], 0));
     }
     scr_puts(50, 1, "EPIC GAME LAUNCHER", A(11, 0));
-    scr_puts(50, 2, "FOR 8086 AND UP", A(8, 0));
-    scr_put(66, 2, CH_DOT, A(8, 0));
-    scr_puts(68, 2, "V" VERSION_STR, A(8, 0));
+    scr_puts(50, 2, cpu_desc[0] ? cpu_desc : "FOR 8086 AND UP", A(8, 0));
 }
 
 static void draw_divider(void)
@@ -215,6 +213,7 @@ void ui_status(const char *msg)
                 CH_DOT, dos_free_kb());
         scr_puts(2, 24, buf, A(8, 0));
     }
+    scr_puts(80 - 2 - 4, 24, "V" VERSION_STR, A(8, 0));
     music_status();
 }
 
