@@ -170,9 +170,33 @@ ARM host tools), `h` and `lib286` into `toolchain/`. On an Intel Mac use
 The code is compiled for the 8086 instruction set with the small memory
 model, and comes out around 40 KB.
 
+## Screenshots in the details pane
+
+Text mode has no pixels, but a VGA's character shapes live in RAM. A
+`THUMBS\<DIR>.THM` file next to the EXE holds a 26 by 6 cell picture:
+each cell is two colours from the launcher's palette plus a 1-bit
+pattern that is loaded into the font as a custom glyph (up to 100 of
+them, CP437 codes the UI never uses; flat cells and cells that look like
+the standard block characters borrow those instead). The launcher loads
+the shapes when a game is selected and paints the cells into the pane.
+VGA only; EGA and CGA just get the text.
+
+    python3 tools/makethumb.py screenshot.png THUMBS/KEEN4.THM    # needs ffmpeg
+
+## Games from eXoDOS over the network
+
+`tools/waveserve.py` indexes an eXoDOS folder and serves it to the DOS
+side over plain HTTP/1.0: `/list` (one game per line), `/info/<id>` and
+`/pack/<id>`, a stream of raw files that gets written straight into
+`C:\GAMES\<DIR>` with nothing to unzip on the 486. The DOS client is
+the next step; see [docs/network-plan.md](docs/network-plan.md).
+
+    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086
+    curl http://localhost:8086/list
+
 ## Testing without a DOS machine
 
-`WAVE86 /dump` draws the menu, then dumps the text buffer, the BIOS
+`WAVE86 /dump [DIR]` draws the menu with DIR selected, then dumps the text buffer, the BIOS
 font and the palette; `tools/rendscr.py` turns that into a PNG. That is
 how the screenshot above was made. `WAVE86 /mustest [seconds]` plays
 headlessly and reports where the player got to; with a MOD it also
