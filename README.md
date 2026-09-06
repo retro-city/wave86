@@ -172,17 +172,16 @@ model, and comes out around 40 KB.
 
 ## Screenshots in the details pane
 
-Leave the cursor on a game for five seconds and the details give way to
-its screenshot, with the title still on top. Any key brings the details
-back. It is still text mode: a VGA's character shapes live in RAM, and
-in 512-character mode bit 3 of the attribute picks one of two fonts.
-The second font starts as a copy of the first, so the bright UI text is
-unchanged, and both banks lend the CP437 codes the UI never uses, about
-280 glyphs. A `THUMBS\<DIR>.THM` next to the EXE holds a 38 by 12 cell
-picture: each cell is two palette colours plus a 1-bit pattern loaded
-as a custom glyph (flat cells and cells that look like standard block
-characters borrow those). Busy screenshots get near-identical patterns
-merged until they fit. VGA only; EGA and CGA just keep the details.
+A game with a `THUMBS\<DIR>.THM` next to the EXE shows a small
+screenshot under its details. It is still text mode: a VGA's character
+shapes live in RAM, and in 512-character mode bit 3 of the attribute
+picks one of two fonts. The second font starts as a copy of the first,
+so the bright UI text is unchanged, and both banks lend the CP437 codes
+the UI never uses, about 280 glyphs. The picture is 26 by 7 cells
+(close to 4:3 on a CRT), each cell two palette colours plus a 1-bit
+pattern loaded as a custom glyph; flat cells and cells that look like
+standard block characters borrow those, and busy pictures get
+near-identical patterns merged until they fit. VGA only.
 
     python3 tools/makethumb.py screenshot.png THUMBS/KEEN4.THM    # needs ffmpeg
 
@@ -199,7 +198,7 @@ the next step; see [docs/network-plan.md](docs/network-plan.md).
 
 ## Testing without a DOS machine
 
-`WAVE86 /dump [DIR [idle]]` draws the menu with DIR selected (`idle`: as if left for five seconds), then dumps the text buffer, the BIOS
+`WAVE86 /dump [DIR]` draws the menu with DIR selected, then dumps the text buffer, the BIOS
 font and the palette; `tools/rendscr.py` turns that into a PNG. That is
 how the screenshot above was made. `WAVE86 /mustest [seconds]` plays
 headlessly and reports where the player got to; with a MOD it also

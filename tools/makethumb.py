@@ -5,7 +5,8 @@
 
 VGA text mode has no pixels, but its character shapes live in RAM, and
 in 512-character mode bit 3 of the attribute picks one of two fonts.
-The picture fills the details pane under the game's title: 38x12 cells,
+The picture sits centred under the details: 26x7 cells (about 4:3 on
+a CRT),
 each two colours from the launcher's palette plus a 1-bit pattern that
 becomes a custom glyph. Bank A (foreground colours 0-7) and bank B
 (8-15) each lend the CP437 codes the UI never uses; flat cells and cells
@@ -18,7 +19,7 @@ code for bank A, nB x the same for bank B, then cols*rows x (char, attr).
 """
 import sys, subprocess
 
-COLS, ROWS = 38, 12
+COLS, ROWS = 26, 7
 W, H = COLS * 8, ROWS * 16
 
 PAL6 = [(2,0,8),(9,4,24),(0,34,24),(0,46,52),(52,6,22),(44,0,42),(58,24,2),(36,32,46),
