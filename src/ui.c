@@ -334,7 +334,7 @@ void ui_details(int sel)
     }
 
     if (g->flags & GF_DOS4GW)
-        scr_puts(PANE_X + 2, 18, "\xAE 386+ PROTECTED MODE \xAF", A(12, 0));
+        scr_puts(PANE_X + PANE_W - 2 - 8, 14, "\xAE 386+ \xAF", A(12, 0));
 
     if (!ui_thumb(g)) {
         scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
