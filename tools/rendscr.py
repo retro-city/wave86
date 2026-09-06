@@ -39,13 +39,17 @@ def main():
     pal6 = open(args.pal, "rb").read()
     assert len(scr) == 4000, f"screen dump is {len(scr)} bytes, want 4000"
     assert len(font) >= 4096
+    fontB = font
     if args.thumb:
         t = open(args.thumb, "rb").read()
-        font = bytearray(font)
-        for k in range(t[6]):
-            code = t[7 + k * 17]
-            font[code * 16:code * 16 + 16] = t[8 + k * 17:8 + k * 17 + 16]
-        font = bytes(font)
+        fa, fb = bytearray(font), bytearray(font)
+        pos = 8
+        for bank in (fa, fb):
+            for k in range(t[6] if bank is fa else t[7]):
+                code = t[pos]
+                bank[code * 16:code * 16 + 16] = t[pos + 1:pos + 17]
+                pos += 17
+        font, fontB = bytes(fa), bytes(fb)
     pal = [(pal6[i * 3] * 255 // 63,
             pal6[i * 3 + 1] * 255 // 63,
             pal6[i * 3 + 2] * 255 // 63) for i in range(16)]
@@ -57,7 +61,7 @@ def main():
             ch = scr[(cy * 80 + cx) * 2]
             at = scr[(cy * 80 + cx) * 2 + 1]
             fg, bg = pal[at & 15], pal[(at >> 4) & 15]
-            glyph = font[ch * 16:ch * 16 + 16]
+            glyph = (fontB if at & 8 else font)[ch * 16:ch * 16 + 16]
             for gy in range(16):
                 row = glyph[gy]
                 base = ((cy * 16 + gy) * W + cx * 8) * 3

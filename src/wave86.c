@@ -23,6 +23,10 @@ void ui_status(const char *msg);
 void ui_music_tick(void);
 void ui_music_volshow(void);
 void ui_edit_field(const char *text);
+void ui_idle(int sel);
+void ui_key_seen(void);
+int ui_picture_shown(void);
+int ui_picture(const Game *g);
 
 #define K_UP    0x4800
 #define K_DOWN  0x5000
@@ -34,6 +38,9 @@ void ui_edit_field(const char *text);
 static char launcher_dir[PATH_LEN];     /* cwd at start: where to return */
 char home_dir[PATH_LEN];                /* EXE directory: INI and MUSIC\ */
 static int opt_dump = 0;
+static int opt_dumpidle = 0;
+static int cur_sel = 0;
+static int idle_pictures = 1;
 static const char *opt_dumpsel = NULL;
 static int opt_mustest = 0;
 static int opt_diag = 0;
@@ -52,8 +59,13 @@ static unsigned getkey(void)
     while (!_bios_keybrd(_KEYBRD_READY)) {
         mus_poll();                 /* idle: keep the playlist moving */
         ui_music_tick();            /* ... and the VU meter bouncing */
+        if (idle_pictures)
+            ui_idle(cur_sel);       /* ... and the picture after 5 s */
     }
     k = _bios_keybrd(_KEYBRD_READ);
+    ui_key_seen();
+    if (ui_picture_shown())
+        ui_details(cur_sel);        /* any key: back to the details */
     if ((k & 0xFF) == 0 || (k & 0xFF) == 0xE0)
         return k & 0xFF00;          /* extended key: scan code only */
     return k & 0x00FF;              /* ascii */
@@ -96,6 +108,7 @@ static void edit_name(int *sel, int *top)
     strcpy(dir, games[*sel].dir);
     len = strlen(buf);
     ui_status("TYPE THE NAME. ENTER SAVES, ESC CANCELS.");
+    idle_pictures = 0;
     for (;;) {
         unsigned k;
         ui_edit_field(buf);
@@ -124,6 +137,7 @@ static void edit_name(int *sel, int *top)
             buf[len] = 0;
         }
     }
+    idle_pictures = 1;
     redraw(*sel, *top);
 }
 
@@ -190,6 +204,8 @@ int main(int argc, char **argv)
             opt_dump = 1;           /* optional: /dump DIR preselects a game */
             if (i + 1 < argc && argv[i + 1][0] != '/')
                 opt_dumpsel = argv[i + 1];
+            if (i + 2 < argc && stricmp(argv[i + 2], "idle") == 0)
+                opt_dumpidle = 1;   /* as if left alone for 5 s */
         }
         if (stricmp(argv[i], "/nopal") == 0) opt_nopal = 1;
         if (stricmp(argv[i], "/mustest") == 0) {
@@ -326,13 +342,19 @@ int main(int argc, char **argv)
     redraw(sel, top);
 
     if (opt_dump) {
+        if (opt_dumpidle && game_count)
+            ui_picture(&games[sel]);
         scr_dump("SCREEN.BIN", "FONT.BIN", "PAL.BIN");
         quit();
     }
 
+    ui_key_seen();
     for (;;) {
-        unsigned k = getkey();
+        unsigned k;
         int old = sel;
+
+        cur_sel = sel;
+        k = getkey();
 
         switch (k) {
         case K_UP:   sel--; break;

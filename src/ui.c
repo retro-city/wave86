@@ -8,8 +8,6 @@
 #include <i86.h>
 #include "wave86.h"
 
-int ui_thumb(const Game *g);
-
 #define A(fg, bg) (unsigned char)(((bg) << 4) | (fg))
 
 /* CP437 */
@@ -287,11 +285,17 @@ static void field(int y, const char *label, const char *val,
     scr_puts(PANE_X + 9, y, val, vattr);
 }
 
+static int pic_shown = 0;
+static void pane_title(const char *t);
+
 void ui_details(int sel)
 {
     int y;
     char buf[PATH_LEN + FN_LEN + 2];
     const Game *g;
+
+    pane_title(" DETAILS ");
+    pic_shown = 0;
 
     for (y = PANE_TOP + 1; y < PANE_TOP + PANE_H - 1; y++)
         scr_fill(PANE_X + 1, y, PANE_W - 2, 1, ' ', A(7, 0));
@@ -331,10 +335,8 @@ void ui_details(int sel)
     if (g->flags & GF_DOS4GW)
         scr_puts(PANE_X + 2, 18, "\xAE 386+ PROTECTED MODE \xAF", A(12, 0));
 
-    if (!ui_thumb(g)) {
-        scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
-        scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
-    }
+    scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
+    scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
 }
 
 /* F2: the name being typed, white on the selection colour, gold cursor */
@@ -348,25 +350,53 @@ void ui_edit_field(const char *text)
         scr_put(PANE_X + 2 + len, 9, CH_BLOCK, A(14, 5));
 }
 
-/*
- * The demoscene thumbnail: THUMBS\<DIR>.THM holds a 26x6 cell picture
- * whose cells are custom glyphs loaded into the VGA font RAM, two
- * colours per cell (see tools/makethumb.py). Text mode, no pixels.
- * Rows 16..21 of the details pane. Returns 1 when something was drawn.
- */
-#define THUMB_X    (PANE_X + 2)
-#define THUMB_Y    16
-#define THUMB_COLS 26
-#define THUMB_ROWS 6
 
-int ui_thumb(const Game *g)
+static void pane_title(const char *t)
+{
+    scr_hline(PANE_X + 1, PANE_TOP, PANE_W - 2, CH_H, A(5, 0));
+    scr_puts(PANE_X + 2, PANE_TOP, t, A(13, 0));
+}
+
+/*
+ * The demoscene picture: THUMBS\<DIR>.THM fills the details pane
+ * (38x14 cells). Cells are custom glyphs loaded into the two VGA font
+ * banks, two colours each (see tools/makethumb.py). Still text mode.
+ */
+#define PIC_X    (PANE_X + 1)
+#define PIC_Y    10                 /* under the title on row 9 */
+#define PIC_COLS (PANE_W - 2)
+#define PIC_ROWS 12                 /* rows 10..21 */
+#define RUN_MAX  48
+
+static void load_bank(FILE *f, int block, int n)
+{
+    static unsigned char run[RUN_MAX * 16];
+    unsigned char e[17];
+    int first = -1, len = 0;
+
+    while (n-- > 0) {
+        if (fread(e, 1, 17, f) != 17)
+            break;
+        if (len && (e[0] != first + len || len == RUN_MAX)) {
+            vid_load_glyphs(block, (unsigned char)first, len, run);
+            len = 0;
+        }
+        if (!len)
+            first = e[0];
+        memcpy(run + len * 16, e + 1, 16);
+        len++;
+    }
+    if (len)
+        vid_load_glyphs(block, (unsigned char)first, len, run);
+}
+
+int ui_picture(const Game *g)
 {
     char path[PATH_LEN + 24];
+    char title[PANE_W];
     FILE *f;
-    unsigned char hdr[7];
-    static unsigned char glyph[17];
-    static unsigned char cell[2];
-    int n, cols, rows, x, y;
+    unsigned char hdr[8], cell[2];
+    int cols, rows, x, y, ox, oy;
 
     if (!vid_is_vga)
         return 0;
@@ -375,21 +405,55 @@ int ui_thumb(const Game *g)
     f = fopen(path, "rb");
     if (!f)
         return 0;
-    if (fread(hdr, 1, 7, f) != 7 || memcmp(hdr, "W86T", 4) != 0 ||
-        hdr[4] > THUMB_COLS || hdr[5] > THUMB_ROWS) {
+    if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, "W86T", 4) != 0 ||
+        hdr[4] > PIC_COLS || hdr[5] > PIC_ROWS) {
         fclose(f);
         return 0;
     }
-    cols = hdr[4]; rows = hdr[5]; n = hdr[6];
-    while (n-- > 0) {
-        if (fread(glyph, 1, 17, f) != 17) break;
-        vid_load_glyph(glyph[0], glyph + 1);
-    }
+    cols = hdr[4]; rows = hdr[5];
+    load_bank(f, 0, hdr[6]);
+    load_bank(f, 1, hdr[7]);
+
+    for (y = PANE_TOP + 1; y < PANE_TOP + PANE_H - 1; y++)
+        scr_fill(PIC_X, y, PIC_COLS, 1, ' ', A(7, 0));
+    sprintf(title, "%.36s", g->name);
+    scr_puts(PANE_X + 2, 9, title, A(15, 0));       /* the title stays */
+    ox = PIC_X + (PIC_COLS - cols) / 2;
+    oy = PIC_Y + (PIC_ROWS - rows) / 2;
     for (y = 0; y < rows; y++)
         for (x = 0; x < cols; x++) {
             if (fread(cell, 1, 2, f) != 2) { fclose(f); return 1; }
-            scr_put(THUMB_X + x, THUMB_Y + y, cell[0], cell[1]);
+            scr_put(ox + x, oy + y, cell[0], cell[1]);
         }
     fclose(f);
+
+    pic_shown = 1;
     return 1;
+}
+
+int ui_picture_shown(void)
+{
+    return pic_shown;
+}
+
+/* idle hook: five seconds on the same game brings up its picture */
+#define PIC_IDLE_TICKS 91
+
+static unsigned long last_key = 0;
+static int pic_tried = -1;
+
+void ui_key_seen(void)
+{
+    last_key = bios_ticks();
+    pic_tried = -1;
+}
+
+void ui_idle(int sel)
+{
+    if (pic_shown || !game_count || sel == pic_tried)
+        return;
+    if (bios_ticks() - last_key < PIC_IDLE_TICKS)
+        return;
+    pic_tried = sel;                /* one attempt per selection */
+    ui_picture(&games[sel]);
 }

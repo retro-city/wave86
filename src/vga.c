@@ -101,20 +101,54 @@ void vid_text_mode(void)
         r.x.ax = 0x1003;
         r.x.bx = 0x0000;
         int86(0x10, &r, &r);
+        vid_font512();
     }
 }
 
-/* load custom 8x16 glyph shapes into the VGA font RAM (block 0) */
-void vid_load_glyph(unsigned char code, const unsigned char *bits16)
+/*
+ * 512-glyph text mode: font block 1 gets a copy of the ROM 8x16 font,
+ * then attribute bit 3 selects block 0 or 1. Bright text looks exactly
+ * as before, and the pictures get spare glyph codes in both banks.
+ */
+void vid_font512(void)
+{
+    union REGPACK rp;
+    unsigned seg, off;
+
+    memset(&rp, 0, sizeof(rp));
+    rp.w.ax = 0x1130;           /* ES:BP = ROM 8x16 font */
+    rp.w.bx = 0x0600;
+    intr(0x10, &rp);
+    seg = rp.w.es;
+    off = rp.w.bp;
+
+    memset(&rp, 0, sizeof(rp));
+    rp.w.ax = 0x1100;           /* load 256 chars into block 1 */
+    rp.w.bx = 0x1001;
+    rp.w.cx = 256;
+    rp.w.dx = 0;
+    rp.w.es = seg;
+    rp.w.bp = off;
+    intr(0x10, &rp);
+
+    memset(&rp, 0, sizeof(rp));
+    rp.w.ax = 0x1103;           /* map A = block 0, map B = block 1 */
+    rp.w.bx = 0x0004;
+    intr(0x10, &rp);
+}
+
+/* load count consecutive custom 8x16 glyphs into font block 0 or 1 */
+void vid_load_glyphs(int block, unsigned char first, unsigned count,
+                     const unsigned char *bits)
 {
     union REGPACK rp;
     memset(&rp, 0, sizeof(rp));
     rp.w.ax = 0x1100;
-    rp.w.bx = 0x1000;           /* BH = 16 bytes per char, BL = block 0 */
-    rp.w.cx = 1;
-    rp.w.dx = code;
-    rp.w.es = FP_SEG(bits16);
-    rp.w.bp = FP_OFF(bits16);
+    rp.w.bx = (unsigned)(0x1000 | (block & 7));  /* BH = 16 bytes/char */
+    rp.w.cx = count;
+    rp.w.dx = first;
+    rp.w.es = FP_SEG(bits);
+    rp.w.bp = FP_OFF(bits);
     intr(0x10, &rp);
 }
 
