@@ -15,7 +15,7 @@ SRCS = src/wave86.c src/ui.c src/vga.c src/scan.c src/ini.c src/music.c \
 MUSIC = $(wildcard music/*.IMF music/*.imf music/*.WLF music/*.wlf \
                    music/*.MOD music/*.mod)
 
-all: build/WAVE86.EXE build/WAVE.BAT build/WAVE86.INI music-files
+all: build/WAVE86.EXE build/WAVE.BAT build/WAVE86.INI music-files thumbs
 
 build/WAVE86.EXE: $(SRCS) src/wave86.h
 	@mkdir -p build
@@ -30,6 +30,10 @@ build/WAVE.BAT: WAVE.BAT
 build/WAVE86.INI: WAVE86.INI
 	@mkdir -p build
 	cp $< $@
+
+thumbs: $(wildcard THUMBS/*.THM)
+	@mkdir -p build/THUMBS
+	@cp THUMBS/*.THM build/THUMBS/ 2>/dev/null || true
 
 music-files: $(MUSIC)
 	@mkdir -p build/MUSIC
@@ -57,4 +61,4 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test clean music music-files
+.PHONY: all run test clean music music-files thumbs

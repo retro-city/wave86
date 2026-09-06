@@ -8,6 +8,8 @@
 #include <i86.h>
 #include "wave86.h"
 
+int ui_thumb(const Game *g);
+
 #define A(fg, bg) (unsigned char)(((bg) << 4) | (fg))
 
 /* CP437 */
@@ -308,12 +310,12 @@ void ui_details(int sel)
     sprintf(buf, "%s\\%s", gamedir, g->dir);
     if (strlen(buf) > PANE_W - 11)
         buf[PANE_W - 11] = 0;
-    field(12, "PATH", buf, A(7, 0));
-    field(13, "EXEC", g->exe, A(7, 0));
-    field(14, "SETUP", g->setup[0] ? g->setup : "none",
+    field(11, "PATH", buf, A(7, 0));
+    field(12, "EXEC", g->exe, A(7, 0));
+    field(13, "SETUP", g->setup[0] ? g->setup : "none",
           g->setup[0] ? A(7, 0) : A(8, 0));
     if (g->args[0])
-        field(16, "ARGS", g->args, A(7, 0));
+        field(15, "ARGS", g->args, A(7, 0));
     {
         const char *m = g->sound[0] ? g->sound : ini_global("sound");
         if (m && m[0]) {
@@ -322,15 +324,17 @@ void ui_details(int sel)
             for (k = 0; m[k] && k < 15; k++)
                 up[k] = (char)toupper((unsigned char)m[k]);
             up[k] = 0;
-            field(15, "SOUND", up, A(7, 0));
+            field(14, "SOUND", up, A(7, 0));
         }
     }
 
     if (g->flags & GF_DOS4GW)
         scr_puts(PANE_X + 2, 18, "\xAE 386+ PROTECTED MODE \xAF", A(12, 0));
 
-    scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
-    scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
+    if (!ui_thumb(g)) {
+        scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
+    }
 }
 
 /* F2: the name being typed, white on the selection colour, gold cursor */
@@ -342,4 +346,50 @@ void ui_edit_field(const char *text)
     scr_puts(PANE_X + 2, 9, text, A(15, 5));
     if ((int)len < w)
         scr_put(PANE_X + 2 + len, 9, CH_BLOCK, A(14, 5));
+}
+
+/*
+ * The demoscene thumbnail: THUMBS\<DIR>.THM holds a 26x6 cell picture
+ * whose cells are custom glyphs loaded into the VGA font RAM, two
+ * colours per cell (see tools/makethumb.py). Text mode, no pixels.
+ * Rows 16..21 of the details pane. Returns 1 when something was drawn.
+ */
+#define THUMB_X    (PANE_X + 2)
+#define THUMB_Y    16
+#define THUMB_COLS 26
+#define THUMB_ROWS 6
+
+int ui_thumb(const Game *g)
+{
+    char path[PATH_LEN + 24];
+    FILE *f;
+    unsigned char hdr[7];
+    static unsigned char glyph[17];
+    static unsigned char cell[2];
+    int n, cols, rows, x, y;
+
+    if (!vid_is_vga)
+        return 0;
+    sprintf(path, "%s%sTHUMBS\\%s.THM", home_dir,
+            home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\", g->dir);
+    f = fopen(path, "rb");
+    if (!f)
+        return 0;
+    if (fread(hdr, 1, 7, f) != 7 || memcmp(hdr, "W86T", 4) != 0 ||
+        hdr[4] > THUMB_COLS || hdr[5] > THUMB_ROWS) {
+        fclose(f);
+        return 0;
+    }
+    cols = hdr[4]; rows = hdr[5]; n = hdr[6];
+    while (n-- > 0) {
+        if (fread(glyph, 1, 17, f) != 17) break;
+        vid_load_glyph(glyph[0], glyph + 1);
+    }
+    for (y = 0; y < rows; y++)
+        for (x = 0; x < cols; x++) {
+            if (fread(cell, 1, 2, f) != 2) { fclose(f); return 1; }
+            scr_put(THUMB_X + x, THUMB_Y + y, cell[0], cell[1]);
+        }
+    fclose(f);
+    return 1;
 }

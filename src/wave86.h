@@ -36,6 +36,7 @@ extern int opt_nopal;       /* skip DAC reprogramming */
 void vid_detect(void);
 void vid_set_palette(void);         /* synthwave DAC colors (VGA only) */
 void vid_text_mode(void);           /* mode 3 (or 7 on mono) + clear */
+void vid_load_glyph(unsigned char code, const unsigned char *bits16);
 void scr_put(int x, int y, unsigned char ch, unsigned char attr);
 void scr_puts(int x, int y, const char *s, unsigned char attr);
 void scr_fill(int x, int y, int w, int h, unsigned char ch, unsigned char attr);

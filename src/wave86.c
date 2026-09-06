@@ -34,6 +34,7 @@ void ui_edit_field(const char *text);
 static char launcher_dir[PATH_LEN];     /* cwd at start: where to return */
 char home_dir[PATH_LEN];                /* EXE directory: INI and MUSIC\ */
 static int opt_dump = 0;
+static const char *opt_dumpsel = NULL;
 static int opt_mustest = 0;
 static int opt_diag = 0;
 static const char *opt_launch = NULL;
@@ -185,7 +186,11 @@ int main(int argc, char **argv)
     int i;
 
     for (i = 1; i < argc; i++) {
-        if (stricmp(argv[i], "/dump") == 0)  opt_dump = 1;
+        if (stricmp(argv[i], "/dump") == 0) {
+            opt_dump = 1;           /* optional: /dump DIR preselects a game */
+            if (i + 1 < argc && argv[i + 1][0] != '/')
+                opt_dumpsel = argv[i + 1];
+        }
         if (stricmp(argv[i], "/nopal") == 0) opt_nopal = 1;
         if (stricmp(argv[i], "/mustest") == 0) {
             opt_mustest = 5;            /* seconds, optional argument */
@@ -312,6 +317,10 @@ int main(int argc, char **argv)
     }
 
     mus_init();
+    if (opt_dumpsel) {
+        i = find_game(opt_dumpsel);
+        if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
+    }
     vid_text_mode();
     vid_set_palette();
     redraw(sel, top);

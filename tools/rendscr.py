@@ -31,6 +31,7 @@ def main():
     ap.add_argument("pal")
     ap.add_argument("-o", "--out", default="screen.png")
     ap.add_argument("--no-ansi", action="store_true")
+    ap.add_argument("--thumb", help=".THM whose glyphs were loaded into font RAM")
     args = ap.parse_args()
 
     scr = open(args.screen, "rb").read()
@@ -38,6 +39,13 @@ def main():
     pal6 = open(args.pal, "rb").read()
     assert len(scr) == 4000, f"screen dump is {len(scr)} bytes, want 4000"
     assert len(font) >= 4096
+    if args.thumb:
+        t = open(args.thumb, "rb").read()
+        font = bytearray(font)
+        for k in range(t[6]):
+            code = t[7 + k * 17]
+            font[code * 16:code * 16 + 16] = t[8 + k * 17:8 + k * 17 + 16]
+        font = bytes(font)
     pal = [(pal6[i * 3] * 255 // 63,
             pal6[i * 3 + 1] * 255 // 63,
             pal6[i * 3 + 2] * 255 // 63) for i in range(16)]

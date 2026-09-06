@@ -96,6 +96,26 @@ void vid_text_mode(void)
     r.h.ah = 0x01;
     r.x.cx = 0x2000;
     int86(0x10, &r, &r);
+    /* EGA/VGA: attribute bit 7 = bright background, not blink */
+    if (vid_is_vga) {
+        r.x.ax = 0x1003;
+        r.x.bx = 0x0000;
+        int86(0x10, &r, &r);
+    }
+}
+
+/* load custom 8x16 glyph shapes into the VGA font RAM (block 0) */
+void vid_load_glyph(unsigned char code, const unsigned char *bits16)
+{
+    union REGPACK rp;
+    memset(&rp, 0, sizeof(rp));
+    rp.w.ax = 0x1100;
+    rp.w.bx = 0x1000;           /* BH = 16 bytes per char, BL = block 0 */
+    rp.w.cx = 1;
+    rp.w.dx = code;
+    rp.w.es = FP_SEG(bits16);
+    rp.w.bp = FP_OFF(bits16);
+    intr(0x10, &rp);
 }
 
 void scr_put(int x, int y, unsigned char ch, unsigned char attr)
