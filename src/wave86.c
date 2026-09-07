@@ -23,6 +23,10 @@ void ui_status(const char *msg);
 void ui_music_tick(void);
 void ui_music_volshow(void);
 void ui_edit_field(const char *text);
+void ui_net_static(void);
+void ui_net_list(int sel, int top);
+void ui_net_details(int sel);
+void ui_net_keybar(void);
 
 #define K_UP    0x4800
 #define K_DOWN  0x5000
@@ -34,6 +38,8 @@ void ui_edit_field(const char *text);
 static char launcher_dir[PATH_LEN];     /* cwd at start: where to return */
 char home_dir[PATH_LEN];                /* EXE directory: INI and MUSIC\ */
 static int opt_dump = 0;
+static int opt_dumpnet = 0;
+static int view = 0;                 /* 0 = games, 1 = the eXoDOS list */
 static const char *opt_dumpsel = NULL;
 static int opt_mustest = 0;
 static int opt_diag = 0;
@@ -136,6 +142,17 @@ static void redraw(int sel, int top)
     ui_status(NULL);
 }
 
+static void net_redraw(int sel, int top)
+{
+    char msg[60];
+    ui_net_static();
+    ui_net_list(sel, top);
+    ui_net_details(sel);
+    ui_net_keybar();
+    sprintf(msg, "%d GAMES ON %s", net_count, cfg_server[0] ? cfg_server : "?");
+    ui_status(msg);
+}
+
 static void text_mode_plain(void)
 {
     union REGS r;
@@ -156,11 +173,27 @@ static void quit(void)
  * loop and exit, so it gets every byte of memory. Started bare, we free
  * the music buffers and run it ourselves, then come back to the menu.
  */
+static void hand_off(const char *what);
+
+/* run a command line (WAVEGET) through the same batch loop as a game */
+static void run_command(const char *cmd, const char *what)
+{
+    FILE *f = fopen("RUNGAME.BAT", "w");
+    if (!f)
+        return;
+    fprintf(f, "@echo off\n%s\n%c:\ncd %s\n", cmd, launcher_dir[0], launcher_dir);
+    fclose(f);
+    hand_off(what);
+}
+
 static void launch(const Game *g, int use_setup)
 {
-    const char *what = use_setup ? g->setup : g->name;
-
     write_bat(g, use_setup);
+    hand_off(use_setup ? g->setup : g->name);
+}
+
+static void hand_off(const char *what)
+{
     if (getenv("WAVE86")) {
         mus_shutdown();
         text_mode_plain();
@@ -180,6 +213,40 @@ static void launch(const Game *g, int use_setup)
     mus_init();
 }
 
+static void waveget_path(char *dst)
+{
+    sprintf(dst, "%s%sWAVEGET.EXE", home_dir,
+            home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
+}
+
+/* fetch NETLIST.TXT; comes back into the network view */
+static void net_fetch_list(void)
+{
+    char cmd[PATH_LEN * 2 + 64], exe[PATH_LEN + 16];
+    if (!cfg_server[0]) {
+        ui_status("PUT server=A.B.C.D:8086 IN WAVE86.INI FIRST.");
+        return;
+    }
+    waveget_path(exe);
+    net_mark_view();
+    sprintf(cmd, "%s LIST %s %s%sNETLIST.TXT", exe, cfg_server, home_dir,
+            home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
+    run_command(cmd, "fetching the game list");
+    net_load();                     /* bare mode: we are back already */
+}
+
+/* download the selected game; comes back with it selected in the games view */
+static void net_download(int nsel)
+{
+    char cmd[PATH_LEN * 2 + 80], exe[PATH_LEN + 16], dir[9];
+    NetGame __far *g = net_get(nsel);
+    _fstrcpy(dir, g->dir);
+    waveget_path(exe);
+    net_mark_pending(g);
+    sprintf(cmd, "%s GET %s %s %s %lu", exe, cfg_server, dir, gamedir, g->kb);
+    run_command(cmd, "downloading");
+}
+
 int main(int argc, char **argv)
 {
     int sel = 0, top = 0;
@@ -188,8 +255,10 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (stricmp(argv[i], "/dump") == 0) {
             opt_dump = 1;           /* optional: /dump DIR preselects a game */
-            if (i + 1 < argc && argv[i + 1][0] != '/')
+            if (i + 1 < argc && argv[i + 1][0] != '/') {
                 opt_dumpsel = argv[i + 1];
+                if (stricmp(opt_dumpsel, "NET") == 0) opt_dumpnet = 1;
+            }
         }
         if (stricmp(argv[i], "/nopal") == 0) opt_nopal = 1;
         if (stricmp(argv[i], "/mustest") == 0) {
@@ -321,9 +390,16 @@ int main(int argc, char **argv)
         i = find_game(opt_dumpsel);
         if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
     }
+    /* back from a download or a list fetch? */
+    i = net_apply_pending();
+    if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
+    if (net_view_pending() || opt_dumpnet) {
+        net_load();
+        view = 1;
+    }
     vid_text_mode();
     vid_set_palette();
-    redraw(sel, top);
+    if (view) net_redraw(0, 0); else redraw(sel, top);
 
     if (opt_dump) {
         scr_dump("SCREEN.BIN", "FONT.BIN", "PAL.BIN");
@@ -333,6 +409,69 @@ int main(int argc, char **argv)
     for (;;) {
         unsigned k = getkey();
         int old = sel;
+
+        if (view == 1) {                /* ---- the eXoDOS list ---- */
+            static int nsel = 0, ntop = 0;
+            int nold = nsel;
+            switch (k) {
+            case K_UP:   nsel--; break;
+            case K_DOWN: nsel++; break;
+            case K_PGUP: nsel -= 14; break;
+            case K_PGDN: nsel += 14; break;
+            case K_HOME: nsel = 0; break;
+            case K_END:  nsel = net_count - 1; break;
+            case 0x1B: case 'n': case 'N':
+                view = 0;
+                net_free();
+                redraw(sel, top);
+                continue;
+            case 'l': case 'L':
+                net_fetch_list();
+                nsel = ntop = 0;
+                net_redraw(nsel, ntop);
+                continue;
+            case 0x0D:
+                if (net_count) {
+                    char dir[9];
+                    _fstrcpy(dir, net_get(nsel)->dir);
+                    net_download(nsel);
+                    /* bare mode only: back here with the game on disk */
+                    scan_games();
+                    i = net_apply_pending();
+                    view = 0;
+                    net_free();
+                    if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
+                    redraw(sel, top);
+                }
+                continue;
+            case 'm': case 'M': mus_toggle(); ui_status(NULL); continue;
+            case '+': case '=': mus_volume(1); ui_music_volshow(); continue;
+            case '-': case '_': mus_volume(-1); ui_music_volshow(); continue;
+            case '.': case '>': mus_skip(1); ui_status(NULL); continue;
+            case ',': case '<': mus_skip(-1); ui_status(NULL); continue;
+            default:
+                if (k >= 'a' && k <= 'z') k -= 32;
+                if (k >= 'A' && k <= 'Z' && net_count) {
+                    for (i = 1; i <= net_count; i++) {
+                        int gi = (nsel + i) % net_count;
+                        char c = net_get(gi)->title[0];
+                        if (c >= 'a' && c <= 'z') c -= 32;
+                        if ((unsigned)c == k) { nsel = gi; break; }
+                    }
+                }
+                break;
+            }
+            if (net_count == 0) continue;
+            if (nsel < 0) nsel = 0;
+            if (nsel >= net_count) nsel = net_count - 1;
+            if (nsel < ntop) ntop = nsel;
+            if (nsel >= ntop + 14) ntop = nsel - 13;
+            if (nsel != nold) {
+                ui_net_list(nsel, ntop);
+                ui_net_details(nsel);
+            }
+            continue;
+        }
 
         switch (k) {
         case K_UP:   sel--; break;
@@ -365,6 +504,12 @@ int main(int argc, char **argv)
             scan_games();
             sel = 0; top = 0;
             redraw(sel, top);
+            break;
+        case 'n': case 'N':             /* the eXoDOS list */
+            view = 1;
+            if (net_load() == 0 && cfg_server[0])
+                net_fetch_list();
+            net_redraw(0, 0);
             break;
         case 'm': case 'M':
             mus_toggle();

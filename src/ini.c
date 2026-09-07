@@ -83,6 +83,9 @@ void ini_load(const char *fname)
                 cfg_adlib = atoi(trim(s + 6));
             } else if (strnicmp(s, "music=", 6) == 0) {
                 cfg_music = atoi(trim(s + 6)) ? 1 : 0;
+            } else if (strnicmp(s, "server=", 7) == 0) {
+                strncpy(cfg_server, trim(s + 7), sizeof(cfg_server) - 1);
+                cfg_server[sizeof(cfg_server) - 1] = 0;
             }
         }
     }
@@ -181,13 +184,18 @@ static int section_is(const char *line, const char *dir)
  * Streams the file to WAVE86.TMP and swaps it in, so it needs no more
  * memory than one line.
  */
-int ini_write_name(const char *dir, const char *name)
+int ini_write_key(const char *dir, const char *key, const char *name)
 {
     char tmp[PATH_LEN + 4];
     char buf[LINE_LEN], line[LINE_LEN];
+    char keyeq[24];
     FILE *in, *out;
     int in_target = 0, seen = 0, done = 0;
+    unsigned kl;
     char *dot;
+
+    sprintf(keyeq, "%s=", key);
+    kl = strlen(keyeq);
 
     strcpy(tmp, ini_path);
     dot = strrchr(tmp, '.');
@@ -206,20 +214,20 @@ int ini_write_name(const char *dir, const char *name)
             t = trim(line);
             if (t[0] == '[') {
                 if (in_target && !done) {
-                    fprintf(out, "name=%s\n", name);
+                    fprintf(out, "%s%s\n", keyeq, name);
                     done = 1;
                 }
                 in_target = section_is(t, dir);
                 if (in_target)
                     seen = 1;
             } else if (in_target && !done) {
-                if (strnicmp(t, "name=", 5) == 0) {
-                    fprintf(out, "name=%s\n", name);   /* replace */
+                if (strnicmp(t, keyeq, kl) == 0) {
+                    fprintf(out, "%s%s\n", keyeq, name);   /* replace */
                     done = 1;
                     continue;
                 }
                 if (t[0] == 0) {                    /* section ends */
-                    fprintf(out, "name=%s\n", name);
+                    fprintf(out, "%s%s\n", keyeq, name);
                     done = 1;
                 }
             }
@@ -227,16 +235,21 @@ int ini_write_name(const char *dir, const char *name)
         }
         fclose(in);
         if (in_target && !done)
-            fprintf(out, "name=%s\n", name);
+            fprintf(out, "%s%s\n", keyeq, name);
     }
     if (!seen)
-        fprintf(out, "\n[%s]\nname=%s\n", dir, name);
+        fprintf(out, "\n[%s]\n%s%s\n", dir, keyeq, name);
     fclose(out);
     remove(ini_path);
     if (rename(tmp, ini_path) != 0)
         return 1;
     ini_load(ini_path);                 /* pick the change up */
     return 0;
+}
+
+int ini_write_name(const char *dir, const char *name)
+{
+    return ini_write_key(dir, "name", name);
 }
 
 /*

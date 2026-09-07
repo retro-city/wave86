@@ -39,13 +39,15 @@ in dosbox-x before it goes onto the real machine.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
+| N | the eXoDOS list on the network (Enter downloads, L refreshes) |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
 
 Copy these into a folder on the DOS box, say `C:\WAVE86`:
 
-    build\WAVE86.EXE   WAVE.BAT   WAVE86.INI   MUSIC\
+    build\WAVE86.EXE   WAVE.BAT   WAVE86.INI   MUSIC\   THUMBS\
+    (and for downloads: WAVEGET.EXE  DHCP.EXE  MTCP.CFG)
 
 Put each game in its own folder under `C:\GAMES` (or change `gamedir=`
 in the INI). Add `C:\WAVE86` to your PATH and type `WAVE`. To boot
@@ -187,14 +189,40 @@ near-identical patterns merged until they fit. VGA only.
 
 ## Games from eXoDOS over the network
 
-`tools/waveserve.py` indexes an eXoDOS folder and serves it to the DOS
-side over plain HTTP/1.0: `/list` (one game per line), `/info/<id>` and
-`/pack/<id>`, a stream of raw files that gets written straight into
-`C:\GAMES\<DIR>` with nothing to unzip on the 486. The DOS client is
-the next step; see [docs/network-plan.md](docs/network-plan.md).
+Press `N` in the menu and the launcher shows the games in your eXoDOS
+collection, served from a machine on the LAN; Enter downloads one
+straight into `C:\GAMES` and it appears in the games list, named and
+with its executable set. Nothing is unzipped on the DOS side: the server
+streams plain files.
 
-    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086
-    curl http://localhost:8086/list
+On the machine with eXoDOS (Mac, Linux, a NAS with Python):
+
+    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd
+
+It indexes the game zips, reads each game's eXoDOS `dosbox.conf` for the
+program that starts it, takes genre and description from the platform
+XML, and re-indexes every five minutes as the torrent delivers. `--cd`
+includes games whose DOSBox setup mounts a CD image, shipped without the
+image; many only use the disc for audio (Dune 2), others really need it
+and the menu marks those "NEEDS CD".
+
+On the DOS machine, copy `WAVEGET.EXE`, `DHCP.EXE` and `MTCP.CFG` from
+`build/` next to the launcher, put the server's address in the INI:
+
+    server=192.168.1.109:8086
+
+and get the network card up in `AUTOEXEC.BAT` (PicoMem or any NE2000):
+
+    NE2000 0x60 5 0x300
+    SET MTCPCFG=C:\WAVE86\MTCP.CFG
+    C:\WAVE86\DHCP
+
+`WAVEGET.EXE` is a separate program built on mTCP (GPL v3, sources in
+`net/`), so the launcher itself stays a small 8086 program with no
+network code; downloads run through the same batch hand-off as games,
+with all memory free. Esc aborts a download. The list holds up to 2,100
+games in memory; the server addresses games by folder name, so a list
+that is a few minutes old still fetches the right one.
 
 ## Testing without a DOS machine
 
@@ -220,6 +248,8 @@ single `call`.
     src/music.c    AdLib detection, IMF player, playlist, volume
     src/mod.c      Sound Blaster DMA, ProTracker loader, sequencer, mixer
 src/cpu.c      CPU and memory identification for the header line
+src/net.c      the eXoDOS list in memory, download bookkeeping
+net/           WAVEGET.CPP, MTCP.CFG, mTCP's library and DHCP (GPL)
     tools/         composers, converters, renderers (host side)
     music/         the soundtrack
     docs/          screenshot

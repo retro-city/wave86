@@ -58,6 +58,7 @@ int scan_games(void);
 void ini_load(const char *fname);   /* reads gamedir= */
 void ini_apply(void);               /* per-game [sections] onto games[] */
 int ini_write_name(const char *dir, const char *name); /* set/add name= */
+int ini_write_key(const char *dir, const char *key, const char *value);
 void ini_emit_extras(FILE *bat, const char *dir, int after); /* env/pre/post/sound */
 const char *ini_global(const char *key);   /* value of a global key, or NULL */
 void sort_games(void);
@@ -73,6 +74,25 @@ extern char mus_track[9];       /* current track base name */
 extern int cfg_modrate;         /* ini modrate=: -1 auto, 0 off, Hz */
 extern int cfg_adlib;           /* ini adlib=: -1 auto, 0 off, 1 force */
 extern int cfg_music;           /* ini music=: 1 = autoplay at startup */
+
+/* --- net.c: the eXoDOS list and downloads (WAVEGET.EXE does the TCP) --- */
+typedef struct {
+    char dir[9];
+    char title[33];
+    char exe[13];
+    unsigned year;
+    unsigned long kb;
+    char cd;                    /* 1 = the game wants its CD */
+} NetGame;
+extern int net_count;
+extern char cfg_server[32];     /* ini server=a.b.c.d:port */
+int net_load(void);
+NetGame __far *net_get(int i);
+void net_free(void);
+void net_mark_pending(const NetGame __far *g);
+void net_mark_view(void);
+int net_view_pending(void);
+int net_apply_pending(void);
 void mus_diag(void);            /* /diag report */
 
 /* --- mod.c: Sound Blaster + ProTracker --- */

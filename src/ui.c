@@ -109,6 +109,7 @@ void ui_keybar(const Game *sel)
     keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
     keychip(&x, "<>", "TRACK", !mus_present || mus_ntracks < 2);
     keychip(&x, "R", "SCAN", 0);
+    keychip(&x, "N", "NET", !cfg_server[0]);
     keychip(&x, "ESC", "QUIT", 0);
 }
 
@@ -419,4 +420,110 @@ int ui_thumb(const Game *g)
         }
     fclose(f);
     return 1;
+}
+
+/* ------------------------------------------------ the network view */
+
+void ui_net_static(void)
+{
+    char t[24];
+
+    scr_fill(0, 0, 80, 25, ' ', A(7, 0));
+    draw_logo();
+    draw_divider();
+    draw_box(LIST_X, PANE_TOP, LIST_W, PANE_H, A(3, 0));
+    sprintf(t, " EXODOS %d ", net_count);
+    scr_puts(LIST_X + 2, PANE_TOP, t, A(11, 0));
+    draw_box(PANE_X, PANE_TOP, PANE_W, PANE_H, A(3, 0));
+    scr_puts(PANE_X + 2, PANE_TOP, " DOWNLOAD ", A(11, 0));
+}
+
+static void fmt_kb(char *dst, unsigned long kb)
+{
+    if (kb < 10000UL)
+        sprintf(dst, "%luK", kb);
+    else
+        sprintf(dst, "%lu.%luM", kb / 1024, (kb % 1024) * 10 / 1024);
+}
+
+void ui_net_list(int sel, int top)
+{
+    int i;
+
+    for (i = 0; i < LIST_ROWS; i++) {
+        int gi = top + i;
+        int y = 8 + i;
+        scr_fill(LIST_X + 1, y, LIST_W - 2, 1, ' ', A(7, 0));
+        if (gi >= net_count)
+            continue;
+        {
+            NetGame __far *g = net_get(gi);
+            int is_sel = (gi == sel);
+            unsigned char at = is_sel ? A(15, 3) : A(7, 0);
+            unsigned char ad = is_sel ? A(0, 3) : A(8, 0);
+            char nm[30], sz[12];
+            int k;
+
+            if (is_sel) {
+                scr_fill(LIST_X + 1, y, LIST_W - 2, 1, ' ', at);
+                scr_put(LIST_X + 1, y, CH_ARROW, A(14, 3));
+            }
+            for (k = 0; k < 26 && g->title[k]; k++) nm[k] = g->title[k];
+            nm[k] = 0;
+            scr_puts(LIST_X + 3, y, nm, at);
+            fmt_kb(sz, g->kb);
+            scr_puts(LIST_X + LIST_W - 2 - strlen(sz), y, sz, ad);
+        }
+    }
+    scr_put(LIST_X + LIST_W - 1, 8, top > 0 ? CH_UP : CH_V, A(11, 0));
+    scr_put(LIST_X + LIST_W - 1, 8 + LIST_ROWS - 1,
+            top + LIST_ROWS < net_count ? CH_DOWN : CH_V, A(11, 0));
+    if (net_count == 0) {
+        scr_puts(LIST_X + 4, 12, "NO GAME LIST YET", A(12, 0));
+        scr_puts(LIST_X + 4, 14, "PRESS L TO FETCH IT FROM", A(7, 0));
+        scr_puts(LIST_X + 4, 15, cfg_server[0] ? cfg_server : "(set server= in the INI)", A(11, 0));
+    }
+}
+
+void ui_net_details(int sel)
+{
+    int y;
+    char buf[48], sz[12], title[34], dir[9], exe[13];
+    NetGame __far *g;
+
+    for (y = PANE_TOP + 1; y < PANE_TOP + PANE_H - 1; y++)
+        scr_fill(PANE_X + 1, y, PANE_W - 2, 1, ' ', A(7, 0));
+    if (net_count == 0) {
+        scr_puts(PANE_X + 2, 9, "GAMES FROM YOUR EXODOS FOLDER,", A(8, 0));
+        scr_puts(PANE_X + 2, 10, "SERVED BY WAVESERVE.PY.", A(8, 0));
+        return;
+    }
+    g = net_get(sel);
+    _fstrcpy(title, g->title); _fstrcpy(dir, g->dir); _fstrcpy(exe, g->exe);
+    scr_puts(PANE_X + 2, 9, title, A(15, 0));
+    scr_hline(PANE_X + 2, 10, strlen(title), CH_H, A(3, 0));
+    sprintf(buf, "%u", g->year);
+    field(11, "YEAR", buf, A(7, 0));
+    sprintf(buf, "%s\\%s", gamedir, dir);
+    if (strlen(buf) > PANE_W - 11) buf[PANE_W - 11] = 0;
+    field(12, "TO", buf, A(7, 0));
+    field(13, "EXEC", exe[0] ? exe : "(will be detected)", exe[0] ? A(7, 0) : A(8, 0));
+    fmt_kb(sz, g->kb);
+    field(14, "SIZE", sz, A(7, 0));
+    if (g->cd)
+        scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE NEEDS CD \xAF", A(12, 0));
+    scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO", A(8, 0));
+    scr_puts(PANE_X + 2, 21, "YOUR GAMES FOLDER.", A(8, 0));
+}
+
+void ui_net_keybar(void)
+{
+    int x = 2;
+    scr_fill(0, 23, 80, 1, ' ', A(7, 0));
+    keychip(&x, "ENTER", "GET", net_count == 0);
+    keychip(&x, "L", "LIST", 0);
+    keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
+    keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
+    keychip(&x, "<>", "TRACK", !mus_present || mus_ntracks < 2);
+    keychip(&x, "ESC", "GAMES", 0);
 }

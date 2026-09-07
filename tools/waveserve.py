@@ -14,7 +14,7 @@ developer and notes. The index is rebuilt every --rescan seconds.
 
     GET /list          id|DIR|Title|year|genre|KB|EXE|CD  (CD = 1 when the
                        game's DOSBox setup mounted a CD image)
-    GET /info/<id>     a few lines about one game
+    GET /info/<id>     a few lines about one game (<id> or DIR)
     GET /pack/<id>     the game's files: "F <bytes> <DOS path>\\n" + data
                        for each file, then "E\\n". Nothing to unzip on DOS.
 """
@@ -200,11 +200,17 @@ class H(BaseHTTPRequestHandler):
             self._head("text/plain", len(body))
             self.wfile.write(body)
             return
-        m = re.match(r'^/(info|pack)/(\d+)$', p)
-        if not m or int(m.group(2)) >= len(games):
+        m = re.match(r'^/(info|pack)/([^/]+)$', p)
+        g = None
+        if m:
+            key = m.group(2)
+            if key.isdigit() and int(key) < len(games):
+                g = games[int(key)]
+            else:                       # by folder name: stable across rescans
+                g = next((x for x in games if x["dir"] == key.upper()), None)
+        if g is None:
             self.send_error(404)
             return
-        g = games[int(m.group(2))]
         if m.group(1) == "info":
             lines = [f"{g['title']} ({g['year']})", f"DIR {g['dir']}", f"EXE {g['exe'] or '?'}",
                      f"GENRE {g['genre']}", f"BY {g['developer']}", f"FILES {len(g['files'])}",

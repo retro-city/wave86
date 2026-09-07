@@ -70,7 +70,14 @@ On the 486, AUTOEXEC loads the PicoMem's NE2000 packet driver
 - CD-era games and anything needing DOSBox-only tricks (imgmount) are out
   of scope for the first version.
 
-## Order of work
+## Status (2026-09-07)
+
+All three parts exist and were tested end to end in dosbox-x: WAVEGET
+fetched the list, the launcher's N view showed it, Arrakis (9.6 MB, 238
+files) downloaded byte-identical and came back named in the INI.
+Next is the same on the 486 with the PicoMem.
+
+## Order of work (done)
 
 1. waveserve.py against the local eXoDOS Lite; test with curl.
 2. WAVEGET (start from HTGET, replace the file writer with the pack
