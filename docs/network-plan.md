@@ -29,7 +29,8 @@ Three parts, only one of which speaks TCP:
 
 1. **waveserve.py** on the Mac or NAS, plain Python, indexes an eXoDOS
    folder and serves HTTP/1.0 on a port:
-   - `GET /list` -> one line per game: `id|DIR|Title|year|genre|KB`.
+   - `GET /list` -> one line per game: `id|DIR|Title|year|genre|KB|EXE`
+     (EXE from the game's eXoDOS dosbox.conf autoexec, when it names one).
      Text, under 96 characters per line, so the DOS side parses it with
      `fgets`. Games above a size limit (CD-ROM rips) are left out unless
      asked for.
@@ -37,8 +38,12 @@ Three parts, only one of which speaks TCP:
      followed by the raw file, then `E`. The client writes files straight
      to `C:\GAMES\<DIR>\`, so nothing has to be unzipped on the 486.
      Long or non-8.3 names are mangled or skipped, `.exo` markers skipped.
-   - Title, year and genre come from the zip name and, when available,
-     the LaunchBox XML.
+   - Title and year come from the zip name; genre, developer and notes
+     from `xml/all/MS-DOS.xml` (matched on the `<RootFolder>` short name);
+     games whose autoexec uses `imgmount` (CD images) are left out unless
+     `--cd`. The index is rebuilt every `--rescan` seconds (default 300).
+     The server also looks in the nested install root `<root>/eXoDOS/`
+     that `Setup eXoDOS.bat` creates, and in `Content/GameData/eXoDOS/`.
 2. **WAVEGET.EXE**, a separate DOS program built on mTCP (C++, large
    model, GPL like mTCP): `WAVEGET LIST` writes `NETLIST.TXT` next to
    the launcher, `WAVEGET GET <id>` streams a pack into `C:\GAMES` with
