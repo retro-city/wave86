@@ -252,19 +252,15 @@ void ui_list(int sel, int top)
             const Game *g = &games[gi];
             int is_sel = (gi == sel);
             unsigned char at = is_sel ? A(15, 5) : A(7, 0);
-            unsigned char ad = is_sel ? A(11, 5) : A(8, 0);
-            char nm[24];
-            int dl;
+            char nm[LIST_W];
 
             if (is_sel) {
                 scr_fill(LIST_X + 1, y, LIST_W - 2, 1, ' ', at);
                 scr_put(LIST_X + 1, y, CH_ARROW, A(14, 5));
             }
-            strncpy(nm, g->name, 22);
-            nm[22] = 0;
+            strncpy(nm, g->name, LIST_W - 4);   /* the whole row is the name */
+            nm[LIST_W - 4] = 0;
             scr_puts(LIST_X + 3, y, nm, at);
-            dl = strlen(g->dir);
-            scr_puts(LIST_X + LIST_W - 2 - dl, y, g->dir, ad);
         }
     }
 
