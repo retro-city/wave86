@@ -173,7 +173,7 @@ static void quit(void)
  * loop and exit, so it gets every byte of memory. Started bare, we free
  * the music buffers and run it ourselves, then come back to the menu.
  */
-static void hand_off(const char *what);
+static void hand_off(const char *msg);
 
 /* run a command line (WAVEGET) through the same batch loop as a game */
 static void run_command(const char *cmd, const char *what)
@@ -188,22 +188,28 @@ static void run_command(const char *cmd, const char *what)
 
 static void launch(const Game *g, int use_setup)
 {
+    char msg[80];
     write_bat(g, use_setup);
-    hand_off(use_setup ? g->setup : g->name);
+    if (use_setup)
+        sprintf(msg, "WAVE86: Running %s for %s ...", g->setup, g->name);
+    else
+        sprintf(msg, "WAVE86: Running %s ...", g->name);
+    hand_off(msg);
 }
 
-static void hand_off(const char *what)
+/* msg is what the user reads while the batch loop takes over */
+static void hand_off(const char *msg)
 {
     if (getenv("WAVE86")) {
         mus_shutdown();
         text_mode_plain();
-        printf("WAVE86: running %s ...\n", what);
+        printf("%s\n", msg);
         exit(0);
     }
 
     mus_release();
     text_mode_plain();
-    printf("WAVE86: running %s ...\n", what);
+    printf("%s\n", msg);
     printf("(type WAVE instead to give games all memory)\n");
     system("RUNGAME.BAT");
     remove("RUNGAME.BAT");
@@ -231,20 +237,22 @@ static void net_fetch_list(void)
     net_mark_view();
     sprintf(cmd, "%s LIST %s %s%sNETLIST.TXT", exe, cfg_server, home_dir,
             home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
-    run_command(cmd, "fetching the game list");
+    run_command(cmd, "WAVE86: Fetching the game list from the eXoDOS server ...");
     net_load();                     /* bare mode: we are back already */
 }
 
 /* download the selected game; comes back with it selected in the games view */
 static void net_download(int nsel)
 {
-    char cmd[PATH_LEN * 2 + 80], exe[PATH_LEN + 16], dir[9];
+    char cmd[PATH_LEN * 2 + 80], exe[PATH_LEN + 16], dir[9], title[33], msg[80];
     NetGame __far *g = net_get(nsel);
     _fstrcpy(dir, g->dir);
+    _fstrcpy(title, g->title);
     waveget_path(exe);
     net_mark_pending(g);
     sprintf(cmd, "%s GET %s %s %s %lu", exe, cfg_server, dir, gamedir, g->kb);
-    run_command(cmd, "downloading");
+    sprintf(msg, "WAVE86: Installing %s from the eXoDOS server ...", title);
+    run_command(cmd, msg);
 }
 
 int main(int argc, char **argv)
