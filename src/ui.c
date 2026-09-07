@@ -108,8 +108,7 @@ void ui_keybar(const Game *sel)
     keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
     keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
     keychip(&x, "<>", "TRACK", !mus_present || mus_ntracks < 2);
-    keychip(&x, "R", "SCAN", 0);
-    keychip(&x, "N", "NET", !cfg_server[0]);
+    keychip(&x, "N", "NET", !cfg_server[0]);      /* R (rescan) still works */
     keychip(&x, "ESC", "QUIT", 0);
 }
 
