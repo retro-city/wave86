@@ -7,11 +7,13 @@ Finds game zips ("Title (Year).zip") under <root>/eXo/eXoDOS, and also
 under the nested install root <root>/eXoDOS/ and the torrent's
 <root>/Content/GameData/eXoDOS/. Each zip holds one 8.3-named folder of
 plain game files. The per-game dosbox.conf in eXo/eXoDOS/!dos/<DIR>/
-tells which program starts the game (and marks CD games, which are left
-out unless --cd), and xml/all/MS-DOS.xml gives title, year, genre,
+tells which program starts the game (and marks CD games: left out unless
+--cd, which ships them without their CD images, since many only use the
+CD for audio), and xml/all/MS-DOS.xml gives title, year, genre,
 developer and notes. The index is rebuilt every --rescan seconds.
 
-    GET /list          id|DIR|Title|year|genre|KB|EXE  (one game per line)
+    GET /list          id|DIR|Title|year|genre|KB|EXE|CD  (CD = 1 when the
+                       game's DOSBox setup mounted a CD image)
     GET /info/<id>     a few lines about one game
     GET /pack/<id>     the game's files: "F <bytes> <DOS path>\\n" + data
                        for each file, then "E\\n". Nothing to unzip on DOS.
@@ -94,12 +96,12 @@ SKIP_CMDS = {"cls", "exit", "mount", "imgmount", "cd", "c:", "d:", "rem", "echo"
 
 
 def read_conf(root, short):
-    """(exe base name or "", needs_cd) from the game's dosbox.conf autoexec"""
+    """(candidate program names in autoexec order, needs_cd)"""
     for r in roots_of(root):
         p = os.path.join(r, "eXo", "eXoDOS", "!dos", short, "dosbox.conf")
         if not os.path.isfile(p):
             continue
-        exe, cd, inauto = "", False, False
+        cands, cd, inauto = [], False, False
         for line in open(p, "r", encoding="latin-1", errors="replace"):
             t = line.strip()
             if t.lower().startswith("[autoexec]"):
@@ -116,10 +118,11 @@ def read_conf(root, short):
                 continue
             if word == "call" and len(low.split()) > 1:
                 word = low.split()[1]
-            if not exe:
-                exe = word
-        return exe, cd
-    return "", False
+            word = word.rsplit(".", 1)[0] if "." in word else word
+            if word and word not in cands:
+                cands.append(word)
+        return cands, cd
+    return [], False
 
 
 def index(root, max_mb, include_cd):
@@ -147,21 +150,25 @@ def index(root, max_mb, include_cd):
                 rel = dos_path(parts[1:])
                 if rel is None:
                     continue
+                if parts[1].upper() == "CD" or rel.rsplit(".", 1)[-1] in ("CUE", "BIN", "ISO", "IMG", "CCD", "SUB"):
+                    continue          # CD images stay on the server
                 files.append((rel, i.filename, i.file_size))
                 total += i.file_size
                 names.add(parts[-1].upper())
             if not files or total > max_mb * 1024 * 1024:
                 continue
-            exe, cd = read_conf(root, top)
+            cands, cd = read_conf(root, top)
             if cd and not include_cd:
                 continue
             exe_file = ""
-            if exe:
+            for exe in cands:           # first word that is a real program wins
                 for ext in ("BAT", "EXE", "COM"):
                     cand = f"{exe.upper()}.{ext}"
                     if cand in names:
                         exe_file = cand
                         break
+                if exe_file:
+                    break
             md = meta.get(top.lower(), {})
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
@@ -188,7 +195,7 @@ class H(BaseHTTPRequestHandler):
             games = GAMES
         p = self.path
         if p == "/list":
-            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}\r\n"
+            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd'])}\r\n"
                            for i, g in enumerate(games)).encode("ascii", "replace")
             self._head("text/plain", len(body))
             self.wfile.write(body)

@@ -29,7 +29,7 @@ Three parts, only one of which speaks TCP:
 
 1. **waveserve.py** on the Mac or NAS, plain Python, indexes an eXoDOS
    folder and serves HTTP/1.0 on a port:
-   - `GET /list` -> one line per game: `id|DIR|Title|year|genre|KB|EXE`
+   - `GET /list` -> one line per game: `id|DIR|Title|year|genre|KB|EXE|CD`
      (EXE from the game's eXoDOS dosbox.conf autoexec, when it names one).
      Text, under 96 characters per line, so the DOS side parses it with
      `fgets`. Games above a size limit (CD-ROM rips) are left out unless
