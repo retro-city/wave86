@@ -1053,7 +1053,12 @@ void Utils::endStack2( bool ignoreTracing ) {
   #endif
 
 
-  if ( _heapchk( ) != _HEAPOK ) {
+  // WAVE86: the far-heap walker in the Open Watcom 2.0 snapshot used to
+  // build this reports _HEAPBADNODE for any large-model program right
+  // after its first malloc (a plain test program shows it too), so the
+  // original _heapchk() check here printed "heap is corrupted" on every
+  // run. The near heap check still catches real trouble.
+  if ( _nheapchk( ) != _HEAPOK && _nheapchk( ) != _HEAPEMPTY ) {
     fprintf( stderr, "End: heap is corrupted!\n" );
   }
 
