@@ -169,6 +169,8 @@ int net_apply_pending(void)
         strncpy(games[i].exe, exe, FN_LEN - 1);
         ini_write_key(dir, "exe", exe);
     }
+    games[i].flags |= GF_EXODOS;
+    ini_write_key(dir, "source", "exodos");
     sort_games();
     return find_game(dir);
 }

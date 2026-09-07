@@ -83,7 +83,8 @@ Section names are game folder names. The launcher adds a section for
 every new folder it finds, so the file always lists your collection;
 press `F2` in the menu to give a game a proper name (or run
 `WAVE86 /name KEEN4 Commander Keen 4` from the prompt). Per game you can
-set `name`, `exe`, `setup`, `args` and `hide=1`. Anything you leave out
+set `name`, `exe`, `setup`, `args` and `hide=1`; `source=exodos` (set by
+the launcher after a download) shows an eXoDOS tag in the details. Anything you leave out
 is detected: the launcher prefers an EXE named like the folder, then
 `START`/`PLAY`/`GO` batch files, and ignores the usual `SETUP`,
 `INSTALL`, `DOS4GW` and friends.

@@ -27,6 +27,7 @@ typedef struct {
 #define GF_DOS4GW  0x01     /* needs 386+ (DOS/4GW extender present) */
 #define GF_HIDE    0x02     /* hidden via ini */
 #define GF_INI     0x04     /* has a [section] in WAVE86.INI */
+#define GF_EXODOS  0x08     /* source=exodos: came from the eXoDOS server */
 
 /* --- video (vga.c) --- */
 extern int vid_is_vga;      /* 1 if VGA/MCGA detected */

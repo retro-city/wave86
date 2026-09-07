@@ -308,6 +308,8 @@ void ui_details(int sel)
         buf[PANE_W - 11] = 0;
     field(11, "PATH", buf, A(7, 0));
     field(12, "EXEC", g->exe, A(7, 0));
+    if (g->flags & GF_EXODOS)
+        scr_puts(PANE_X + PANE_W - 2 - 10, 13, "\xAE eXoDOS \xAF", A(11, 0));
     field(13, "SETUP", g->setup[0] ? g->setup : "none",
           g->setup[0] ? A(7, 0) : A(8, 0));
     {
