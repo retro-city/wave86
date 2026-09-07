@@ -295,6 +295,10 @@ int main(int argc, char **argv)
                 home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
         ini_load(path);
     }
+    if (getenv("WAVESRV")) {            /* make run: the emulator's host */
+        strncpy(cfg_server, getenv("WAVESRV"), sizeof(cfg_server) - 1);
+        cfg_server[sizeof(cfg_server) - 1] = 0;
+    }
     {
         char abs[PATH_LEN], rel[PATH_LEN + 8];
         const char *src = gamedir;

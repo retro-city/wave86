@@ -164,7 +164,7 @@ ARM host tools), `h` and `lib286` into `toolchain/`. On an Intel Mac use
 `bino64` instead and adjust the path at the top of the Makefile.
 
     make          builds build/WAVE86.EXE and copies WAVE.BAT, the INI and MUSIC\
-    make run      opens it in dosbox-x, with sound
+    make run      opens it in dosbox-x, with sound and networking (see below)
     make test     renders the UI headlessly to build/screen.png
     make music    regenerates the soundtrack
     make clean
@@ -216,6 +216,12 @@ and get the network card up in `AUTOEXEC.BAT` (PicoMem or any NE2000):
     NE2000 0x60 5 0x300
     SET MTCPCFG=C:\WAVE86\MTCP.CFG
     C:\WAVE86\DHCP
+
+`make run` does all of this inside dosbox-x: it turns on the NE2000
+emulation (slirp backend), loads the packet driver from `Z:\SYSTEM`,
+runs DHCP and points the launcher at `10.0.2.2:8086`, which is the Mac
+as the emulator sees it, through the `WAVESRV` environment variable
+(it overrides `server=`). Start `waveserve.py` first.
 
 `WAVEGET.EXE` is a separate program built on mTCP (GPL v3, sources in
 `net/`), so the launcher itself stays a small 8086 program with no

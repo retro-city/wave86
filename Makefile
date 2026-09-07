@@ -76,8 +76,18 @@ music:
 	python3 tools/makemod.py music/WAVE86.MOD
 
 # interactive run in dosbox-x (project root is C:, launcher in C:\BUILD)
-run: all
-	dosbox-x -fastlaunch -c "mount c ." -c "c:" -c "cd BUILD" -c "WAVE.BAT"
+# with NE2000 networking through slirp: the Mac is 10.0.2.2, so N works
+# against a waveserve running here.
+DOSBOX_NET = -set "ne2000 ne2000=true" -set "ne2000 backend=slirp" \
+             -set "ne2000 nicbase=300" -set "ne2000 nicirq=3"
+
+build/NETUP.BAT: Makefile
+	@mkdir -p build
+	@printf '@echo off\r\nZ:\\SYSTEM\\NE2000.COM 0x60 3 0x300\r\nset MTCPCFG=C:\\BUILD\\MTCP.CFG\r\nset WAVESRV=10.0.2.2:8086\r\nDHCP\r\n' > $@
+
+run: all build/NETUP.BAT
+	dosbox-x -fastlaunch $(DOSBOX_NET) -c "mount c ." -c "c:" -c "cd BUILD" \
+	  -c "call NETUP.BAT" -c "WAVE.BAT"
 
 # headless self-test: renders the UI, dumps screen+font+palette,
 # then the host renders a pixel-perfect PNG
