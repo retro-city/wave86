@@ -26,9 +26,10 @@ PAL6 = [(2,0,8),(9,4,24),(0,34,24),(0,46,52),(52,6,22),(44,0,42),(58,24,2),(36,3
         (15,9,26),(27,24,60),(18,60,40),(28,63,63),(63,26,34),(63,24,56),(63,54,16),(62,58,63)]
 PAL = [(r*255//63, g*255//63, b*255//63) for r, g, b in PAL6]
 
-# codes the UI never displays, available in both banks
+# codes the UI never displays, available in both banks (0xAE/0xAF are the
+# << >> of the 386+ badge, 0x10/0x18/0x19 the arrows, 0x0D/0x0E the notes)
 FREE = (list(range(0x01, 0x0D)) + [0x0F] + list(range(0x11, 0x18)) + list(range(0x1A, 0x20))
-        + [0x7F] + list(range(0x80, 0xB0)) + list(range(0xB4, 0xBF)) + list(range(0xC1, 0xC4))
+        + [0x7F] + list(range(0x80, 0xAE)) + list(range(0xB4, 0xBF)) + list(range(0xC1, 0xC4))
         + list(range(0xC5, 0xD9)) + list(range(0xE0, 0xFA)) + list(range(0xFB, 0xFE)) + [0xFF])
 
 def rows(f): return [f(y) for y in range(16)]
