@@ -273,6 +273,13 @@ Under DOSBox the launcher uses `IMGMOUNT D image -t iso` instead; it
 knows it is in DOSBox by the Z: drive. `cdmount=` and `cdunmount=` in
 the INI replace either, with `$ISO` standing for the image path.
 
+A CD game from the server comes with its own `IMGMOUNT.BAT` (the same
+choice between the drivers and IMGMOUNT, with the drive letter from the
+game's eXoDOS conf), and its start batch calls it first, so the game
+also runs from a plain prompt with the WAVE86 folder on the PATH. When
+a game's start batch has a `IMGMOUNT.BAT` beside it the launcher leaves
+the mounting to it and only takes the disc off afterwards.
+
 The disc lands on D: because that is where eXoDOS mounts it and games
 like Syndicate Plus have `D:` written into their start batch. If a real
 CD-ROM already owns D: with MSCDEX loaded, SHSUCDX refuses to install

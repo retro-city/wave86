@@ -78,12 +78,18 @@ static void put_template(FILE *f, const char *t, const char *iso)
     fputc('\n', f);
 }
 
-/* DOSBox: its Z: drive carries the shell's programs */
-static int under_dosbox(void)
+/* DOSBox: its Z: drive carries the shell's programs. Returns IMGMOUNT's
+   full path (a bare IMGMOUNT could resolve to a game's IMGMOUNT.BAT in
+   the current directory), or NULL on real DOS. */
+static const char *under_dosbox(void)
 {
-    return access("Z:\\IMGMOUNT.COM", 0) == 0 ||
-           access("Z:\\BIN\\IMGMOUNT.COM", 0) == 0 ||
-           access("Z:\\SYSTEM\\IMGMOUNT.COM", 0) == 0;
+    static const char *const where[] = {
+        "Z:\\IMGMOUNT.COM", "Z:\\SYSTEM\\IMGMOUNT.COM", "Z:\\BIN\\IMGMOUNT.COM", NULL };
+    int i;
+    for (i = 0; where[i]; i++)
+        if (access(where[i], 0) == 0)
+            return where[i];
+    return NULL;
 }
 
 /*
@@ -100,6 +106,15 @@ static void emit_cd(FILE *f, const Game *g, int after)
 
     if (!g->cdimg[0])
         return;
+    if (!after) {
+        /* a start batch with IMGMOUNT.BAT beside it (waveserve writes both)
+           mounts the disc itself; we still take it off afterwards */
+        const char *dot = strrchr(g->exe, '.');
+        char mb[PATH_LEN + 16];
+        sprintf(mb, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
+        if (dot && stricmp(dot + 1, "BAT") == 0 && access(mb, 0) == 0)
+            return;
+    }
     if (strchr(g->cdimg, ':') || g->cdimg[0] == '\\')
         strcpy(iso, g->cdimg);
     else
@@ -109,9 +124,9 @@ static void emit_cd(FILE *f, const Game *g, int after)
         put_template(f, t, iso);
         return;
     }
-    if (under_dosbox()) {
-        if (after) fprintf(f, "IMGMOUNT -u D\n");
-        else       fprintf(f, "IMGMOUNT D %s -t iso\n", iso);
+    if ((t = under_dosbox()) != NULL) {
+        if (after) fprintf(f, "%s -u D\n", t);
+        else       fprintf(f, "%s D %s -t iso\n", t, iso);
         return;
     }
     sep = home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\";

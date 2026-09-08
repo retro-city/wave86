@@ -186,13 +186,35 @@ def iso_name(cue_name, used):
     return name
 
 
+def imgmount_bat(iso, letter):
+    """IMGMOUNT.BAT: the game's CD image on its drive letter, whichever DOS
+    it finds itself on. DOS needs the WAVE86 folder on the PATH for the
+    drivers; DOSBox has IMGMOUNT on its Z:, called by full path here
+    because a bare IMGMOUNT would find this batch first and loop."""
+    lines = ["@echo off",
+             f"rem WAVE86: this game wants its CD image on {letter}:. waveserve made",
+             "rem this from the eXoDOS dosbox.conf, and the start batch calls it first.",
+             "if exist Z:\\IMGMOUNT.COM goto dosbox",
+             "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx",
+             f"SHCDHD86 /F:{iso} /Q",
+             f"SHCDX86 /D:SHSU-CDH,{letter} /Q",
+             "goto done",
+             ":dosbox",
+             f"Z:\\IMGMOUNT.COM {letter} {iso} -t iso",
+             "goto done",
+             ":dosboxx",
+             f"Z:\\SYSTEM\\IMGMOUNT.COM {letter} {iso} -t iso",
+             ":done"]
+    return ("\r\n".join(lines) + "\r\n").encode("ascii")
+
+
 def read_conf(root, short):
-    """(candidate program names in autoexec order, needs_cd)"""
+    """(candidate program names in autoexec order, CD drive letter or "")"""
     for r in roots_of(root):
         p = os.path.join(r, "eXo", "eXoDOS", "!dos", short, "dosbox.conf")
         if not os.path.isfile(p):
             continue
-        cands, cd, inauto = [], False, False
+        cands, cd, inauto = [], "", False
         for line in open(p, "r", encoding="latin-1", errors="replace"):
             t = line.strip()
             if t.lower().startswith("[autoexec]"):
@@ -203,7 +225,8 @@ def read_conf(root, short):
             t = t.lstrip("@")
             low = t.lower()
             if low.startswith("imgmount"):
-                cd = True
+                m = re.match(r"imgmount\s+([a-z])\b", low)
+                cd = m.group(1).upper() if m else "D"
             word = low.split()[0] if low.split() else ""
             if word in SKIP_CMDS or word.endswith(":"):
                 continue
@@ -213,7 +236,7 @@ def read_conf(root, short):
             if word and word not in cands:
                 cands.append(word)
         return cands, cd
-    return [], False
+    return [], ""
 
 
 TDC_RE = re.compile(r'^(?P<title>.*?)\s*\((?P<year>\d{4}|\d{3}x|\d{2}xx)\)\((?P<pub>[^)]*)\)\s*(?:\[(?P<genre>[^\]]*)\])?(?:\s*\[[^\]]*\])*\s*$')
@@ -325,17 +348,17 @@ def index(root, max_mb, include_cd):
                 continue
             # the CD, as one ISO per data track, made from the cue/bin while
             # streaming; the DOS side mounts CD\NAME.ISO when the game runs
-            cd_kb, used = 0, set()
+            cd_kb, used, isos = 0, set(), []
             if include_cd:
                 with zipfile.ZipFile(path) as z:
                     members = z.namelist()
                     for cue in sorted(cues):
                         for spec in iso_specs(z, cue, members):
                             size = spec[4] * 2048
-                            files.append((f"CD\\{iso_name(cue, used)}.ISO", None, size, spec))
+                            isos.append(f"CD\\{iso_name(cue, used)}.ISO")
+                            files.append((isos[-1], None, size, spec))
                             total += size
                             cd_kb += (size + 1023) // 1024
-            cd = bool(cd_kb)
             exe_file = ""
             for exe in cands:           # first word that is a real program wins
                 for ext in ("BAT", "EXE", "COM"):
@@ -345,6 +368,19 @@ def index(root, max_mb, include_cd):
                         break
                 if exe_file:
                     break
+            # a CD game started by a batch gets IMGMOUNT.BAT and a call to it
+            # at the top of that batch, so it also runs from a plain prompt
+            if isos and exe_file.endswith(".BAT"):
+                mount = imgmount_bat(isos[0], cd or "D")
+                files.append(("IMGMOUNT.BAT", None, len(mount), mount))
+                for k, entry in enumerate(files):
+                    if entry[0].upper() == exe_file and entry[1]:
+                        with zipfile.ZipFile(path) as z:
+                            body = b"@call IMGMOUNT.BAT\r\n" + z.read(entry[1])
+                        files[k] = (entry[0], None, len(body), body)
+                        total += len(b"@call IMGMOUNT.BAT\r\n")
+                        break
+            cd = bool(cd_kb)
             md = meta.get(top.lower(), {})
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
@@ -412,7 +448,10 @@ class H(BaseHTTPRequestHandler):
                     rel, name, size = entry[:3]
                     self.wfile.write(f"F {size} {rel}\n".encode())
                     if len(entry) == 4:
-                        self.send_iso(z, entry[3])
+                        if isinstance(entry[3], bytes):
+                            self.wfile.write(entry[3])
+                        else:
+                            self.send_iso(z, entry[3])
                         continue
                     with z.open(name) as f:
                         shutil.copyfileobj(f, self.wfile, 65536)

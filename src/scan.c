@@ -14,7 +14,7 @@ char gamedir[PATH_LEN] = "GAMES";
 
 /* programs that are never the game itself (basename, no extension) */
 static const char *blacklist[] = {
-    "SETUP", "INSTALL", "SETSOUND", "SOUNDSET", "SETSND", "SETMAIN", "CONFIG",
+    "SETUP", "INSTALL", "IMGMOUNT", "SETSOUND", "SOUNDSET", "SETSND", "SETMAIN", "CONFIG",
     "UVCONFIG", "AUTODET", "DOS4GW", "DOS4G", "MPSCOPY", "PKUNZJR",
     "PKUNZIP", "SOUND", "SOUNDRV", "MUSIC", "INTRO", "CATALOG",
     "DEALERS", "ORDER", "HELPME", "README", "UPDATE", "UNINST",

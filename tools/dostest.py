@@ -237,7 +237,7 @@ def smoke_test(games_dir, games, build):
     return bat(t), cd
 
 
-def check_smoke(results, cd):
+def check_smoke(results, cd, games_dir=None):
     """What the smoke test must have produced."""
     problems = []
     diag = results.get("DIAG.TXT", "")
@@ -253,7 +253,11 @@ def check_smoke(results, cd):
         if not re.search(r"^\S+\s+\S+\s+[\d,]+", results.get("CDDIR.TXT", ""), re.M):
             problems.append("CDDIR.TXT: no files listed on D:")
         rg = results.get("RUNGAME.TXT", "")
-        if f"/F:C:\\GAMES\\{name}\\CD\\{iso}" not in rg or "/D:SHSU-CDH,D" not in rg:
+        own = games_dir and os.path.exists(os.path.join(games_dir, name, "IMGMOUNT.BAT"))
+        if own:                         # the game's batch mounts; the launcher only unmounts
+            if "/F:" in rg or "/U /Q" not in rg:
+                problems.append("RUNGAME.TXT: expected only the unmount lines, the game has IMGMOUNT.BAT")
+        elif f"/F:C:\\GAMES\\{name}\\CD\\{iso}" not in rg or "/D:SHSU-CDH,D" not in rg:
             problems.append("RUNGAME.TXT: the launcher did not emit the SHSUCDHD/SHSUCDX lines")
     return problems
 
@@ -372,7 +376,7 @@ def main():
     if not finished:
         print(f"dostest: the guest did not finish in {a.seconds} s (results so far above)")
         sys.exit(2)
-    problems = [] if a.script else check_smoke(results, cd)
+    problems = [] if a.script else check_smoke(results, cd, a.games)
     if "FAIL.TXT" in results:
         problems.append("FAIL.TXT: " + results["FAIL.TXT"].strip())
     if problems:
