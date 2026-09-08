@@ -327,11 +327,13 @@ void ui_details(int sel)
             field(14, "SOUND", up, A(7, 0));
             x = PANE_X + 9 + (int)strlen(up) + 2;
         }
-        if (g->args[0] && x + 6 + (int)strlen(g->args) < PANE_X + PANE_W - 1) {
+        if (g->args[0] && x + 6 + (int)strlen(g->args) < PANE_X + PANE_W - 1 - (g->cdimg[0] ? 7 : 0)) {
             scr_puts(x, 14, "ARGS", A(3, 0));
             scr_puts(x + 5, 14, g->args, A(7, 0));
         }
     }
+    if (g->cdimg[0])
+        scr_puts(PANE_X + PANE_W - 2 - 6, 14, "\xAE CD \xAF", A(10, 0));
 
     if (g->flags & GF_DOS4GW)
         scr_puts(PANE_X + PANE_W - 2 - 8, 12, "\xAE 386+ \xAF", A(12, 0));  /* EXEC row */
@@ -509,13 +511,16 @@ void ui_net_details(int sel)
     fmt_kb(sz, g->kb);
     field(14, "SIZE", sz, A(7, 0));
     if (g->cd)
-        scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE NEEDS CD \xAF", A(12, 0));
+        scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE CD IMAGE \xAF", A(10, 0));
     else if (g->partial)
         scr_puts(PANE_X + PANE_W - 2 - 14, 14, "\xAE INCOMPLETE \xAF", A(12, 0));
     if (g->partial) {
         scr_puts(PANE_X + 2, 19, "THE SERVER HAS ONLY PART OF", A(8, 0));
         scr_puts(PANE_X + 2, 20, "THIS GAME SO FAR. ENTER GETS", A(8, 0));
         scr_puts(PANE_X + 2, 21, "WHAT IS THERE.", A(8, 0));
+    } else if (g->cd) {
+        scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT WITH ITS CD", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "IMAGE, MOUNTED WHEN IT RUNS.", A(8, 0));
     } else {
         scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO", A(8, 0));
         scr_puts(PANE_X + 2, 21, "YOUR GAMES FOLDER.", A(8, 0));

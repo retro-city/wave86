@@ -151,6 +151,11 @@ static void scan_one(Game *g)
 
     strcpy(g->exe, best_exe);
     strcpy(g->setup, best_setup);
+
+    /* a CD image next to the game (CD\*.ISO) is mounted while it runs */
+    sprintf(pat, "%s\\%s\\CD\\*.ISO", gamedir, g->dir);
+    if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0)
+        sprintf(g->cdimg, "CD\\%s", ft.name);
 }
 
 static int cmp_games(const void *a, const void *b)

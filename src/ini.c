@@ -9,6 +9,7 @@
  *   setup=SETUP.EXE
  *   args=/comp
  *   hide=1
+ *   cd=CD\SYNDICAT.ISO      (found by itself when it sits in CD\)
  *
  * Section names match game directory names (case-insensitive).
  * The file is read once into a small line store so sections can be
@@ -140,6 +141,8 @@ void ini_apply(void)
                 set_field(cur->args, sizeof(cur->args), val);
             else if (stricmp(key, "sound") == 0)
                 set_field(cur->sound, sizeof(cur->sound), val);
+            else if (stricmp(key, "cd") == 0)
+                set_field(cur->cdimg, sizeof(cur->cdimg), val);
             else if (stricmp(key, "source") == 0) {
                 if (stricmp(val, "exodos") == 0) cur->flags |= GF_EXODOS;
                 if (stricmp(val, "tdc") == 0)    cur->flags |= GF_TDC;

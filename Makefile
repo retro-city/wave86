@@ -15,7 +15,7 @@ SRCS = src/wave86.c src/ui.c src/vga.c src/scan.c src/ini.c src/music.c \
 MUSIC = $(wildcard music/*.IMF music/*.imf music/*.WLF music/*.wlf \
                    music/*.MOD music/*.mod)
 
-all: build/WAVE86.EXE build/WAVE.BAT build/WAVE86.INI music-files thumbs net
+all: build/WAVE86.EXE build/WAVE.BAT build/WAVE86.INI music-files thumbs net cdrom
 
 build/WAVE86.EXE: $(SRCS) src/wave86.h
 	@mkdir -p build
@@ -38,6 +38,11 @@ thumbs: $(wildcard THUMBS/*.THM)
 music-files: $(MUSIC)
 	@mkdir -p build/MUSIC
 	@if [ -n "$(MUSIC)" ]; then cp $(MUSIC) build/MUSIC/; fi
+
+# CD image drivers for real DOS (cdrom/README.md)
+cdrom: $(wildcard cdrom/*.COM cdrom/*.EXE)
+	@mkdir -p build
+	@cp cdrom/*.COM cdrom/*.EXE build/
 
 # --- the network side: WAVEGET (ours) and DHCP (mTCP's), both on mTCP, GPL
 MTCP_DIR  = $(abspath net/mtcp)
@@ -102,4 +107,4 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test clean music music-files thumbs net
+.PHONY: all run test clean music music-files thumbs net cdrom

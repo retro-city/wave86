@@ -21,6 +21,7 @@ typedef struct {
     char setup[FN_LEN];     /* setup/config program, "" if none */
     char args[32];          /* extra command line args */
     char sound[8];          /* sound= mode name (PicoGUS etc.) */
+    char cdimg[20];         /* CD image mounted while it runs: CD\X.ISO, or cd= */
     unsigned char flags;
 } Game;
 

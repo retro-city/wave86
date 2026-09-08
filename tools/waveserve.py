@@ -23,7 +23,7 @@ with an eXoDOS folder of the same name.
     GET /pack/<id>     the game's files: "F <bytes> <DOS path>\\n" + data
                        for each file, then "E\\n". Nothing to unzip on DOS.
 """
-import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil
+import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil, struct
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -98,6 +98,92 @@ def read_xml(root):
 
 
 SKIP_CMDS = {"cls", "exit", "mount", "imgmount", "cd", "c:", "d:", "rem", "echo", "pause", "loadfix", "cycles", "config", "keyb"}
+
+
+# raw CD sector layouts a cue sheet can name: (skip, sector size)
+SECTOR = {"MODE1/2048": (0, 2048), "MODE1/2352": (16, 2352),
+          "MODE2/2352": (24, 2352), "MODE2/2336": (8, 2336)}
+
+
+def parse_cue(text):
+    """[[file, [[track, mode, first index in frames], ...]], ...]"""
+    files = []
+    for line in text.splitlines():
+        w = line.split()
+        if not w:
+            continue
+        key = w[0].upper()
+        if key == "FILE":
+            m = re.match(r'\s*FILE\s+"(.*)"\s+\S+\s*$', line, re.I)
+            files.append([m.group(1) if m else w[1].strip('"'), []])
+        elif key == "TRACK" and files and len(w) > 2:
+            files[-1][1].append([int(w[1]), w[2].upper(), None])
+        elif key == "INDEX" and files and files[-1][1] and len(w) > 2:
+            try:
+                mm, ss, ff = (int(x) for x in w[2].split(":"))
+            except ValueError:
+                continue
+            fr = (mm * 60 + ss) * 75 + ff
+            tr = files[-1][1][-1]
+            if tr[2] is None or fr < tr[2]:
+                tr[2] = fr
+    return files
+
+
+def iso_specs(z, cue_name, members):
+    """The data tracks of a cue sheet inside a zip, as
+    (bin member, skip, sector size, first sector, sectors): one ISO each.
+    Audio tracks are dropped; the image is what a CD-ROM driver reads."""
+    specs = []
+    cue_dir = cue_name.rsplit("/", 1)[0] + "/" if "/" in cue_name else ""
+    lower = {n.lower(): n for n in members}
+    try:
+        text = z.read(cue_name).decode("latin-1")
+    except KeyError:
+        return specs
+    for fname, tracks in parse_cue(text):
+        member = lower.get((cue_dir + fname).lower())
+        if not member:
+            continue
+        size = z.getinfo(member).file_size
+        for k, (no, mode, start) in enumerate(tracks):
+            if mode not in SECTOR:
+                continue
+            skip, ssize = SECTOR[mode]
+            start = start or 0
+            end = tracks[k + 1][2] if k + 1 < len(tracks) and tracks[k + 1][2] is not None else size // ssize
+            count = end - start
+            # the image ends where its volume descriptor says, not at the
+            # bin's post-gap, or SHSUCDHD warns about the size on every load
+            try:
+                with z.open(member) as f:
+                    left = (start + 16) * ssize
+                    while left > 0:
+                        chunk = f.read(min(left, 1 << 20))
+                        if not chunk:
+                            break
+                        left -= len(chunk)
+                    pvd = f.read(ssize)[skip:skip + 2048]
+                if pvd[1:6] == b"CD001":
+                    vol = struct.unpack("<I", pvd[80:84])[0]
+                    if 0 < vol < count:
+                        count = vol
+            except Exception:
+                pass
+            if count > 0:
+                specs.append((member, skip, ssize, start, count))
+            break                       # one data track per file is the rule
+    return specs
+
+
+def iso_name(cue_name, used):
+    base = re.sub(r"[^A-Z0-9_-]", "", cue_name.rsplit("/", 1)[-1].rsplit(".", 1)[0].upper())[:8] or "DISC"
+    name, n = base, 1
+    while name in used:
+        n += 1
+        name = f"{base[:7]}{n}"
+    used.add(name)
+    return name
 
 
 def read_conf(root, short):
@@ -217,24 +303,39 @@ def index(root, max_mb, include_cd):
             if not infos:
                 continue
             top = infos[0].filename.split("/")[0]
-            files, total, names = [], 0, set()
+            files, total, names, cues = [], 0, set(), []
             for i in infos:
                 parts = i.filename.split("/")
                 if parts[0] != top or len(parts) < 2 or parts[-1].lower().endswith(".exo"):
                     continue
+                if parts[-1].lower().endswith(".cue"):
+                    cues.append(i.filename)
                 rel = dos_path(parts[1:])
                 if rel is None:
                     continue
                 if parts[1].upper() == "CD" or rel.rsplit(".", 1)[-1] in ("CUE", "BIN", "ISO", "IMG", "CCD", "SUB"):
-                    continue          # CD images stay on the server
+                    continue          # raw images stay on the server; see below
                 files.append((rel, i.filename, i.file_size))
                 total += i.file_size
                 names.add(parts[-1].upper())
             if not files or total > max_mb * 1024 * 1024:
-                continue
+                continue              # the limit is for the game, not its CD
             cands, cd = read_conf(root, top)
             if cd and not include_cd:
                 continue
+            # the CD, as one ISO per data track, made from the cue/bin while
+            # streaming; the DOS side mounts CD\NAME.ISO when the game runs
+            cd_kb, used = 0, set()
+            if include_cd:
+                with zipfile.ZipFile(path) as z:
+                    members = z.namelist()
+                    for cue in sorted(cues):
+                        for spec in iso_specs(z, cue, members):
+                            size = spec[4] * 2048
+                            files.append((f"CD\\{iso_name(cue, used)}.ISO", None, size, spec))
+                            total += size
+                            cd_kb += (size + 1023) // 1024
+            cd = bool(cd_kb)
             exe_file = ""
             for exe in cands:           # first word that is a real program wins
                 for ext in ("BAT", "EXE", "COM"):
@@ -248,7 +349,7 @@ def index(root, max_mb, include_cd):
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
                               zip=path, src="exodos", kb=(total + 1023) // 1024, files=files, exe=exe_file,
-                              cd=cd, genre=md.get("genre", ""), developer=md.get("developer", ""),
+                              cd=cd, cd_kb=cd_kb, genre=md.get("genre", ""), developer=md.get("developer", ""),
                               notes=md.get("notes", "")))
     games.sort(key=lambda g: g["title"].lower())
     return games
@@ -291,7 +392,7 @@ class H(BaseHTTPRequestHandler):
         if m.group(1) == "info":
             lines = [f"{g['title']} ({g['year']})" if g['year'] else g['title'], f"DIR {g['dir']}", f"SRC {g['src']}", f"EXE {g['exe'] or '?'}",
                      f"GENRE {g['genre']}", f"BY {g['developer']}", f"FILES {len(g['files'])}",
-                     f"KB {g['kb']}", f"CD {'yes' if g['cd'] else 'no'}",
+                     f"KB {g['kb']}", f"CD {str(g.get('cd_kb', 0) // 1024) + ' MB image' if g['cd'] else 'no'}",
                      f"PARTIAL {'yes' if g.get('partial') else 'no'}", ""]
             notes = g["notes"]
             while notes:
@@ -307,8 +408,12 @@ class H(BaseHTTPRequestHandler):
         self._head("application/octet-stream")
         if g["zip"]:
             with zipfile.ZipFile(g["zip"]) as z:
-                for rel, name, size in g["files"]:
+                for entry in g["files"]:
+                    rel, name, size = entry[:3]
                     self.wfile.write(f"F {size} {rel}\n".encode())
+                    if len(entry) == 4:
+                        self.send_iso(z, entry[3])
+                        continue
                     with z.open(name) as f:
                         shutil.copyfileobj(f, self.wfile, 65536)
         else:                           # plain files on disk (TDC)
@@ -317,6 +422,29 @@ class H(BaseHTTPRequestHandler):
                 with open(fp, "rb") as f:
                     shutil.copyfileobj(f, self.wfile, 65536)
         self.wfile.write(b"E\n")
+
+    def send_iso(self, z, spec):
+        """stream the 2048-byte payload of each sector of a data track"""
+        member, skip, ssize, start, count = spec
+        buf = bytearray()
+        with z.open(member) as f:
+            left = start * ssize             # zip streams cannot seek
+            while left > 0:
+                chunk = f.read(min(left, 1 << 20))
+                if not chunk:
+                    return
+                left -= len(chunk)
+            for _ in range(count):
+                s = f.read(ssize)
+                if len(s) < ssize:
+                    buf += bytes(2048 * (count - _))   # short bin: pad
+                    break
+                buf += s[skip:skip + 2048]
+                if len(buf) >= 65536:
+                    self.wfile.write(buf)
+                    buf = bytearray()
+        if buf:
+            self.wfile.write(buf)
 
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.client_address[0], fmt % args))

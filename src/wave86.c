@@ -7,6 +7,7 @@
  * restarts the menu. Games get every byte of conventional memory.
  */
 #include <stdio.h>
+#include <io.h>
 #include <stdlib.h>
 #include <string.h>
 #include <direct.h>
@@ -66,6 +67,73 @@ static unsigned getkey(void)
     return k & 0x00FF;              /* ascii */
 }
 
+/* write an INI cdmount=/cdunmount= line with $ISO filled in */
+static void put_template(FILE *f, const char *t, const char *iso)
+{
+    const char *p = t;
+    while (*p) {
+        if (strnicmp(p, "$ISO", 4) == 0) { fputs(iso, f); p += 4; }
+        else fputc(*p++, f);
+    }
+    fputc('\n', f);
+}
+
+/* DOSBox: its Z: drive carries the shell's programs */
+static int under_dosbox(void)
+{
+    return access("Z:\\IMGMOUNT.COM", 0) == 0 ||
+           access("Z:\\BIN\\IMGMOUNT.COM", 0) == 0 ||
+           access("Z:\\SYSTEM\\IMGMOUNT.COM", 0) == 0;
+}
+
+/*
+ * The lines that put a game's CD image on D: before it runs and take it
+ * off afterwards. cdmount=/cdunmount= in the INI win ($ISO stands for the
+ * image); otherwise DOSBox gets IMGMOUNT and real DOS gets Jason Hood's
+ * SHSUCDHD (image as a CD device) + SHSUCDX (drive letter) from the
+ * launcher's folder, in their 8086 builds on anything below a 386.
+ */
+static void emit_cd(FILE *f, const Game *g, int after)
+{
+    char iso[PATH_LEN + 32];
+    const char *t, *sep, *hd, *cdx;
+
+    if (!g->cdimg[0])
+        return;
+    if (strchr(g->cdimg, ':') || g->cdimg[0] == '\\')
+        strcpy(iso, g->cdimg);
+    else
+        sprintf(iso, "%s\\%s\\%s", gamedir, g->dir, g->cdimg);
+    t = ini_global(after ? "cdunmount" : "cdmount");
+    if (t && t[0]) {
+        put_template(f, t, iso);
+        return;
+    }
+    if (under_dosbox()) {
+        if (after) fprintf(f, "IMGMOUNT -u D\n");
+        else       fprintf(f, "IMGMOUNT D %s -t iso\n", iso);
+        return;
+    }
+    sep = home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\";
+    hd = "SHCDHD86.EXE";
+    cdx = "SHCDX86.COM";
+    if (cpu_level() >= 3) {             /* the 386 builds, when shipped */
+        char tool[PATH_LEN + 16];
+        sprintf(tool, "%s%sSHSUCDX.COM", home_dir, sep);
+        if (access(tool, 0) == 0) {
+            hd = "SHSUCDHD.EXE";
+            cdx = "SHSUCDX.COM";
+        }
+    }
+    if (after) {
+        fprintf(f, "%s%s%s /U /Q\n", home_dir, sep, cdx);
+        fprintf(f, "%s%s%s /U /Q\n", home_dir, sep, hd);
+    } else {
+        fprintf(f, "%s%s%s /F:%s /Q\n", home_dir, sep, hd, iso);
+        fprintf(f, "%s%s%s /D:SHSU-CDH,D /Q\n", home_dir, sep, cdx);
+    }
+}
+
 static void write_bat(const Game *g, int use_setup)
 {
     FILE *f = fopen("RUNGAME.BAT", "w");
@@ -79,10 +147,12 @@ static void write_bat(const Game *g, int use_setup)
     fprintf(f, "%c:\n", gamedir[0]);
     fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
     ini_emit_extras(f, g->dir, 0);     /* sound mode, env, pre */
+    emit_cd(f, g, 0);
     fprintf(f, "%s%s", is_bat ? "call " : "", prog);
     if (!use_setup && g->args[0])
         fprintf(f, " %s", g->args);
     fprintf(f, "\n");
+    emit_cd(f, g, 1);
     ini_emit_extras(f, g->dir, 1);     /* post */
     fprintf(f, "%c:\n", launcher_dir[0]);
     fprintf(f, "cd %s\n", launcher_dir);

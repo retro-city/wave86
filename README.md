@@ -83,7 +83,7 @@ Section names are game folder names. The launcher adds a section for
 every new folder it finds, so the file always lists your collection;
 press `F2` in the menu to give a game a proper name (or run
 `WAVE86 /name KEEN4 Commander Keen 4` from the prompt). Per game you can
-set `name`, `exe`, `setup`, `args` and `hide=1`; `source=exodos` or
+set `name`, `exe`, `setup`, `args`, `cd` and `hide=1`; `source=exodos` or
 `source=tdc` (set by the launcher after a download) shows where the game
 came from in the details. Anything you leave out is detected: the launcher prefers an EXE named like the folder, then
 `START`/`PLAY`/`GO` batch files, and ignores the usual `SETUP`,
@@ -204,9 +204,11 @@ On the machine with the collection (Mac, Linux, a NAS with Python):
 
 For eXoDOS it indexes the game zips, reads each game's `dosbox.conf`
 for the program that starts it and takes genre and description from the
-platform XML. `--cd` includes games whose DOSBox setup mounts a CD image,
-shipped without the image; many only use the disc for audio (Dune 2),
-others really need it and the menu marks those "NEEDS CD".
+platform XML. `--cd` includes the CD games: the server turns the cue/bin
+in the zip into a plain ISO while it streams (the 2048 data bytes of
+each sector, cut at the volume size; audio tracks are dropped), so
+Syndicate Plus arrives as its files plus `CD\SYNDICAT.ISO`, and the
+menu marks such games "CD IMAGE".
 
 The Total DOS Collection is plain folders, `1992/Title (1992)(Publisher)
 [Genre]/`, one game each, so there is no manifest to read: the title,
@@ -249,6 +251,34 @@ collection of 16,000 games fits in 64 KB; a letter key jumps through the
 titles starting with it. The server addresses games by folder name, so
 a list that is a few minutes old still fetches the right one.
 
+## CD images
+
+A game with an ISO in its `CD\` folder (or `cd=` in its INI section)
+gets the image mounted as D: for as long as it runs. The lines go into
+the same batch file as the game, so it works from the menu and from
+`WAVE86 /launch`:
+
+    SHSUCDHD /F:C:\GAMES\SYNDICAT\CD\SYNDICAT.ISO /Q
+    SHSUCDX /D:SHSU-CDH,D /Q
+    call RUN.BAT
+    SHSUCDX /U /Q
+    SHSUCDHD /U /Q
+
+On real DOS that is Jason Hood's SHSUCDHD (an image file as a CD-ROM
+device) and SHSUCDX (his small MSCDEX replacement), built from his
+sources into `cdrom/` and copied next to the launcher by `make`. They
+load before the game and unload after it, so nothing stays resident.
+Under DOSBox the launcher uses `IMGMOUNT D image -t iso` instead; it
+knows it is in DOSBox by the Z: drive. `cdmount=` and `cdunmount=` in
+the INI replace either, with `$ISO` standing for the image path.
+
+The disc lands on D: because that is where eXoDOS mounts it and games
+like Syndicate Plus have `D:` written into their start batch. If a real
+CD-ROM already owns D: with MSCDEX loaded, SHSUCDX refuses to install
+beside it: either let SHSUCDX drive the real drive too (`SHSUCDX
+/D:MSCD001` in AUTOEXEC.BAT instead of MSCDEX, giving the image its
+letter after that) or add `/I` through a `cdmount=` line.
+
 ## Testing without a DOS machine
 
 `WAVE86 /dump [DIR]` draws the menu with DIR selected (`/dump NET [DIR]`
@@ -272,9 +302,10 @@ single `call`.
     src/ini.c      WAVE86.INI
     src/music.c    AdLib detection, IMF player, playlist, volume
     src/mod.c      Sound Blaster DMA, ProTracker loader, sequencer, mixer
-src/cpu.c      CPU and memory identification for the header line
-src/net.c      the server's game list, download bookkeeping
-net/           WAVEGET.CPP, MTCP.CFG, mTCP's library and DHCP (GPL)
+    src/cpu.c      CPU and memory identification for the header line
+    src/net.c      the server's game list, download bookkeeping
+    net/           WAVEGET.CPP, MTCP.CFG, mTCP's library and DHCP (GPL)
+    cdrom/         SHSUCDHD and SHSUCDX, the CD image drivers for real DOS
     tools/         composers, converters, renderers (host side)
     music/         the soundtrack
     docs/          screenshot
@@ -284,5 +315,9 @@ net/           WAVEGET.CPP, MTCP.CFG, mTCP's library and DHCP (GPL)
 - Network support through a PicoMem card's NE2000, so the launcher can
   pull games and lists from a machine on the LAN. That is where this is
   heading.
+- Leaving CD images on the server: Michael Brutman's mTCP NetDrive
+  mounts a remote disk image as a drive, and SHSUCDHD reads an ISO from
+  it with no measurable overhead, so the 60 MB need not sit on the DOS
+  disk at all.
 - XM playback, if the 486 can take it.
 - Joystick navigation, 50-line mode, a wider list for big collections.
