@@ -242,7 +242,8 @@ runs DHCP and points the launcher at `10.0.2.2:8086`, which is the Mac
 as the emulator sees it, through the `WAVESRV` environment variable
 (it overrides `server=`). Start `waveserve.py` first.
 
-`WAVEGET.EXE` is a separate program built on mTCP (GPL v3, sources in
+`NE2000.COM` in `net/` is the Crynwr packet driver (GPL) for the card,
+the same one dosbox-x carries on its Z:. `WAVEGET.EXE` is a separate program built on mTCP (GPL v3, sources in
 `net/`), so the launcher itself stays a small 8086 program with no
 network code; downloads run through the same batch hand-off as games,
 with all memory free. Esc aborts a download. The list is read from disk
@@ -313,14 +314,16 @@ checks the batch the launcher generates. About half a minute.
 `make dosrun` is `make run` on a real kernel: the window boots DOS, loads
 the packet driver and DHCP, and starts the launcher with sound and the
 network view working against a waveserve on this machine. Games you
-download there land inside `build/dostest/hd.img`, not in `GAMES\`.
+download there land inside `build/dosrun/hd.img`, not in `GAMES\`.
 
 Any bootable 1.44 MB floppy image works as `DOS=`; the first setup disk
 of MS-DOS 5 or 6 is a plain boot disk once the harness replaces its
 AUTOEXEC. Keep those outside the repo. Your own test batch runs on C:
 with the launcher in `C:\WAVE86` and the games in `C:\GAMES`; whatever
 it writes to `C:\RESULTS` is printed, and `FAIL.TXT` there fails the
-run. Needs mtools (`brew install mtools`).
+run. `tools/nettest.bat` is one such batch: the packet driver, DHCP and a
+list fetch from a waveserve here, the chain the 486 uses. Needs mtools
+(`brew install mtools`).
 
 ## Layout
 

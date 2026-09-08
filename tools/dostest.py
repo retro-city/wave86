@@ -27,7 +27,7 @@ import argparse, os, re, shutil, struct, subprocess, sys, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKER = "WAVE86DONE-MARKER"
 LAUNCHER_FILES = ["WAVE86.EXE", "WAVE.BAT", "SHCDHD86.EXE", "SHCDX86.COM",
-                  "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG"]
+                  "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG", "NE2000.COM"]
 NET_FLAGS = ["-set", "ne2000 ne2000=true", "-set", "ne2000 backend=slirp",
              "-set", "ne2000 nicbase=300", "-set", "ne2000 nicirq=3"]
 
@@ -69,11 +69,8 @@ def make_hd(work, size_mb):
     img = os.path.join(work, "hd.img")
     if os.path.exists(img):
         os.remove(img)
-    # the packet driver for the NE2000 dosbox-x emulates lives on its Z:;
-    # a booted guest cannot see Z:, so take a copy while the shell is up
     dosbox(["-c", "mount d .", "-c", f"imgmake hd.img -t hd -size {size_mb} -fat 16 > D:\\MK.TXT",
-            "-c", "copy Z:\\SYSTEM\\NE2000.COM D:\\NE2000.COM > NUL", "-c", "exit"],
-           work, os.path.join(work, "imgmake.log"), wait=90)
+            "-c", "exit"], work, os.path.join(work, "imgmake.log"), wait=90)
     try:
         text = open(os.path.join(work, "MK.TXT"), errors="replace").read()
     except FileNotFoundError:
@@ -186,11 +183,10 @@ def fill_hd(img, off, build, games_dir, games, ini_extra, test, run=False):
     shutil.rmtree(stage, ignore_errors=True)
     w = os.path.join(stage, "WAVE86")
     os.makedirs(w)
-    for f in LAUNCHER_FILES + ["NE2000.COM"]:
-        for src in (os.path.join(build, f), os.path.join(work, f)):
-            if os.path.exists(src):
-                shutil.copy(src, w)
-                break
+    for f in LAUNCHER_FILES:
+        src = os.path.join(build, f)
+        if os.path.exists(src):
+            shutil.copy(src, w)
     if run:                                 # the real thing: shipped INI, music, pictures
         shutil.copy(os.path.join(build, "WAVE86.INI"), w)
         for d in ("MUSIC", "THUMBS"):
@@ -290,7 +286,7 @@ def main():
         if not os.path.isdir(os.path.join(a.games, name)):
             sys.exit(f"no game folder {name} under {a.games}")
 
-    work = os.path.join(a.build, "dostest")
+    work = os.path.join(a.build, "dosrun" if a.run else "dostest")   # a test must not clobber an open window
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work)
     total = sum(os.path.getsize(os.path.join(r, f)) for name in games
@@ -339,11 +335,11 @@ def main():
                  "-c", "boot -l a"]
     if a.run:
         print("dostest: booting into the launcher; close the dosbox-x window to end."
-              " Downloads land inside build/dostest/hd.img.")
+              " Downloads land inside build/dosrun/hd.img.")
         p = dosbox(NET_FLAGS + boot_cmds, work, os.path.join(work, "dosbox.log"), gui=True)
         p.wait()
         return
-    p = dosbox(boot_cmds, work, os.path.join(work, "dosbox.log"))
+    p = dosbox(NET_FLAGS + boot_cmds, work, os.path.join(work, "dosbox.log"))   # the NE2000 is there for scripts too
     t1 = time.time()
     finished = False
     try:

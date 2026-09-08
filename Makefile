@@ -51,7 +51,12 @@ MTCP_OPTS = -0 -ml -oh -ok -ot -s -oa -ei -zp2 -zpw -ob -ol+ -oi+ -q \
 MTCP_OBJS = packet arp eth ip tcp tcpsockm udp utils dns timer trace
 MTCP_SRC  = $(wildcard net/mtcp/TCPLIB/*.CPP) net/mtcp/TCPLIB/IPASM.ASM
 
-net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG
+net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM
+
+# the Crynwr NE2000 packet driver (GPL), for the real card and make dosrun
+build/NE2000.COM: net/NE2000.COM
+	@mkdir -p build
+	cp $< $@
 
 build/MTCP.CFG: net/MTCP.CFG
 	@mkdir -p build
