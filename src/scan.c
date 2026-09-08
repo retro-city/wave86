@@ -118,7 +118,9 @@ static void scan_one(Game *g)
     rc = _dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft);
     while (rc == 0) {
         const char *fn = ft.name;
-        if (fn[0] != '.' && fn[0] != '_') {
+        /* an empty EXE cannot run: a download that is still incomplete
+           on the server leaves such files behind */
+        if (fn[0] != '.' && fn[0] != '_' && ft.size != 0) {
             if (has_ext(fn, "EXE") || has_ext(fn, "COM") ||
                 has_ext(fn, "BAT")) {
                 char base[9], ext[4];

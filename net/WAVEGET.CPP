@@ -3,8 +3,8 @@
  *
  *   WAVEGET LIST host:port outfile
  *       GET /list from waveserve into outfile (one game per line).
- *   WAVEGET GET host:port DIR gamesdir [kb]
- *       GET /pack/DIR and write the files into gamesdir\DIR\.
+ *   WAVEGET GET host:port DIR gamesdir [kb [key]]
+ *       GET /pack/key (default: DIR) and write the files into gamesdir\DIR\.
  *
  * Needs a packet driver and MTCPCFG (run DHCP first), like every mTCP
  * program. Esc or Ctrl-Break aborts. Exit code 0 = done, 1 = network
@@ -194,9 +194,9 @@ static void ensureDirs(const char *rel) {
   }
 }
 
-static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal) {
+static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal, const char *key) {
   char path[64];
-  sprintf(path, "/pack/%s", dir);
+  sprintf(path, "/pack/%s", key ? key : dir);
   sprintf(gameRoot, "%s\\%s", gamesdir, dir);
   mkdir(gamesdir);
   mkdir(gameRoot);
@@ -263,7 +263,7 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
 
 /* ---------------------------------------------------------- main */
 static void usage(void) {
-  puts("WAVEGET LIST host:port outfile\nWAVEGET GET host:port DIR gamesdir [kb]");
+  puts("WAVEGET LIST host:port outfile\nWAVEGET GET host:port DIR gamesdir [kb [key]]");
   exit(1);
 }
 
@@ -286,7 +286,7 @@ int main(int argc, char **argv) {
   if (stricmp(argv[1], "LIST") == 0) {
     rc = doList(addr, port, argv[3]);
   } else if (stricmp(argv[1], "GET") == 0 && argc >= 5) {
-    rc = doGet(addr, port, argv[3], argv[4], argc > 5 ? strtoul(argv[5], NULL, 10) : 0);
+    rc = doGet(addr, port, argv[3], argv[4], argc > 5 ? strtoul(argv[5], NULL, 10) : 0, argc > 6 ? argv[6] : NULL);
   } else {
     Utils::endStack();
     usage();

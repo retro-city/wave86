@@ -41,6 +41,7 @@ static int opt_dump = 0;
 static int opt_dumpnet = 0;
 static int view = 0;                 /* 0 = games, 1 = the eXoDOS list */
 static const char *opt_dumpsel = NULL;
+static const char *opt_netsel = NULL;   /* /dump NET DIR: preselect that entry */
 static int opt_mustest = 0;
 static int opt_diag = 0;
 static const char *opt_launch = NULL;
@@ -244,28 +245,42 @@ static void net_fetch_list(void)
 /* download the selected game; comes back with it selected in the games view */
 static void net_download(int nsel)
 {
-    char cmd[PATH_LEN * 2 + 80], exe[PATH_LEN + 16], dir[9], title[33], msg[80];
-    NetGame __far *g = net_get(nsel);
-    _fstrcpy(dir, g->dir);
-    _fstrcpy(title, g->title);
+    char cmd[PATH_LEN * 2 + 96], exe[PATH_LEN + 16], msg[80], key[20];
+    const NetGame *g = net_get(nsel);
     waveget_path(exe);
     net_mark_pending(g);
-    sprintf(cmd, "%s GET %s %s %s %lu", exe, cfg_server, dir, gamedir, g->kb);
-    sprintf(msg, "WAVE86: Installing %s from the eXoDOS server ...", title);
+    /* the server key: DIR for eXoDOS, src:DIR for other collections */
+    if (stricmp(g->src, "exodos") == 0) strcpy(key, g->dir);
+    else sprintf(key, "%s:%s", g->src, g->dir);
+    sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, g->kb, key);
+    sprintf(msg, "WAVE86: Installing %s from the %s ...", g->title,
+            stricmp(g->src, "tdc") == 0 ? "Total DOS Collection" : "eXoDOS server");
     run_command(cmd, msg);
+}
+
+/* a download landed, but the scan found nothing to run in the folder */
+static void net_arrived_notice(void)
+{
+    char msg[80];
+    sprintf(msg, "%s ARRIVED WITH NOTHING TO RUN. THE SERVER HAD ONLY PART OF IT.",
+            net_pending_dir);
+    ui_status(msg);
 }
 
 int main(int argc, char **argv)
 {
     int sel = 0, top = 0;
-    int i;
+    int i, nsel0 = 0;
 
     for (i = 1; i < argc; i++) {
         if (stricmp(argv[i], "/dump") == 0) {
             opt_dump = 1;           /* optional: /dump DIR preselects a game */
             if (i + 1 < argc && argv[i + 1][0] != '/') {
                 opt_dumpsel = argv[i + 1];
-                if (stricmp(opt_dumpsel, "NET") == 0) opt_dumpnet = 1;
+                if (stricmp(opt_dumpsel, "NET") == 0) {
+                    opt_dumpnet = 1;
+                    if (i + 2 < argc && argv[i + 2][0] != '/') opt_netsel = argv[i + 2];
+                }
             }
         }
         if (stricmp(argv[i], "/nopal") == 0) opt_nopal = 1;
@@ -408,10 +423,16 @@ int main(int argc, char **argv)
     if (net_view_pending() || opt_dumpnet) {
         net_load();
         view = 1;
+        if (opt_netsel) {
+            int j;
+            for (j = 0; j < net_count; j++)
+                if (stricmp(net_get(j)->dir, opt_netsel) == 0) { nsel0 = j; break; }
+        }
     }
     vid_text_mode();
     vid_set_palette();
-    if (view) net_redraw(0, 0); else redraw(sel, top);
+    if (view) net_redraw(nsel0, nsel0 > 13 ? nsel0 - 13 : 0); else redraw(sel, top);
+    if (i == -2) net_arrived_notice();
 
     if (opt_dump) {
         scr_dump("SCREEN.BIN", "FONT.BIN", "PAL.BIN");
@@ -444,8 +465,6 @@ int main(int argc, char **argv)
                 continue;
             case 0x0D:
                 if (net_count) {
-                    char dir[9];
-                    _fstrcpy(dir, net_get(nsel)->dir);
                     net_download(nsel);
                     /* bare mode only: back here with the game on disk */
                     scan_games();
@@ -454,6 +473,7 @@ int main(int argc, char **argv)
                     net_free();
                     if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
                     redraw(sel, top);
+                    if (i == -2) net_arrived_notice();
                 }
                 continue;
             case 'm': case 'M': mus_toggle(); ui_status(NULL); continue;
@@ -462,13 +482,21 @@ int main(int argc, char **argv)
             case '.': case '>': mus_skip(1); ui_status(NULL); continue;
             case ',': case '<': mus_skip(-1); ui_status(NULL); continue;
             default:
+                /* letter jump: the index knows where each initial starts;
+                   the same letter again steps to the next such title */
                 if (k >= 'a' && k <= 'z') k -= 32;
                 if (k >= 'A' && k <= 'Z' && net_count) {
-                    for (i = 1; i <= net_count; i++) {
-                        int gi = (nsel + i) % net_count;
-                        char c = net_get(gi)->title[0];
+                    int first = net_letter_first((char)k);
+                    if (first >= 0) {
+                        char c = net_get(nsel)->title[0];
                         if (c >= 'a' && c <= 'z') c -= 32;
-                        if ((unsigned)c == k) { nsel = gi; break; }
+                        if ((unsigned)c == k && nsel + 1 < net_count) {
+                            char n = net_get(nsel + 1)->title[0];
+                            if (n >= 'a' && n <= 'z') n -= 32;
+                            nsel = ((unsigned)n == k) ? nsel + 1 : first;
+                        } else {
+                            nsel = first;
+                        }
                     }
                 }
                 break;

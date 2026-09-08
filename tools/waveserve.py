@@ -12,13 +12,18 @@ tells which program starts the game (and marks CD games: left out unless
 CD for audio), and xml/all/MS-DOS.xml gives title, year, genre,
 developer and notes. The index is rebuilt every --rescan seconds.
 
-    GET /list          id|DIR|Title|year|genre|KB|EXE|CD  (CD = 1 when the
-                       game's DOSBox setup mounted a CD image)
+    GET /list          id|DIR|Title|year|genre|KB|EXE|CD|SRC  (CD = 1 when
+                       the game needs a CD image; SRC = exodos or tdc)
+
+A second root, --tdc DIR, adds a Total DOS Collection tree: <year>/<Title
+(Year)(Publisher) [Genre]>/ folders of plain files. They get 8.3 folder
+names made from the title and are keyed "tdc:DIR" so they never collide
+with an eXoDOS folder of the same name.
     GET /info/<id>     a few lines about one game (<id> or DIR)
     GET /pack/<id>     the game's files: "F <bytes> <DOS path>\\n" + data
                        for each file, then "E\\n". Nothing to unzip on DOS.
 """
-import os, re, sys, zipfile, argparse, unicodedata, threading, time
+import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -125,9 +130,79 @@ def read_conf(root, short):
     return [], False
 
 
+TDC_RE = re.compile(r'^(?P<title>.*?)\s*\((?P<year>\d{4}|\d{3}x|\d{2}xx)\)\((?P<pub>[^)]*)\)\s*(?:\[(?P<genre>[^\]]*)\])?(?:\s*\[[^\]]*\])*\s*$')
+PLACEHOLDER_AFTER = 1577836800          # 2020-01-01: no DOS game file is newer
+TDC_TAGS = r'\[[^\]]*\]|\((?:Installer|Alt|Demo|Beta|Fix|demo|alt)[^)]*\)'
+
+
+def short_name(title, full, used):
+    """a stable 8.3 folder name for a TDC game: from the title, hash on clash"""
+    base = re.sub(r'[^A-Z0-9]', '', title.upper())[:8] or "GAME"
+    cand = base
+    if cand in used and used[cand] != full:
+        cand = base[:6] + "%02X" % (zlib.crc32(full.encode()) & 0xFF)
+        if cand in used and used[cand] != full:
+            cand = base[:4] + "%04X" % (zlib.crc32(full.encode()) & 0xFFFF)
+    used[cand] = full
+    return cand
+
+
+def index_tdc(root, max_mb):
+    """Total DOS Collection: <year>/<Title (Year)(Publisher) [Genre]>/files"""
+    games, used = [], {}
+    if not root or not os.path.isdir(root):
+        return games
+    for ydir in sorted(os.listdir(root)):
+        yp = os.path.join(root, ydir)
+        if not os.path.isdir(yp):
+            continue
+        for fn in sorted(os.listdir(yp)):
+            gp = os.path.join(yp, fn)
+            if not os.path.isdir(gp):
+                continue
+            m = TDC_RE.match(re.sub(r'\.img$', '', fn, flags=re.I))
+            if m:
+                title, year, pub, genre = m.group("title"), m.group("year"), m.group("pub"), m.group("genre") or ""
+            else:
+                title, year, pub, genre = fn, ydir, "", ""
+            tags = re.findall(TDC_TAGS, title)
+            clean = re.sub(TDC_TAGS, '', title).strip() or title
+            files, total, partial = [], 0, False
+            for r_, _, fs_ in os.walk(gp):
+                for n in fs_:
+                    fp = os.path.join(r_, n)
+                    rel = dos_path(os.path.relpath(fp, gp).split(os.sep))
+                    if rel is None:
+                        continue
+                    st = os.stat(fp)
+                    # a torrent client leaves files it has not fetched yet as
+                    # 0 bytes dated the day the torrent was added; real
+                    # 0-byte game files carry their old date. Placeholders
+                    # mark the game incomplete and stay out of the pack.
+                    if st.st_size == 0 and st.st_mtime > PLACEHOLDER_AFTER:
+                        partial = True
+                        continue
+                    files.append((rel, fp, st.st_size))
+                    total += st.st_size
+            if not files or total == 0 or total > max_mb * 1024 * 1024:
+                continue                # nothing downloaded yet
+            files.sort()
+            d = short_name(clean, fn, used)
+            if not year.isdigit():
+                year = ydir if ydir.isdigit() else ""
+            games.append(dict(title=ascii_text(clean), year=year, dir=d, zip=None, src="tdc",
+                              kb=(total + 1023) // 1024, files=files, exe="", cd=False,
+                              partial=partial,
+                              genre=ascii_text(genre), developer=ascii_text(pub),
+                              notes=ascii_text(" ".join(tags))))
+    return games
+
+
 def index(root, max_mb, include_cd):
-    meta = read_xml(root)
+    meta = read_xml(root) if root else {}
     seen, games = set(), []
+    if not root:
+        return games
     for zdir in zip_dirs(root):
         for fn in sorted(os.listdir(zdir)):
             m = re.match(r'^(.*) \((\d{4})\)\.zip$', fn)
@@ -172,7 +247,7 @@ def index(root, max_mb, include_cd):
             md = meta.get(top.lower(), {})
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
-                              zip=path, kb=(total + 1023) // 1024, files=files, exe=exe_file,
+                              zip=path, src="exodos", kb=(total + 1023) // 1024, files=files, exe=exe_file,
                               cd=cd, genre=md.get("genre", ""), developer=md.get("developer", ""),
                               notes=md.get("notes", "")))
     games.sort(key=lambda g: g["title"].lower())
@@ -195,7 +270,7 @@ class H(BaseHTTPRequestHandler):
             games = GAMES
         p = self.path
         if p == "/list":
-            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd'])}\r\n"
+            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0)}|{g['src']}\r\n"
                            for i, g in enumerate(games)).encode("ascii", "replace")
             self._head("text/plain", len(body))
             self.wfile.write(body)
@@ -206,15 +281,18 @@ class H(BaseHTTPRequestHandler):
             key = m.group(2)
             if key.isdigit() and int(key) < len(games):
                 g = games[int(key)]
-            else:                       # by folder name: stable across rescans
-                g = next((x for x in games if x["dir"] == key.upper()), None)
+            else:                       # "DIR" (eXoDOS) or "src:DIR"
+                src, _, d = key.rpartition(":")
+                src = src or "exodos"
+                g = next((x for x in games if x["dir"] == d.upper() and x["src"] == src), None)
         if g is None:
             self.send_error(404)
             return
         if m.group(1) == "info":
-            lines = [f"{g['title']} ({g['year']})", f"DIR {g['dir']}", f"EXE {g['exe'] or '?'}",
+            lines = [f"{g['title']} ({g['year']})" if g['year'] else g['title'], f"DIR {g['dir']}", f"SRC {g['src']}", f"EXE {g['exe'] or '?'}",
                      f"GENRE {g['genre']}", f"BY {g['developer']}", f"FILES {len(g['files'])}",
-                     f"KB {g['kb']}", f"CD {'yes' if g['cd'] else 'no'}", ""]
+                     f"KB {g['kb']}", f"CD {'yes' if g['cd'] else 'no'}",
+                     f"PARTIAL {'yes' if g.get('partial') else 'no'}", ""]
             notes = g["notes"]
             while notes:
                 cut = notes.rfind(" ", 0, 76) if len(notes) > 76 else len(notes)
@@ -227,15 +305,17 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         self._head("application/octet-stream")
-        with zipfile.ZipFile(g["zip"]) as z:
-            for rel, name, size in g["files"]:
+        if g["zip"]:
+            with zipfile.ZipFile(g["zip"]) as z:
+                for rel, name, size in g["files"]:
+                    self.wfile.write(f"F {size} {rel}\n".encode())
+                    with z.open(name) as f:
+                        shutil.copyfileobj(f, self.wfile, 65536)
+        else:                           # plain files on disk (TDC)
+            for rel, fp, size in g["files"]:
                 self.wfile.write(f"F {size} {rel}\n".encode())
-                with z.open(name) as f:
-                    while True:
-                        chunk = f.read(65536)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
+                with open(fp, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile, 65536)
         self.wfile.write(b"E\n")
 
     def log_message(self, fmt, *args):
@@ -245,22 +325,27 @@ class H(BaseHTTPRequestHandler):
 def main():
     global GAMES
     ap = argparse.ArgumentParser()
-    ap.add_argument("root")
+    ap.add_argument("root", nargs="?", help="eXoDOS folder")
+    ap.add_argument("--tdc", help="Total DOS Collection folder (the <year> folders)")
     ap.add_argument("--port", type=int, default=8086)
     ap.add_argument("--max-mb", type=int, default=30)
     ap.add_argument("--cd", action="store_true", help="include games that need a CD image")
     ap.add_argument("--rescan", type=int, default=300, help="seconds between re-indexing")
     a = ap.parse_args()
 
+    if not a.root and not a.tdc:
+        ap.error("give an eXoDOS folder and/or --tdc DIR")
+
     def reindex(first=False):
         global GAMES
-        games = index(a.root, a.max_mb, a.cd)
+        games = index(a.root, a.max_mb, a.cd) + index_tdc(a.tdc, a.max_mb)
+        games.sort(key=lambda g: g["title"].lower())
         with LOCK:
             changed = [g["title"] for g in games] != [g["title"] for g in GAMES]
             GAMES = games
         if first or changed:
-            print(f"waveserve: {len(games)} games from {a.root} "
-                  f"({sum(1 for g in games if g['exe'])} with a known exe), port {a.port}", flush=True)
+            print(f"waveserve: {len(games)} games ({sum(1 for g in games if g['src']=='exodos')} eXoDOS, "
+                  f"{sum(1 for g in games if g['src']=='tdc')} TDC), port {a.port}", flush=True)
 
     reindex(first=True)
 

@@ -310,6 +310,8 @@ void ui_details(int sel)
     field(12, "EXEC", g->exe, A(7, 0));
     if (g->flags & GF_EXODOS)
         scr_puts(PANE_X + PANE_W - 2 - 10, 13, "\xAE eXoDOS \xAF", A(11, 0));
+    if (g->flags & GF_TDC)
+        scr_puts(PANE_X + PANE_W - 2 - 7, 13, "\xAE TDC \xAF", A(11, 0));
     field(13, "SETUP", g->setup[0] ? g->setup : "none",
           g->setup[0] ? A(7, 0) : A(8, 0));
     {
@@ -429,7 +431,7 @@ void ui_net_static(void)
     draw_logo();
     draw_divider();
     draw_box(LIST_X, PANE_TOP, LIST_W, PANE_H, A(3, 0));
-    sprintf(t, " EXODOS %d ", net_count);
+    sprintf(t, " NETWORK %d ", net_count);
     scr_puts(LIST_X + 2, PANE_TOP, t, A(11, 0));
     draw_box(PANE_X, PANE_TOP, PANE_W, PANE_H, A(3, 0));
     scr_puts(PANE_X + 2, PANE_TOP, " DOWNLOAD ", A(11, 0));
@@ -454,19 +456,18 @@ void ui_net_list(int sel, int top)
         if (gi >= net_count)
             continue;
         {
-            NetGame __far *g = net_get(gi);
+            const NetGame *g = net_get(gi);
             int is_sel = (gi == sel);
             unsigned char at = is_sel ? A(15, 3) : A(7, 0);
             unsigned char ad = is_sel ? A(0, 3) : A(8, 0);
             char nm[30], sz[12];
-            int k;
 
             if (is_sel) {
                 scr_fill(LIST_X + 1, y, LIST_W - 2, 1, ' ', at);
                 scr_put(LIST_X + 1, y, CH_ARROW, A(14, 3));
             }
-            for (k = 0; k < 26 && g->title[k]; k++) nm[k] = g->title[k];
-            nm[k] = 0;
+            strncpy(nm, g->title, 26);
+            nm[26] = 0;
             scr_puts(LIST_X + 3, y, nm, at);
             fmt_kb(sz, g->kb);
             scr_puts(LIST_X + LIST_W - 2 - strlen(sz), y, sz, ad);
@@ -485,32 +486,40 @@ void ui_net_list(int sel, int top)
 void ui_net_details(int sel)
 {
     int y;
-    char buf[48], sz[12], title[34], dir[9], exe[13];
-    NetGame __far *g;
+    char buf[48], sz[12];
+    const NetGame *g;
 
     for (y = PANE_TOP + 1; y < PANE_TOP + PANE_H - 1; y++)
         scr_fill(PANE_X + 1, y, PANE_W - 2, 1, ' ', A(7, 0));
     if (net_count == 0) {
-        scr_puts(PANE_X + 2, 9, "GAMES FROM YOUR EXODOS FOLDER,", A(8, 0));
+        scr_puts(PANE_X + 2, 9, "GAMES FROM YOUR COLLECTIONS,", A(8, 0));
         scr_puts(PANE_X + 2, 10, "SERVED BY WAVESERVE.PY.", A(8, 0));
         return;
     }
     g = net_get(sel);
-    _fstrcpy(title, g->title); _fstrcpy(dir, g->dir); _fstrcpy(exe, g->exe);
-    scr_puts(PANE_X + 2, 9, title, A(15, 0));
-    scr_hline(PANE_X + 2, 10, strlen(title), CH_H, A(3, 0));
-    sprintf(buf, "%u", g->year);
-    field(11, "YEAR", buf, A(7, 0));
-    sprintf(buf, "%s\\%s", gamedir, dir);
+    scr_puts(PANE_X + 2, 9, g->title, A(15, 0));
+    scr_hline(PANE_X + 2, 10, strlen(g->title), CH_H, A(3, 0));
+    if (g->year) sprintf(buf, "%u   ", g->year); else buf[0] = 0;
+    strcat(buf, stricmp(g->src, "tdc") == 0 ? "TOTAL DOS COLLECTION" : "EXODOS");
+    field(11, "FROM", buf, A(7, 0));
+    sprintf(buf, "%s\\%s", gamedir, g->dir);
     if (strlen(buf) > PANE_W - 11) buf[PANE_W - 11] = 0;
     field(12, "TO", buf, A(7, 0));
-    field(13, "EXEC", exe[0] ? exe : "(will be detected)", exe[0] ? A(7, 0) : A(8, 0));
+    field(13, "EXEC", g->exe[0] ? g->exe : "(will be detected)", g->exe[0] ? A(7, 0) : A(8, 0));
     fmt_kb(sz, g->kb);
     field(14, "SIZE", sz, A(7, 0));
     if (g->cd)
         scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE NEEDS CD \xAF", A(12, 0));
-    scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO", A(8, 0));
-    scr_puts(PANE_X + 2, 21, "YOUR GAMES FOLDER.", A(8, 0));
+    else if (g->partial)
+        scr_puts(PANE_X + PANE_W - 2 - 14, 14, "\xAE INCOMPLETE \xAF", A(12, 0));
+    if (g->partial) {
+        scr_puts(PANE_X + 2, 19, "THE SERVER HAS ONLY PART OF", A(8, 0));
+        scr_puts(PANE_X + 2, 20, "THIS GAME SO FAR. ENTER GETS", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "WHAT IS THERE.", A(8, 0));
+    } else {
+        scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "YOUR GAMES FOLDER.", A(8, 0));
+    }
 }
 
 void ui_net_keybar(void)

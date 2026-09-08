@@ -1,47 +1,44 @@
 /*
- * net.c - the eXoDOS list and the bookkeeping around downloads.
+ * net.c - the game list from the server and the bookkeeping around
+ * downloads.
  *
  * The launcher itself never talks to the network. WAVEGET.EXE (an mTCP
  * program next to the launcher) fetches NETLIST.TXT from waveserve and
  * streams game packs into C:\GAMES; it runs through the same batch
- * hand-off as a game. What lives here: reading the list into far memory,
- * and two small state files that survive the round trip:
- *   NETGAME.TXT  DIR|Title|EXE   a download was started; on return, name
- *                                the new folder in the INI and select it
- *   NETVIEW.TXT                  reopen the network view on return
+ * hand-off as a game. What lives here:
+ *   - the list: NETLIST.TXT can hold thousands of games (a Total DOS
+ *     Collection), so only a table of line offsets is kept in far memory
+ *     and lines are read on demand; a first-letter index makes jumping
+ *     cheap.
+ *   - two small state files that survive the round trip:
+ *     NETGAME.TXT  DIR|Title|EXE|SRC  a download was started; on return,
+ *                                    name and tag the new folder, select it
+ *     NETVIEW.TXT                    reopen the network view on return
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
+#include <io.h>
 #include "wave86.h"
 
-#define NET_PER_BLOCK 700          /* 700 x 62 bytes < 44K */
-#define NET_BLOCKS    3            /* up to 2100 games in memory */
+#define OFF_PER_BLOCK 8000         /* 8000 x 4 bytes = 32000 per block */
+#define OFF_BLOCKS    2            /* up to 16000 games */
 
 int net_count = 0;
 char cfg_server[32] = "";
+char net_pending_dir[9] = "";
 
-static NetGame __far *blocks[NET_BLOCKS];
-static char pending_dir[FN_LEN] = "";
+static unsigned long __far *offs[OFF_BLOCKS];
+static int letter_first[27];       /* first index per initial A..Z, [26] = none */
+static FILE *listf = NULL;
+static NetGame cur;
+static int cur_idx = -1;
 
 static void net_path(char *dst, const char *name)
 {
     sprintf(dst, "%s%s%s", home_dir,
             home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\", name);
-}
-
-NetGame __far *net_get(int i)
-{
-    return blocks[i / NET_PER_BLOCK] + (i % NET_PER_BLOCK);
-}
-
-void net_free(void)
-{
-    int i;
-    for (i = 0; i < NET_BLOCKS; i++)
-        if (blocks[i]) { _ffree(blocks[i]); blocks[i] = NULL; }
-    net_count = 0;
 }
 
 static char *field(char **p)
@@ -53,60 +50,116 @@ static char *field(char **p)
     return s;
 }
 
-/* NETLIST.TXT: id|DIR|Title|year|genre|KB|EXE|CD per line */
+static void chomp(char *line)
+{
+    char *e = line + strlen(line);
+    while (e > line && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
+}
+
+/* id|DIR|Title|year|genre|KB|EXE|CD|SRC -> cur */
+static void parse_line(char *line, NetGame *g)
+{
+    char *p = line;
+    char *id, *dir, *title, *year, *genre, *kb, *exe, *cd, *src;
+
+    chomp(line);
+    id = field(&p); dir = field(&p); title = field(&p); year = field(&p);
+    genre = field(&p); kb = field(&p); exe = field(&p); cd = field(&p);
+    src = field(&p);
+    (void)id; (void)genre;
+    memset(g, 0, sizeof(*g));
+    strncpy(g->dir, dir, 8);
+    strncpy(g->title, title, 32);
+    strncpy(g->exe, exe, 12);
+    g->year = (unsigned)atoi(year);
+    g->kb = strtoul(kb, NULL, 10);
+    g->cd = (atoi(cd) & 1) != 0;          /* flags: 1 = needs CD, 2 = incomplete */
+    g->partial = (atoi(cd) & 2) != 0;
+    strncpy(g->src, src[0] ? src : "exodos", 7);
+}
+
+void net_free(void)
+{
+    int i;
+    for (i = 0; i < OFF_BLOCKS; i++)
+        if (offs[i]) { _ffree(offs[i]); offs[i] = NULL; }
+    if (listf) { fclose(listf); listf = NULL; }
+    net_count = 0;
+    cur_idx = -1;
+}
+
+static int initial_of(const char *title)
+{
+    char c = title[0];
+    if (c >= 'a' && c <= 'z') c -= 32;
+    return (c >= 'A' && c <= 'Z') ? c - 'A' : 26;
+}
+
+/* one pass over NETLIST.TXT: remember where every line starts */
 int net_load(void)
 {
     char path[PATH_LEN + 16];
     char line[160];
-    FILE *f;
+    int i;
 
     net_free();
     net_path(path, "NETLIST.TXT");
-    f = fopen(path, "r");
-    if (!f)
+    listf = fopen(path, "r");
+    if (!listf)
         return 0;
-    while (fgets(line, sizeof(line), f) && net_count < NET_PER_BLOCK * NET_BLOCKS) {
-        char *p = line, *e;
-        NetGame __far *g;
-        int b = net_count / NET_PER_BLOCK;
-        char *id, *dir, *title, *year, *genre, *kb, *exe, *cd;
-
-        e = line + strlen(line);
-        while (e > line && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
-        id = field(&p); dir = field(&p); title = field(&p); year = field(&p);
-        genre = field(&p); kb = field(&p); exe = field(&p); cd = field(&p);
-        (void)id; (void)genre;
-        if (!dir[0] || !title[0])
-            continue;
-        if (!blocks[b]) {
-            blocks[b] = (NetGame __far *)_fmalloc(NET_PER_BLOCK * sizeof(NetGame));
-            if (!blocks[b]) break;
+    for (i = 0; i < 27; i++) letter_first[i] = -1;
+    for (;;) {
+        long at = ftell(listf);
+        int b = net_count / OFF_PER_BLOCK;
+        char *p, *t;
+        if (net_count >= OFF_PER_BLOCK * OFF_BLOCKS) break;
+        if (!fgets(line, sizeof(line), listf)) break;
+        if (!offs[b]) {
+            offs[b] = (unsigned long __far *)_fmalloc(OFF_PER_BLOCK * sizeof(unsigned long));
+            if (!offs[b]) break;
         }
-        g = net_get(net_count);
-        _fmemset(g, 0, sizeof(NetGame));
-        _fstrncpy(g->dir, dir, 8);
-        _fstrncpy(g->title, title, 32);
-        _fstrncpy(g->exe, exe, 12);
-        g->year = (unsigned)atoi(year);
-        g->kb = strtoul(kb, NULL, 10);
-        g->cd = (cd[0] == '1');
+        p = line; field(&p); field(&p); t = field(&p);    /* id, DIR, title */
+        if (!t[0]) continue;
+        {
+            int li = initial_of(t);
+            if (letter_first[li] < 0) letter_first[li] = net_count;
+        }
+        offs[b][net_count % OFF_PER_BLOCK] = (unsigned long)at;
         net_count++;
     }
-    fclose(f);
     return net_count;
 }
 
-void net_mark_pending(const NetGame __far *g)
+const NetGame *net_get(int i)
+{
+    char line[160];
+    if (i < 0 || i >= net_count || !listf)
+        return &cur;
+    if (i == cur_idx)
+        return &cur;
+    fseek(listf, (long)offs[i / OFF_PER_BLOCK][i % OFF_PER_BLOCK], SEEK_SET);
+    if (fgets(line, sizeof(line), listf))
+        parse_line(line, &cur);
+    cur_idx = i;
+    return &cur;
+}
+
+/* index of the first title starting with c (A-Z), or -1 */
+int net_letter_first(char c)
+{
+    if (c >= 'a' && c <= 'z') c -= 32;
+    if (c < 'A' || c > 'Z') return -1;
+    return letter_first[c - 'A'];
+}
+
+void net_mark_pending(const NetGame *g)
 {
     char path[PATH_LEN + 16];
     FILE *f;
-    char dir[9], title[33], exe[13];
-
-    _fstrcpy(dir, g->dir); _fstrcpy(title, g->title); _fstrcpy(exe, g->exe);
     net_path(path, "NETGAME.TXT");
     f = fopen(path, "w");
     if (!f) return;
-    fprintf(f, "%s|%s|%s\n", dir, title, exe);
+    fprintf(f, "%s|%s|%s|%s\n", g->dir, g->title, g->exe, g->src);
     fclose(f);
 }
 
@@ -119,7 +172,6 @@ void net_mark_view(void)
     if (f) { fputs("1\n", f); fclose(f); }
 }
 
-/* returns 1 if the network view should be reopened */
 int net_view_pending(void)
 {
     char path[PATH_LEN + 16];
@@ -134,14 +186,16 @@ int net_view_pending(void)
 
 /*
  * After a scan: if a download was started, give the new folder its
- * proper name and exe in the INI. Returns its index in games[], or -1.
+ * proper name, exe and source in the INI. Returns its index; -1 if
+ * nothing arrived, -2 if the folder is there but the scan found nothing
+ * to run in it (the server had only part of the game).
  */
 int net_apply_pending(void)
 {
     char path[PATH_LEN + 16];
     char line[96];
     FILE *f;
-    char *p, *dir, *title, *exe;
+    char *p, *dir, *title, *exe, *src;
     int i;
 
     net_path(path, "NETGAME.TXT");
@@ -151,26 +205,27 @@ int net_apply_pending(void)
     if (!fgets(line, sizeof(line), f)) { fclose(f); return -1; }
     fclose(f);
     remove(path);
+    chomp(line);
     p = line;
-    dir = field(&p); title = field(&p); exe = field(&p);
-    if (exe) {
-        char *e = exe + strlen(exe);
-        while (e > exe && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
-    }
-    strncpy(pending_dir, dir, FN_LEN - 1);
+    dir = field(&p); title = field(&p); exe = field(&p); src = field(&p);
+    if (!src[0]) src = "exodos";
+    strncpy(net_pending_dir, dir, 8);
+    net_pending_dir[8] = 0;
     i = find_game(dir);
-    if (i < 0)
-        return -1;                      /* nothing arrived */
+    if (i < 0) {
+        sprintf(path, "%s\\%s", gamedir, dir);
+        return access(path, 0) == 0 ? -2 : -1;
+    }
     if (title[0]) {
         strncpy(games[i].name, title, NAME_LEN - 1);
         ini_write_name(dir, title);
     }
-    if (exe && exe[0]) {
+    if (exe[0]) {
         strncpy(games[i].exe, exe, FN_LEN - 1);
         ini_write_key(dir, "exe", exe);
     }
-    games[i].flags |= GF_EXODOS;
-    ini_write_key(dir, "source", "exodos");
+    games[i].flags |= stricmp(src, "tdc") == 0 ? GF_TDC : GF_EXODOS;
+    ini_write_key(dir, "source", src);
     sort_games();
     return find_game(dir);
 }

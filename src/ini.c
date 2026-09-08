@@ -140,8 +140,10 @@ void ini_apply(void)
                 set_field(cur->args, sizeof(cur->args), val);
             else if (stricmp(key, "sound") == 0)
                 set_field(cur->sound, sizeof(cur->sound), val);
-            else if (stricmp(key, "source") == 0 && stricmp(val, "exodos") == 0)
-                cur->flags |= GF_EXODOS;
+            else if (stricmp(key, "source") == 0) {
+                if (stricmp(val, "exodos") == 0) cur->flags |= GF_EXODOS;
+                if (stricmp(val, "tdc") == 0)    cur->flags |= GF_TDC;
+            }
             else if (stricmp(key, "hide") == 0 && val[0] == '1')
                 cur->flags |= GF_HIDE;
             *eq = '=';

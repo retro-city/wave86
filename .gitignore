@@ -18,3 +18,4 @@ music/techno.mod
 music/warrior.mod
 music/worms.mod
 build_*/
+__pycache__/

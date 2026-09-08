@@ -39,7 +39,7 @@ in dosbox-x before it goes onto the real machine.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
-| N | the eXoDOS list on the network (Enter downloads, L refreshes) |
+| N | the games on the server (Enter downloads, L refreshes) |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
@@ -83,9 +83,9 @@ Section names are game folder names. The launcher adds a section for
 every new folder it finds, so the file always lists your collection;
 press `F2` in the menu to give a game a proper name (or run
 `WAVE86 /name KEEN4 Commander Keen 4` from the prompt). Per game you can
-set `name`, `exe`, `setup`, `args` and `hide=1`; `source=exodos` (set by
-the launcher after a download) shows an eXoDOS tag in the details. Anything you leave out
-is detected: the launcher prefers an EXE named like the folder, then
+set `name`, `exe`, `setup`, `args` and `hide=1`; `source=exodos` or
+`source=tdc` (set by the launcher after a download) shows where the game
+came from in the details. Anything you leave out is detected: the launcher prefers an EXE named like the folder, then
 `START`/`PLAY`/`GO` batch files, and ignores the usual `SETUP`,
 `INSTALL`, `DOS4GW` and friends.
 
@@ -188,24 +188,40 @@ near-identical patterns merged until they fit. VGA only.
 
     python3 tools/makethumb.py screenshot.png THUMBS/KEEN4.THM    # needs ffmpeg
 
-## Games from eXoDOS over the network
+## Games from eXoDOS or the Total DOS Collection over the network
 
-Press `N` in the menu and the launcher shows the games in your eXoDOS
+Press `N` in the menu and the launcher shows the games in your
 collection, served from a machine on the LAN; Enter downloads one
 straight into `C:\GAMES` and it appears in the games list, named and
 with its executable set. Nothing is unzipped on the DOS side: the server
 streams plain files.
 
-On the machine with eXoDOS (Mac, Linux, a NAS with Python):
+On the machine with the collection (Mac, Linux, a NAS with Python):
 
     python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd
+    python3 tools/waveserve.py --tdc ~/Downloads/1981-1992 --port 8086
+    python3 tools/waveserve.py ~/Downloads/eXoDOS --tdc ~/Downloads/TDC --port 8086
 
-It indexes the game zips, reads each game's eXoDOS `dosbox.conf` for the
-program that starts it, takes genre and description from the platform
-XML, and re-indexes every five minutes as the torrent delivers. `--cd`
-includes games whose DOSBox setup mounts a CD image, shipped without the
-image; many only use the disc for audio (Dune 2), others really need it
-and the menu marks those "NEEDS CD".
+For eXoDOS it indexes the game zips, reads each game's `dosbox.conf`
+for the program that starts it and takes genre and description from the
+platform XML. `--cd` includes games whose DOSBox setup mounts a CD image,
+shipped without the image; many only use the disc for audio (Dune 2),
+others really need it and the menu marks those "NEEDS CD".
+
+The Total DOS Collection is plain folders, `1992/Title (1992)(Publisher)
+[Genre]/`, one game each, so there is no manifest to read: the title,
+year, publisher and genre come from the folder name, and the launcher
+works out the executable once the files are on disk. The details pane
+says which collection a game is from, and the games list tags downloaded
+games with eXoDOS or TDC. Both serve from one port; the server addresses
+TDC games as `tdc:DIR`.
+
+A collection that is still coming in over BitTorrent is handled: folders
+with nothing downloaded yet are left out, and a game whose files are
+partly placeholders (0 bytes, dated the day the torrent started) is
+listed as "INCOMPLETE" and shipped without them. If what arrives has
+nothing to run, the launcher says so on the status line instead of
+listing an empty folder. The server re-indexes every five minutes.
 
 On the DOS machine, copy `WAVEGET.EXE`, `DHCP.EXE` and `MTCP.CFG` from
 `build/` next to the launcher, put the server's address in the INI:
@@ -227,14 +243,16 @@ as the emulator sees it, through the `WAVESRV` environment variable
 `WAVEGET.EXE` is a separate program built on mTCP (GPL v3, sources in
 `net/`), so the launcher itself stays a small 8086 program with no
 network code; downloads run through the same batch hand-off as games,
-with all memory free. Esc aborts a download. The list holds up to 2,100
-games in memory; the server addresses games by folder name, so a list
-that is a few minutes old still fetches the right one.
+with all memory free. Esc aborts a download. The list is read from disk
+as you scroll, with only a table of line offsets in memory, so a
+collection of 16,000 games fits in 64 KB; a letter key jumps through the
+titles starting with it. The server addresses games by folder name, so
+a list that is a few minutes old still fetches the right one.
 
 ## Testing without a DOS machine
 
-`WAVE86 /dump [DIR]` draws the menu with DIR selected, then dumps the text buffer, the BIOS
-font and the palette; `tools/rendscr.py` turns that into a PNG. That is
+`WAVE86 /dump [DIR]` draws the menu with DIR selected (`/dump NET [DIR]`
+draws the network view), then dumps the text buffer, the BIOS font and the palette; `tools/rendscr.py` turns that into a PNG. That is
 how the screenshot above was made. `WAVE86 /mustest [seconds]` plays
 headlessly and reports where the player got to; with a MOD it also
 writes the mixer output to `MODDUMP.RAW`, which I compared against
@@ -255,7 +273,7 @@ single `call`.
     src/music.c    AdLib detection, IMF player, playlist, volume
     src/mod.c      Sound Blaster DMA, ProTracker loader, sequencer, mixer
 src/cpu.c      CPU and memory identification for the header line
-src/net.c      the eXoDOS list in memory, download bookkeeping
+src/net.c      the server's game list, download bookkeeping
 net/           WAVEGET.CPP, MTCP.CFG, mTCP's library and DHCP (GPL)
     tools/         composers, converters, renderers (host side)
     music/         the soundtrack

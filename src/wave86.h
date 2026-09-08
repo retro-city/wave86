@@ -28,6 +28,7 @@ typedef struct {
 #define GF_HIDE    0x02     /* hidden via ini */
 #define GF_INI     0x04     /* has a [section] in WAVE86.INI */
 #define GF_EXODOS  0x08     /* source=exodos: came from the eXoDOS server */
+#define GF_TDC     0x10     /* source=tdc: from the Total DOS Collection */
 
 /* --- video (vga.c) --- */
 extern int vid_is_vga;      /* 1 if VGA/MCGA detected */
@@ -84,16 +85,20 @@ typedef struct {
     unsigned year;
     unsigned long kb;
     char cd;                    /* 1 = the game wants its CD */
+    char partial;               /* 1 = the server has only part of it yet */
+    char src[8];                /* "exodos" or "tdc" */
 } NetGame;
 extern int net_count;
 extern char cfg_server[32];     /* ini server=a.b.c.d:port */
-int net_load(void);
-NetGame __far *net_get(int i);
+extern char net_pending_dir[9]; /* folder of the last download, after net_apply_pending */
+int net_load(void);             /* offsets into NETLIST.TXT; count */
+const NetGame *net_get(int i);  /* reads that line; valid until the next call */
+int net_letter_first(char c);   /* first title starting with c, or -1 */
 void net_free(void);
-void net_mark_pending(const NetGame __far *g);
+void net_mark_pending(const NetGame *g);
 void net_mark_view(void);
 int net_view_pending(void);
-int net_apply_pending(void);
+int net_apply_pending(void);    /* index, -1 nothing arrived, -2 arrived but nothing runs */
 void mus_diag(void);            /* /diag report */
 
 /* --- mod.c: Sound Blaster + ProTracker --- */
