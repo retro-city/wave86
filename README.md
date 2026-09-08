@@ -293,6 +293,29 @@ One thing to know: dosbox-x hangs after about ten `-c` commands, so
 longer test sequences go into a DOS batch file and get started with a
 single `call`.
 
+### On a real DOS kernel
+
+DOSBox's shell is not DOS: it has no device driver chain, keeps every
+drive letter for itself and answers INT 21h its own way, so things like
+the CD drivers can only be checked against a real kernel. `make dostest`
+boots one in dosbox-x: it builds a hard-disk image with the launcher and
+`GAMES\`, boots `dos/FREEDOS.IMG` (a FreeDOS 1.3 floppy stripped to the
+kernel and shell, see `dos/README.md`), runs `tools/dostest.py`'s smoke
+test and prints the results. The smoke test runs `WAVE86 /diag`, and for
+the first game with a CD image loads SHSUCDHD and SHSUCDX, lists D: and
+checks the batch the launcher generates. About half a minute.
+
+    make dostest                                   FreeDOS
+    make dostest DOS=~/Downloads/dos/Disk1.img     MS-DOS 6.22, from its setup disk 1
+    python3 tools/dostest.py --game SYNDICAT --script mytest.bat
+
+Any bootable 1.44 MB floppy image works as `DOS=`; the first setup disk
+of MS-DOS 5 or 6 is a plain boot disk once the harness replaces its
+AUTOEXEC. Keep those outside the repo. Your own test batch runs on C:
+with the launcher in `C:\WAVE86` and the games in `C:\GAMES`; whatever
+it writes to `C:\RESULTS` is printed, and `FAIL.TXT` there fails the
+run. Needs mtools (`brew install mtools`).
+
 ## Layout
 
     src/wave86.c   main loop, RUNGAME.BAT, command line flags
@@ -306,6 +329,7 @@ single `call`.
     src/net.c      the server's game list, download bookkeeping
     net/           WAVEGET.CPP, MTCP.CFG, mTCP's library and DHCP (GPL)
     cdrom/         SHSUCDHD and SHSUCDX, the CD image drivers for real DOS
+    dos/           FreeDOS boot floppy for make dostest
     tools/         composers, converters, renderers (host side)
     music/         the soundtrack
     docs/          screenshot

@@ -94,6 +94,13 @@ run: all build/NETUP.BAT
 	dosbox-x -fastlaunch $(DOSBOX_NET) -c "mount c ." -c "c:" -c "cd BUILD" \
 	  -c "call NETUP.BAT" -c "WAVE.BAT"
 
+# boot a real DOS (dos/FREEDOS.IMG, or DOS=path to an MS-DOS boot floppy)
+# in dosbox-x with the build and GAMES\ on a hard-disk image, run the smoke
+# test in tools/dostest.py and show what came back. Needs mtools.
+DOS ?= dos/FREEDOS.IMG
+dostest: all
+	python3 tools/dostest.py --boot $(DOS) $(DOSTEST_ARGS)
+
 # headless self-test: renders the UI, dumps screen+font+palette,
 # then the host renders a pixel-perfect PNG
 test: all
@@ -107,4 +114,4 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test clean music music-files thumbs net cdrom
+.PHONY: all run test dostest clean music music-files thumbs net cdrom
