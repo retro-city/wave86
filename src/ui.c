@@ -332,7 +332,7 @@ void ui_details(int sel)
             scr_puts(x + 5, 14, g->args, A(7, 0));
         }
     }
-    if (g->cdimg[0])
+    if (g->cdimg[0] || (g->flags & GF_CDBAT))
         scr_puts(PANE_X + PANE_W - 2 - 6, 14, "\xAE CD \xAF", A(10, 0));
 
     if (g->flags & GF_DOS4GW)
@@ -510,7 +510,9 @@ void ui_net_details(int sel)
     field(13, "EXEC", g->exe[0] ? g->exe : "(will be detected)", g->exe[0] ? A(7, 0) : A(8, 0));
     fmt_kb(sz, g->kb);
     field(14, "SIZE", sz, A(7, 0));
-    if (g->cd)
+    if (g->cd && g->netcd)
+        scr_puts(PANE_X + PANE_W - 2 - 16, 14, "\xAE CD ON SERVER \xAF", A(10, 0));
+    else if (g->cd)
         scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE CD IMAGE \xAF", A(10, 0));
     else if (g->partial)
         scr_puts(PANE_X + PANE_W - 2 - 14, 14, "\xAE INCOMPLETE \xAF", A(12, 0));
@@ -518,6 +520,10 @@ void ui_net_details(int sel)
         scr_puts(PANE_X + 2, 19, "THE SERVER HAS ONLY PART OF", A(8, 0));
         scr_puts(PANE_X + 2, 20, "THIS GAME SO FAR. ENTER GETS", A(8, 0));
         scr_puts(PANE_X + 2, 21, "WHAT IS THERE.", A(8, 0));
+    } else if (g->cd && g->netcd) {
+        scr_puts(PANE_X + 2, 19, "ITS CD STAYS ON THE SERVER AND", A(8, 0));
+        scr_puts(PANE_X + 2, 20, "IS READ OVER THE NETWORK WHEN", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "IT RUNS (REAL DOS ONLY).", A(8, 0));
     } else if (g->cd) {
         scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT WITH ITS CD", A(8, 0));
         scr_puts(PANE_X + 2, 21, "IMAGE, MOUNTED WHEN IT RUNS.", A(8, 0));

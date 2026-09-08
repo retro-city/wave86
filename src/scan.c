@@ -156,6 +156,10 @@ static void scan_one(Game *g)
     sprintf(pat, "%s\\%s\\CD\\*.ISO", gamedir, g->dir);
     if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0)
         sprintf(g->cdimg, "CD\\%s", ft.name);
+    /* or a start batch that mounts it itself (waveserve's IMGMOUNT.BAT) */
+    sprintf(pat, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
+    if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0)
+        g->flags |= GF_CDBAT;
 }
 
 static int cmp_games(const void *a, const void *b)

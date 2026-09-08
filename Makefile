@@ -39,6 +39,18 @@ music-files: $(MUSIC)
 	@mkdir -p build/MUSIC
 	@if [ -n "$(MUSIC)" ]; then cp $(MUSIC) build/MUSIC/; fi
 
+# the mTCP NetDrive server for this machine (Go, GPL; Michael Brutman's
+# official build) into build/netdrive, so waveserve can keep CD images
+# on this side of the wire. Only needed for waveserve --netdrive.
+ND_VER = 2025-01-10
+ND_BIN = $(shell case "$$(uname -s)-$$(uname -m)" in Darwin-arm64) echo netdrive_darwin_arm64;; Linux-x86_64) echo netdrive_linux_amd64;; Linux-aarch64) echo netdrive_linux_arm64;; *) echo unknown;; esac)
+netdrive:
+	@mkdir -p build
+	curl -sL -o build/netdrive-server.zip https://www.brutman.com/mTCP/download/mTCP_NetDrive_server-bin_$(ND_VER).zip
+	cd build && unzip -q -o -j netdrive-server.zip "mTCP_NetDrive_server-bin_$(ND_VER)/$(ND_BIN)" "mTCP_NetDrive_server-bin_$(ND_VER)/copying.txt" && mv $(ND_BIN) netdrive && chmod +x netdrive && rm netdrive-server.zip
+	@xattr -d com.apple.quarantine build/netdrive 2>/dev/null || true
+	@./build/netdrive 2>&1 | head -1
+
 # CD image drivers for real DOS (cdrom/README.md)
 cdrom: $(wildcard cdrom/*.COM cdrom/*.EXE)
 	@mkdir -p build
@@ -51,7 +63,16 @@ MTCP_OPTS = -0 -ml -oh -ok -ot -s -oa -ei -zp2 -zpw -ob -ol+ -oi+ -q \
 MTCP_OBJS = packet arp eth ip tcp tcpsockm udp utils dns timer trace
 MTCP_SRC  = $(wildcard net/mtcp/TCPLIB/*.CPP) net/mtcp/TCPLIB/IPASM.ASM
 
-net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM
+net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM build/NETDRIVE.SYS build/NETDRIVE.EXE
+
+# mTCP NetDrive (GPL): a remote disk image as a drive letter, for CD images kept on the server
+build/NETDRIVE.SYS: net/NETDRIVE.SYS
+	@mkdir -p build
+	cp $< $@
+
+build/NETDRIVE.EXE: net/NETDRIVE.EXE
+	@mkdir -p build
+	cp $< $@
 
 # the Crynwr NE2000 packet driver (GPL), for the real card and make dosrun
 build/NE2000.COM: net/NE2000.COM
@@ -124,4 +145,4 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test dostest dosrun clean music music-files thumbs net cdrom
+.PHONY: all run test dostest dosrun netdrive clean music music-files thumbs net cdrom

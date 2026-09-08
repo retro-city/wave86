@@ -25,6 +25,11 @@ with an eXoDOS folder of the same name.
 """
 import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil, struct
 import xml.etree.ElementTree as ET
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fat16
+
+NETDRIVE_DIR = None
+NETDRIVE_PORT = 2002
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 GAMES = []
@@ -186,26 +191,114 @@ def iso_name(cue_name, used):
     return name
 
 
-def imgmount_bat(iso, letter):
-    """IMGMOUNT.BAT: the game's CD image on its drive letter, whichever DOS
-    it finds itself on. DOS needs the WAVE86 folder on the PATH for the
-    drivers; DOSBox has IMGMOUNT on its Z:, called by full path here
-    because a bare IMGMOUNT would find this batch first and loop."""
-    lines = ["@echo off",
-             f"rem WAVE86: this game wants its CD image on {letter}:. waveserve made",
-             "rem this from the eXoDOS dosbox.conf, and the start batch calls it first.",
-             "if exist Z:\\IMGMOUNT.COM goto dosbox",
-             "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx",
-             f"SHCDHD86 /F:{iso} /Q",
-             f"SHCDX86 /D:SHSU-CDH,{letter} /Q",
-             "goto done",
-             ":dosbox",
-             f"Z:\\IMGMOUNT.COM {letter} {iso} -t iso",
-             "goto done",
-             ":dosboxx",
-             f"Z:\\SYSTEM\\IMGMOUNT.COM {letter} {iso} -t iso",
-             ":done"]
+def imgmount_bat(iso, letter, net=None):
+    """IMGMOUNT.BAT: the game's CD image as a CD-ROM drive, whichever DOS it
+    finds itself on, and the letter it got in WAVECD (the start batch is
+    rewritten to use %WAVECD% where the eXoDOS conf said D:). Called again
+    with /U it takes everything down. DOS needs the WAVE86 folder on the
+    PATH for the drivers; DOSBox has IMGMOUNT on its Z:, called by full path
+    since a bare IMGMOUNT would find this batch first and loop.
+
+    net = (server:port, image) keeps the ISO on the server: mTCP NetDrive
+    attaches the volume holding it as a drive (%WAVEND%, D: unless set)
+    and SHSUCDHD reads the ISO from there, so the disc lands on the next
+    free letter, E: normally."""
+    lines = ["@echo off", 'if "%1"=="/U" goto unmount',
+             f"rem WAVE86: this game wants its CD image ({letter}: in the eXoDOS conf).",
+             "rem waveserve made this; the start batch calls it first and the launcher",
+             "rem calls it with /U afterwards. WAVECD gets the letter the disc is on."]
+    if net:
+        srv, img = net
+        lines += ['if "%WAVEND%"=="" set WAVEND=D',
+                  f'if "%WAVENDSRV%"=="" set WAVENDSRV={srv}',
+                  "if exist Z:\\IMGMOUNT.COM goto nodosbox",
+                  "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto nodosbox",
+                  f"NETDRIVE C %WAVENDSRV% {img} %WAVEND%: -ro",
+                  f"SHCDHD86 /F:%WAVEND%:\\{iso} /Q",
+                  "SHCDX86 /D:SHSU-CDH,E /Q",
+                  "goto letter",
+                  ":nodosbox",
+                  "echo This game's CD stays on the server (mTCP NetDrive), which DOSBox's",
+                  "echo own shell cannot reach. Run it under a real DOS: make dosrun.",
+                  "goto done"]
+    else:
+        lines += ["if exist Z:\\IMGMOUNT.COM goto dosbox",
+                  "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx",
+                  f"SHCDHD86 /F:{iso} /Q",
+                  f"SHCDX86 /D:SHSU-CDH,{letter} /Q",
+                  "goto letter",
+                  ":dosbox",
+                  f"Z:\\IMGMOUNT.COM {letter} {iso} -t iso",
+                  f"set WAVECD={letter}",
+                  "goto done",
+                  ":dosboxx",
+                  f"Z:\\SYSTEM\\IMGMOUNT.COM {letter} {iso} -t iso",
+                  f"set WAVECD={letter}",
+                  "goto done"]
+    # SHSUCDX /L:1 returns the first drive's number (A: = 1) as the errorlevel
+    lines += [":letter", "SHCDX86 /L:1 /QQ"]
+    lines += [f"if errorlevel {n} set WAVECD={chr(64 + n)}" for n in range(3, 27)]
+    lines += ["if errorlevel 27 set WAVECD=",
+              f'if "%WAVECD%"=="" set WAVECD={letter}',
+              "goto done",
+              ":unmount"]
+    if net:
+        lines += ["SHCDX86 /U /Q", "SHCDHD86 /U /Q", "NETDRIVE D %WAVEND%:"]
+    else:
+        lines += [f"if exist Z:\\IMGMOUNT.COM Z:\\IMGMOUNT.COM -u {letter}",
+                  f"if exist Z:\\SYSTEM\\IMGMOUNT.COM Z:\\SYSTEM\\IMGMOUNT.COM -u {letter}",
+                  "if exist Z:\\IMGMOUNT.COM goto done",
+                  "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto done",
+                  "SHCDX86 /U /Q", "SHCDHD86 /U /Q"]
+    lines += ["set WAVECD=", ":done"]
     return ("\r\n".join(lines) + "\r\n").encode("ascii")
+
+
+def start_batch(text, prefix, letter):
+    """The game's start batch with the IMGMOUNT.BAT call first and the CD
+    letter of the eXoDOS conf replaced by %WAVECD%, which IMGMOUNT.BAT sets
+    to wherever the disc actually landed (E: when NetDrive holds D:, or a
+    real CD-ROM does)."""
+    pat = re.compile(r"(?<![A-Za-z0-9_\\/:.%\-])" + re.escape(letter) + r":", re.I)
+    return prefix + pat.sub("%WAVECD%:", text)
+
+
+def iso_chunks(z, spec):
+    """The 2048-byte payloads of a data track, 64 KB at a time."""
+    member, skip, ssize, start, count = spec
+    buf = bytearray()
+    with z.open(member) as f:
+        left = start * ssize                 # zip streams cannot seek
+        while left > 0:
+            chunk = f.read(min(left, 1 << 20))
+            if not chunk:
+                return
+            left -= len(chunk)
+        for i in range(count):
+            s = f.read(ssize)
+            if len(s) < ssize:
+                buf += bytes(2048 * (count - i))     # short bin: pad
+                break
+            buf += s[skip:skip + 2048]
+            if len(buf) >= 65536:
+                yield bytes(buf)
+                buf = bytearray()
+    if buf:
+        yield bytes(buf)
+
+
+def netdrive_image(path, zippath, spec, iso_name):
+    """A NetDrive volume holding one ISO, built if it is not there yet."""
+    size = spec[4] * 2048
+    if os.path.exists(path) and os.path.getsize(path) >= size + 512:
+        return
+    mb = -(-(size + 2 * 256 * 512 + 32 * 512 + 512) // 1048576) + 1
+    tmp = path + ".part"
+    fat16.format_volume(tmp, max(3, mb))
+    with zipfile.ZipFile(zippath) as z, fat16.Volume(tmp) as v:
+        v.add_file(iso_name, size, iso_chunks(z, spec))
+    os.replace(tmp, path)
+    print(f"waveserve: NetDrive image {os.path.basename(path)} ({size // 1048576} MB)", file=sys.stderr)
 
 
 def read_conf(root, short):
@@ -369,23 +462,39 @@ def index(root, max_mb, include_cd):
                 if exe_file:
                     break
             # a CD game started by a batch gets IMGMOUNT.BAT and a call to it
-            # at the top of that batch, so it also runs from a plain prompt
+            # at the top of that batch, so it also runs from a plain prompt.
+            # With NetDrive the ISO stays here in a volume the server hands
+            # out; the pack then carries no image at all.
+            net = None
+            if isos and NETDRIVE_DIR:
+                img = f"{top.upper()}.IMG"
+                spec = next(e[3] for e in files if e[0] == isos[0])
+                try:
+                    netdrive_image(os.path.join(NETDRIVE_DIR, img), path, spec, isos[0].split("\\")[-1])
+                    net = ("%NDSRV%", img)
+                    for e in [e for e in files if e[0] in isos]:
+                        total -= e[2]
+                        files.remove(e)
+                except (OSError, ValueError) as e:
+                    print(f"waveserve: no NetDrive image for {top}: {e}", file=sys.stderr)
             if isos and exe_file.endswith(".BAT"):
-                mount = imgmount_bat(isos[0], cd or "D")
+                mount = imgmount_bat(isos[0].split("\\")[-1] if net else isos[0], cd or "D", net)
                 files.append(("IMGMOUNT.BAT", None, len(mount), mount))
                 for k, entry in enumerate(files):
                     if entry[0].upper() == exe_file and entry[1]:
                         with zipfile.ZipFile(path) as z:
-                            body = b"@call IMGMOUNT.BAT\r\n" + z.read(entry[1])
+                            body = start_batch(z.read(entry[1]).decode("cp437"), "@call IMGMOUNT.BAT\r\n",
+                                               cd or "D").encode("cp437")
                         files[k] = (entry[0], None, len(body), body)
-                        total += len(b"@call IMGMOUNT.BAT\r\n")
+                        total += len(body) - entry[2]
                         break
             cd = bool(cd_kb)
+            netcd = bool(net)
             md = meta.get(top.lower(), {})
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
                               zip=path, src="exodos", kb=(total + 1023) // 1024, files=files, exe=exe_file,
-                              cd=cd, cd_kb=cd_kb, genre=md.get("genre", ""), developer=md.get("developer", ""),
+                              cd=cd, cd_kb=cd_kb, netcd=netcd, genre=md.get("genre", ""), developer=md.get("developer", ""),
                               notes=md.get("notes", "")))
     games.sort(key=lambda g: g["title"].lower())
     return games
@@ -407,7 +516,7 @@ class H(BaseHTTPRequestHandler):
             games = GAMES
         p = self.path
         if p == "/list":
-            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0)}|{g['src']}\r\n"
+            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0)}|{g['src']}\r\n"
                            for i, g in enumerate(games)).encode("ascii", "replace")
             self._head("text/plain", len(body))
             self.wfile.write(body)
@@ -428,7 +537,7 @@ class H(BaseHTTPRequestHandler):
         if m.group(1) == "info":
             lines = [f"{g['title']} ({g['year']})" if g['year'] else g['title'], f"DIR {g['dir']}", f"SRC {g['src']}", f"EXE {g['exe'] or '?'}",
                      f"GENRE {g['genre']}", f"BY {g['developer']}", f"FILES {len(g['files'])}",
-                     f"KB {g['kb']}", f"CD {str(g.get('cd_kb', 0) // 1024) + ' MB image' if g['cd'] else 'no'}",
+                     f"KB {g['kb']}", f"CD {str(g.get('cd_kb', 0) // 1024) + ' MB image' + (', on the server (NetDrive)' if g.get('netcd') else '') if g['cd'] else 'no'}",
                      f"PARTIAL {'yes' if g.get('partial') else 'no'}", ""]
             notes = g["notes"]
             while notes:
@@ -446,6 +555,13 @@ class H(BaseHTTPRequestHandler):
             with zipfile.ZipFile(g["zip"]) as z:
                 for entry in g["files"]:
                     rel, name, size = entry[:3]
+                    if len(entry) == 4 and isinstance(entry[3], bytes):
+                        body = entry[3]
+                        if b"%NDSRV%" in body:      # the address this client reached us on
+                            body = body.replace(b"%NDSRV%", f"{self.my_address()}:{NETDRIVE_PORT}".encode())
+                        self.wfile.write(f"F {len(body)} {rel}\n".encode())
+                        self.wfile.write(body)
+                        continue
                     self.wfile.write(f"F {size} {rel}\n".encode())
                     if len(entry) == 4:
                         if isinstance(entry[3], bytes):
@@ -461,6 +577,27 @@ class H(BaseHTTPRequestHandler):
                 with open(fp, "rb") as f:
                     shutil.copyfileobj(f, self.wfile, 65536)
         self.wfile.write(b"E\n")
+
+    def my_address(self):
+        """This machine as the client sees it: the Host header, else the
+        address it connected to, unless that is a loopback (dosbox-x's
+        slirp hands the emulator's requests to 127.0.0.1), then the
+        address we would use to reach the outside."""
+        host = (self.headers.get("Host") or "").split(":")[0].strip()
+        if host and not host.startswith("127."):
+            return host
+        local = self.connection.getsockname()[0]
+        if not local.startswith("127."):
+            return local
+        try:
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("10.255.255.255", 1))     # no packet is sent
+            local = s.getsockname()[0]
+            s.close()
+        except OSError:
+            pass
+        return local
 
     def send_iso(self, z, spec):
         """stream the 2048-byte payload of each sector of a data track"""
@@ -497,8 +634,26 @@ def main():
     ap.add_argument("--port", type=int, default=8086)
     ap.add_argument("--max-mb", type=int, default=30)
     ap.add_argument("--cd", action="store_true", help="include games that need a CD image")
+    ap.add_argument("--netdrive", metavar="DIR", help="keep CD images here as mTCP NetDrive volumes instead of shipping them")
+    ap.add_argument("--netdrive-port", type=int, default=2002, help="UDP port of the NetDrive server (default 2002)")
+    ap.add_argument("--netdrive-server", metavar="BIN", help="the NetDrive server binary to run (default build/netdrive, else PATH)")
     ap.add_argument("--rescan", type=int, default=300, help="seconds between re-indexing")
     a = ap.parse_args()
+    global NETDRIVE_DIR, NETDRIVE_PORT
+    if a.netdrive:
+        NETDRIVE_DIR, NETDRIVE_PORT = os.path.abspath(a.netdrive), a.netdrive_port
+        os.makedirs(NETDRIVE_DIR, exist_ok=True)
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        binary = a.netdrive_server or next((p for p in (os.path.join(here, "build", "netdrive"),
+                                                        shutil.which("netdrive")) if p and os.path.exists(p)), None)
+        if binary:
+            import subprocess, atexit
+            nd = subprocess.Popen([binary, "serve", "-headless", "-image_dir", NETDRIVE_DIR, "-port", str(NETDRIVE_PORT)],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            atexit.register(nd.kill)
+            print(f"waveserve: NetDrive server on UDP {NETDRIVE_PORT}, images in {NETDRIVE_DIR}", file=sys.stderr)
+        else:
+            print("waveserve: no NetDrive server binary (make netdrive); run one yourself on port", NETDRIVE_PORT, file=sys.stderr)
 
     if not a.root and not a.tdc:
         ap.error("give an eXoDOS folder and/or --tdc DIR")

@@ -243,7 +243,9 @@ as the emulator sees it, through the `WAVESRV` environment variable
 (it overrides `server=`). Start `waveserve.py` first.
 
 `NE2000.COM` in `net/` is the Crynwr packet driver (GPL) for the card,
-the same one dosbox-x carries on its Z:. `WAVEGET.EXE` is a separate program built on mTCP (GPL v3, sources in
+the same one dosbox-x carries on its Z:. `NETDRIVE.SYS` and
+`NETDRIVE.EXE` are mTCP NetDrive's DOS side (GPL, source in
+`net/mtcp/APPS/NETDRV`). `WAVEGET.EXE` is a separate program built on mTCP (GPL v3, sources in
 `net/`), so the launcher itself stays a small 8086 program with no
 network code; downloads run through the same batch hand-off as games,
 with all memory free. Esc aborts a download. The list is read from disk
@@ -274,11 +276,44 @@ knows it is in DOSBox by the Z: drive. `cdmount=` and `cdunmount=` in
 the INI replace either, with `$ISO` standing for the image path.
 
 A CD game from the server comes with its own `IMGMOUNT.BAT` (the same
-choice between the drivers and IMGMOUNT, with the drive letter from the
-game's eXoDOS conf), and its start batch calls it first, so the game
-also runs from a plain prompt with the WAVE86 folder on the PATH. When
-a game's start batch has a `IMGMOUNT.BAT` beside it the launcher leaves
-the mounting to it and only takes the disc off afterwards.
+choice between the drivers and IMGMOUNT), and its start batch calls it
+first, so the game also runs from a plain prompt with the WAVE86 folder
+on the PATH. The batch puts the letter the disc landed on into `WAVECD`,
+and the server rewrites the start batch to say `%WAVECD%:` wherever the
+eXoDOS conf said `D:`, so it does not matter if D: is taken by a real
+CD-ROM or by NetDrive. When a game has `IMGMOUNT.BAT` the launcher
+leaves the mounting to it and calls it with `/U` afterwards.
+
+### CD images that stay on the server
+
+A 300 MB disc does not have to travel to the DOS disk at all. With
+
+    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd --netdrive ~/wave86-cd
+
+the server wraps each game's ISO in a FAT volume under `~/wave86-cd`
+(built once, at index time) and runs Michael Brutman's mTCP NetDrive
+server on UDP port 2002 to hand those volumes out. `make netdrive`
+fetches his official build of that server for this machine into
+`build/netdrive`. On the DOS side the game's `IMGMOUNT.BAT` attaches
+the volume as a drive with NetDrive, points SHSUCDHD at the ISO on it
+and lets SHSUCDX give the disc a letter. Brutman measured this stack on
+a 386DX-40 at the same speed as NetDrive alone, around 370 KB/s.
+
+What the DOS machine needs for that:
+
+    DEVICE=C:\WAVE86\NETDRIVE.SYS        in CONFIG.SYS (LASTDRIVE=Z too)
+    PACKETINT 0x60, 0x65                 in MTCP.CFG (the second interrupt
+                                         is for DHCP and WAVEGET while
+                                         NetDrive holds the first); MTU 1500
+
+`NETDRIVE.SYS` takes the first letter after the hard disk, D:, which is
+why the disc goes to E: and the start batches use `%WAVECD%`. The
+launcher passes the server's address in `WAVENDSRV` (the machine of
+`server=`, port 2002 or `netdrive_port=`) and, if `netdrive=E` is set
+in the INI, the letter NetDrive got in `WAVEND`. The network view marks
+such games "CD ON SERVER". DOSBox's own shell has no packet driver, so
+these games run under a real DOS: `make dosrun` has the driver in its
+CONFIG.SYS.
 
 The disc lands on D: because that is where eXoDOS mounts it and games
 like Syndicate Plus have `D:` written into their start batch. If a real

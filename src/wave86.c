@@ -8,6 +8,7 @@
  */
 #include <stdio.h>
 #include <io.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <direct.h>
@@ -103,18 +104,33 @@ static void emit_cd(FILE *f, const Game *g, int after)
 {
     char iso[PATH_LEN + 32];
     const char *t, *sep, *hd, *cdx;
+    const char *dot = strrchr(g->exe, '.');
 
+    if ((g->flags & GF_CDBAT) && dot && stricmp(dot + 1, "BAT") == 0) {
+        /* the start batch mounts the disc through its IMGMOUNT.BAT; we tell
+           it where the NetDrive server is (the machine of server=, port
+           netdrive_port=) and take everything down afterwards */
+        if (after) {
+            fprintf(f, "call IMGMOUNT.BAT /U\n");
+        } else {
+            char host[32];
+            char *colon;
+            const char *v;
+            strncpy(host, cfg_server, sizeof(host) - 1);
+            host[sizeof(host) - 1] = 0;
+            colon = strchr(host, ':');
+            if (colon) *colon = 0;
+            v = ini_global("netdrive_port");
+            if (host[0])
+                fprintf(f, "set WAVENDSRV=%s:%s\n", host, v && v[0] ? v : "2002");
+            v = ini_global("netdrive");
+            if (v && v[0])
+                fprintf(f, "set WAVEND=%c\n", toupper((unsigned char)v[0]));
+        }
+        return;
+    }
     if (!g->cdimg[0])
         return;
-    if (!after) {
-        /* a start batch with IMGMOUNT.BAT beside it (waveserve writes both)
-           mounts the disc itself; we still take it off afterwards */
-        const char *dot = strrchr(g->exe, '.');
-        char mb[PATH_LEN + 16];
-        sprintf(mb, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
-        if (dot && stricmp(dot + 1, "BAT") == 0 && access(mb, 0) == 0)
-            return;
-    }
     if (strchr(g->cdimg, ':') || g->cdimg[0] == '\\')
         strcpy(iso, g->cdimg);
     else

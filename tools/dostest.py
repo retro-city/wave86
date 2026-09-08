@@ -23,11 +23,14 @@ may end with PASS.TXT or FAIL.TXT to set the exit code.
 Needs dosbox-x and mtools (brew install mtools).
 """
 import argparse, os, re, shutil, struct, subprocess, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fat16
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKER = "WAVE86DONE-MARKER"
 LAUNCHER_FILES = ["WAVE86.EXE", "WAVE.BAT", "SHCDHD86.EXE", "SHCDX86.COM",
-                  "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG", "NE2000.COM"]
+                  "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG", "NE2000.COM",
+                  "NETDRIVE.SYS", "NETDRIVE.EXE"]
 DOS_EXTRAS = ["CHOICE.EXE"]        # from dos/: what eXoDOS start batches expect of a DOS install
 NET_FLAGS = ["-set", "ne2000 ne2000=true", "-set", "ne2000 backend=slirp",
              "-set", "ne2000 nicbase=300", "-set", "ne2000 nicirq=3"]
@@ -85,99 +88,6 @@ def make_hd(work, size_mb):
     return img, off, f"{secs},{heads},{cyl}"
 
 
-def fat_fill(img, off, src):
-    """Write the tree under src into the (empty) FAT16 partition at byte
-    offset off of img, with plain 8.3 entries and no long names: what a
-    DOS of the era expects, and a few thousand files take under a second
-    (mtools spends 0.4 s on each one)."""
-    f = open(img, "r+b")
-    f.seek(off)
-    bs = f.read(512)
-    bps, spc, rsv, nfat, nroot, tot16, _, spf = struct.unpack("<HBHBHHBH", bs[11:24])
-    total = tot16 or struct.unpack("<I", bs[32:36])[0]
-    fat_off = off + rsv * bps
-    root_off = fat_off + nfat * spf * bps
-    data_off = root_off + nroot * 32
-    nclus = (total - rsv - nfat * spf - nroot * 32 // bps) // spc
-    csize = spc * bps
-    f.seek(fat_off)
-    fat = bytearray(f.read(spf * bps))
-    state = {"next": 2}
-
-    def alloc(n):
-        chain, c = [], state["next"]
-        while len(chain) < n:
-            if c >= nclus + 2:
-                sys.exit("dostest: the disk image is full (use --size)")
-            if struct.unpack_from("<H", fat, c * 2)[0] == 0:
-                chain.append(c)
-            c += 1
-        state["next"] = c
-        for i, c in enumerate(chain):
-            struct.pack_into("<H", fat, c * 2, chain[i + 1] if i + 1 < len(chain) else 0xFFFF)
-        return chain
-
-    def write_chain(chain, data):
-        for i, c in enumerate(chain):
-            f.seek(data_off + (c - 2) * csize)
-            f.write(data[i * csize:(i + 1) * csize])
-
-    def entry(name, ext, attr, first, size, mtime):
-        t = time.localtime(mtime)
-        d = (max(t.tm_year, 1980) - 1980) << 9 | t.tm_mon << 5 | t.tm_mday
-        tm = t.tm_hour << 11 | t.tm_min << 5 | t.tm_sec // 2
-        return (name.ljust(8) + ext.ljust(3)).encode("ascii") + bytes([attr]) + bytes(10) + \
-            struct.pack("<HHHI", tm, d, first, size)
-
-    ok = "A-Z0-9_\\-!#$%&@^`{}~\'"
-
-    def dos_name(fn, used):
-        base, _, ext = fn.rpartition(".") if "." in fn else (fn, "", "")
-        base = re.sub(f"[^{ok}]", "_", base.upper())[:8] or "_"
-        ext = re.sub(f"[^{ok}]", "", ext.upper())[:3]
-        cand, n = (base, ext), 1
-        while cand in used:
-            n += 1
-            cand = (base[:8 - len(f"~{n}")] + f"~{n}", ext)
-        used.add(cand)
-        return cand
-
-    def put_dir(path, first, parent_first, fixed=None):
-        names = sorted(n for n in os.listdir(path) if not n.startswith("."))
-        # subdirectories start with . and ..; the root has neither
-        entries = entry(".", "", 0x10, first, 0, os.path.getmtime(path)) + \
-            entry("..", "", 0x10, parent_first, 0, os.path.getmtime(path)) if fixed else b""
-        used = set()
-        for n in names:
-            p = os.path.join(path, n)
-            name, ext = dos_name(n, used)
-            st = os.stat(p)
-            if os.path.isdir(p):
-                count = 2 + sum(1 for x in os.listdir(p) if not x.startswith("."))
-                chain = alloc(max(1, -(-count * 32 // csize)))
-                entries += entry(name, ext, 0x10, chain[0], 0, st.st_mtime)
-                put_dir(p, chain[0], first, chain)
-            else:
-                data = open(p, "rb").read()
-                chain = alloc(-(-len(data) // csize)) if data else []
-                if chain:
-                    write_chain(chain, data)
-                entries += entry(name, ext, 0x20, chain[0] if chain else 0, len(data), st.st_mtime)
-        if fixed is None:                       # the root directory area
-            if len(entries) > nroot * 32:
-                sys.exit("dostest: too many entries in the root directory")
-            f.seek(root_off)
-            f.write(entries.ljust(nroot * 32, b"\0"))
-        else:
-            write_chain(fixed, entries.ljust(len(fixed) * csize, b"\0"))
-
-    put_dir(src, 0, 0)
-    for i in range(nfat):
-        f.seek(fat_off + i * spf * bps)
-        f.write(fat)
-    f.close()
-
-
 def fill_hd(img, off, build, games_dir, games, ini_extra, test, run=False):
     work = os.path.dirname(img)
     stage = os.path.join(work, "stage")
@@ -210,7 +120,7 @@ def fill_hd(img, off, build, games_dir, games, ini_extra, test, run=False):
         shutil.copytree(os.path.join(games_dir, name), os.path.join(g, name),
                         ignore=shutil.ignore_patterns(".*", "._*"), dirs_exist_ok=True)
     os.makedirs(os.path.join(stage, "RESULTS"))
-    fat_fill(img, off, stage)
+    fat16.fill_tree(img, off, stage)
     return w
 
 
@@ -232,7 +142,8 @@ def smoke_test(games_dir, games, build):
         name, iso = cd
         t += [f"C:\\WAVE86\\SHCDHD86.EXE /F:C:\\GAMES\\{name}\\CD\\{iso} > C:\\RESULTS\\CDHD.TXT",
               "C:\\WAVE86\\SHCDX86.COM /D:SHSU-CDH,D > C:\\RESULTS\\CDX.TXT",
-              "dir D:\\ > C:\\RESULTS\\CDDIR.TXT",
+              "dir D:\\ > C:\\RESULTS\\CDD.TXT",        # NetDrive may hold D:, then the disc is on E:
+              "dir E:\\ > C:\\RESULTS\\CDE.TXT",
               "C:\\WAVE86\\SHCDX86.COM /U /Q > NUL",
               "C:\\WAVE86\\SHCDHD86.EXE /U /Q > NUL",
               "set WAVE86=LAUNCH",
@@ -253,10 +164,13 @@ def check_smoke(results, cd, games_dir=None):
         problems.append("CHKDSK.TXT: the file system we wrote has problems")
     if cd:
         name, iso = cd
-        if "Drives Assigned" not in results.get("CDX.TXT", ""):
+        m = re.search(r"^\s+([A-Z]):\s+SHSU-CDH", results.get("CDX.TXT", ""), re.M)
+        if not m:
             problems.append("CDX.TXT: SHSUCDX did not assign a drive")
-        if not re.search(r"^\S+\s+\S+\s+[\d,]+", results.get("CDDIR.TXT", ""), re.M):
-            problems.append("CDDIR.TXT: no files listed on D:")
+        else:
+            listing = results.get(f"CD{m.group(1)}.TXT", "")
+            if not re.search(r"^\S+\s+\S+\s+[\d,]+", listing, re.M) or "README   TXT" in listing:
+                problems.append(f"CD{m.group(1)}.TXT: no disc files listed on {m.group(1)}:")
         rg = results.get("RUNGAME.TXT", "")
         own = games_dir and os.path.exists(os.path.join(games_dir, name, "IMGMOUNT.BAT"))
         if own:                         # the game's batch mounts; the launcher only unmounts
@@ -326,6 +240,8 @@ def main():
         auto = bat(["@echo off", "set MK=MARKER", "set PATH=C:\\WAVE86;A:\\", "C:", "cd \\WAVE86",
                     "call C:\\WAVE86\\TEST.BAT", f"echo {MARKER.replace('MARKER', '%MK%')} > C:\\RESULTS\\DONE.TXT"])
     conf = ["FILES=20", "BUFFERS=20", "LASTDRIVE=Z"]
+    if os.path.exists(os.path.join(a.build, "NETDRIVE.SYS")):   # mTCP NetDrive: reserves the letter after C:
+        conf.append("DEVICE=C:\\WAVE86\\NETDRIVE.SYS")
     listing = mtool("mdir", floppy, None, "::/").stdout.upper()
     if "KERNEL   SYS" in listing:            # FreeDOS: FreeCOM runs the batch we name
         conf.append("SHELL=A:\\COMMAND.COM A:\\ /E:1024 /P=A:\\AUTOEXEC.BAT")

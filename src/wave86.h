@@ -30,6 +30,7 @@ typedef struct {
 #define GF_INI     0x04     /* has a [section] in WAVE86.INI */
 #define GF_EXODOS  0x08     /* source=exodos: came from the eXoDOS server */
 #define GF_TDC     0x10     /* source=tdc: from the Total DOS Collection */
+#define GF_CDBAT   0x20     /* has IMGMOUNT.BAT: its start batch mounts the CD itself */
 
 /* --- video (vga.c) --- */
 extern int vid_is_vga;      /* 1 if VGA/MCGA detected */
@@ -87,6 +88,7 @@ typedef struct {
     unsigned long kb;
     char cd;                    /* 1 = the game wants its CD */
     char partial;               /* 1 = the server has only part of it yet */
+    char netcd;                 /* 1 = the CD image stays on the server (NetDrive) */
     char src[8];                /* "exodos" or "tdc" */
 } NetGame;
 extern int net_count;
