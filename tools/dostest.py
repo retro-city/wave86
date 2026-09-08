@@ -28,6 +28,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKER = "WAVE86DONE-MARKER"
 LAUNCHER_FILES = ["WAVE86.EXE", "WAVE.BAT", "SHCDHD86.EXE", "SHCDX86.COM",
                   "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG", "NE2000.COM"]
+DOS_EXTRAS = ["CHOICE.EXE"]        # from dos/: what eXoDOS start batches expect of a DOS install
 NET_FLAGS = ["-set", "ne2000 ne2000=true", "-set", "ne2000 backend=slirp",
              "-set", "ne2000 nicbase=300", "-set", "ne2000 nicirq=3"]
 
@@ -185,6 +186,10 @@ def fill_hd(img, off, build, games_dir, games, ini_extra, test, run=False):
     os.makedirs(w)
     for f in LAUNCHER_FILES:
         src = os.path.join(build, f)
+        if os.path.exists(src):
+            shutil.copy(src, w)
+    for f in DOS_EXTRAS:                    # the boot floppies carry no CHOICE
+        src = os.path.join(ROOT, "dos", f)
         if os.path.exists(src):
             shutil.copy(src, w)
     if run:                                 # the real thing: shipped INI, music, pictures

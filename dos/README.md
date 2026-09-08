@@ -19,3 +19,8 @@ https://github.com/FDOS/kernel and https://github.com/FDOS/freecom.
 `tools/dostest.py` replaces AUTOEXEC.BAT and FDCONFIG.SYS on a copy of
 this image for each run. MS-DOS is Microsoft's and stays out of the
 repo; point `make dostest DOS=` at your own boot floppy to test on it.
+
+`CHOICE.EXE` is FreeDOS's CHOICE 4.4 (GPL, from the FreeDOS 1.3 package
+repository, `base/choice.zip`). Neither boot floppy carries one, and the
+eXoDOS start batches use it for their menus, so the harness puts it in
+`C:\WAVE86`, which is on the PATH. A real DOS install has its own.
