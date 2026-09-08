@@ -101,6 +101,11 @@ DOS ?= dos/FREEDOS.IMG
 dostest: all
 	python3 tools/dostest.py --boot $(DOS) $(DOSTEST_ARGS)
 
+# the same real DOS, but on screen and booting into the launcher, with
+# sound, the NE2000 (slirp) and DHCP, so N works against a waveserve here
+dosrun: all
+	python3 tools/dostest.py --boot $(DOS) --run $(DOSTEST_ARGS)
+
 # headless self-test: renders the UI, dumps screen+font+palette,
 # then the host renders a pixel-perfect PNG
 test: all
@@ -114,4 +119,4 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test dostest clean music music-files thumbs net cdrom
+.PHONY: all run test dostest dosrun clean music music-files thumbs net cdrom

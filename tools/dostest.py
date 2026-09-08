@@ -10,6 +10,7 @@ results back.
     python3 tools/dostest.py                      # smoke test on dos/FREEDOS.IMG
     python3 tools/dostest.py --boot ~/Downloads/dos/Disk1.img   # MS-DOS 6.22
     python3 tools/dostest.py --game SYNDICAT --script mytest.bat
+    python3 tools/dostest.py --run                # boot into the launcher, on screen
 
 The boot image is any bootable 1.44 MB floppy whose kernel runs
 A:\\AUTOEXEC.BAT: dos/FREEDOS.IMG (in git), or the first setup disk of
@@ -26,7 +27,9 @@ import argparse, os, re, shutil, struct, subprocess, sys, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKER = "WAVE86DONE-MARKER"
 LAUNCHER_FILES = ["WAVE86.EXE", "WAVE.BAT", "SHCDHD86.EXE", "SHCDX86.COM",
-                  "SHSUCDHD.EXE", "SHSUCDX.COM"]
+                  "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG"]
+NET_FLAGS = ["-set", "ne2000 ne2000=true", "-set", "ne2000 backend=slirp",
+             "-set", "ne2000 nicbase=300", "-set", "ne2000 nicirq=3"]
 
 
 def run(cmd, timeout=60, **kw):
@@ -38,9 +41,13 @@ def mtool(tool, img, off, *args, timeout=120):
     return run([tool, "-i", spec, *args], timeout=timeout)
 
 
-def dosbox(args, cwd, log, wait=None):
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
-    p = subprocess.Popen(["dosbox-x", "-nogui", "-fastlaunch", *args], cwd=cwd, env=env,
+def dosbox(args, cwd, log, wait=None, gui=False):
+    env = dict(os.environ)
+    head = ["dosbox-x", "-fastlaunch"]
+    if not gui:
+        env["SDL_VIDEODRIVER"] = "dummy"
+        head.append("-nogui")
+    p = subprocess.Popen([*head, *args], cwd=cwd, env=env,
                          stdout=open(log, "w"), stderr=subprocess.STDOUT)
     if wait is not None:
         try:
@@ -62,8 +69,11 @@ def make_hd(work, size_mb):
     img = os.path.join(work, "hd.img")
     if os.path.exists(img):
         os.remove(img)
+    # the packet driver for the NE2000 dosbox-x emulates lives on its Z:;
+    # a booted guest cannot see Z:, so take a copy while the shell is up
     dosbox(["-c", "mount d .", "-c", f"imgmake hd.img -t hd -size {size_mb} -fat 16 > D:\\MK.TXT",
-            "-c", "exit"], work, os.path.join(work, "imgmake.log"), wait=90)
+            "-c", "copy Z:\\SYSTEM\\NE2000.COM D:\\NE2000.COM > NUL", "-c", "exit"],
+           work, os.path.join(work, "imgmake.log"), wait=90)
     try:
         text = open(os.path.join(work, "MK.TXT"), errors="replace").read()
     except FileNotFoundError:
@@ -170,20 +180,29 @@ def fat_fill(img, off, src):
     f.close()
 
 
-def fill_hd(img, off, build, games_dir, games, ini_extra, test):
-    stage = os.path.join(os.path.dirname(img), "stage")
+def fill_hd(img, off, build, games_dir, games, ini_extra, test, run=False):
+    work = os.path.dirname(img)
+    stage = os.path.join(work, "stage")
     shutil.rmtree(stage, ignore_errors=True)
     w = os.path.join(stage, "WAVE86")
     os.makedirs(w)
-    for f in LAUNCHER_FILES:
-        src = os.path.join(build, f)
-        if os.path.exists(src):
-            shutil.copy(src, w)
-    ini = ["gamedir=C:\\GAMES", "music=0"] + ini_extra
-    for name in games:
-        ini += ["", f"[{name}]"]
-    open(os.path.join(w, "WAVE86.INI"), "w", newline="").write(bat(ini))
-    open(os.path.join(w, "TEST.BAT"), "w", newline="").write(test)
+    for f in LAUNCHER_FILES + ["NE2000.COM"]:
+        for src in (os.path.join(build, f), os.path.join(work, f)):
+            if os.path.exists(src):
+                shutil.copy(src, w)
+                break
+    if run:                                 # the real thing: shipped INI, music, pictures
+        shutil.copy(os.path.join(build, "WAVE86.INI"), w)
+        for d in ("MUSIC", "THUMBS"):
+            if os.path.isdir(os.path.join(build, d)):
+                shutil.copytree(os.path.join(build, d), os.path.join(w, d))
+    else:
+        ini = ["gamedir=C:\\GAMES", "music=0"] + ini_extra
+        for name in games:
+            ini += ["", f"[{name}]"]
+        open(os.path.join(w, "WAVE86.INI"), "w", newline="").write(bat(ini))
+    if test:
+        open(os.path.join(w, "TEST.BAT"), "w", newline="").write(test)
     g = os.path.join(stage, "GAMES")
     os.makedirs(g)
     for name in games:
@@ -253,6 +272,8 @@ def main():
     ap.add_argument("--size", type=int, help="hard-disk image size in MB")
     ap.add_argument("--ini", action="append", default=[], help="extra global INI line, e.g. sound=sb")
     ap.add_argument("--build", default=os.path.join(ROOT, "build"))
+    ap.add_argument("--run", action="store_true",
+                    help="no test: boot into WAVE.BAT in a dosbox-x window, with sound and network")
     a = ap.parse_args()
 
     for tool in ("dosbox-x", "mcopy"):
@@ -278,19 +299,27 @@ def main():
 
     t0 = time.time()
     print(f"dostest: {os.path.basename(boot)}, {len(games)} game(s), {size_mb} MB disk")
-    if a.script:
+    if a.run:
+        test, cd = None, None
+    elif a.script:
         test = open(a.script, newline="").read().replace("\r\n", "\n").replace("\n", "\r\n")
         cd = None
     else:
         test, cd = smoke_test(a.games, games, a.build)
     hd, off, geom = make_hd(work, size_mb)
-    fill_hd(hd, off, a.build, a.games, games, a.ini, test)
+    fill_hd(hd, off, a.build, a.games, games, a.ini, test, run=a.run)
 
     # the floppy: our AUTOEXEC runs the test, then leaves the marker
     floppy = os.path.join(work, "boot.img")
     shutil.copy(boot, floppy)
-    auto = bat(["@echo off", "set MK=MARKER", "set PATH=C:\\WAVE86;A:\\", "C:", "cd \\WAVE86",
-                "call C:\\WAVE86\\TEST.BAT", f"echo {MARKER.replace('MARKER', '%MK%')} > C:\\RESULTS\\DONE.TXT"])
+    if a.run:
+        # the machine as the 486 would be: packet driver, DHCP, the launcher loop
+        auto = bat(["@echo off", "set PATH=C:\\WAVE86;A:\\", "set BLASTER=A220 I7 D1 H5 T6", "C:", "cd \\WAVE86",
+                    "if exist NE2000.COM NE2000 0x60 3 0x300", "set MTCPCFG=C:\\WAVE86\\MTCP.CFG",
+                    "set WAVESRV=10.0.2.2:8086", "if exist DHCP.EXE DHCP", "call WAVE.BAT"])
+    else:
+        auto = bat(["@echo off", "set MK=MARKER", "set PATH=C:\\WAVE86;A:\\", "C:", "cd \\WAVE86",
+                    "call C:\\WAVE86\\TEST.BAT", f"echo {MARKER.replace('MARKER', '%MK%')} > C:\\RESULTS\\DONE.TXT"])
     conf = ["FILES=20", "BUFFERS=20", "LASTDRIVE=Z"]
     listing = mtool("mdir", floppy, None, "::/").stdout.upper()
     if "KERNEL   SYS" in listing:            # FreeDOS: FreeCOM runs the batch we name
@@ -305,9 +334,16 @@ def main():
 
     # boot: nothing mounted from the host, or DOSBox hands the guest a
     # host folder on the first free letter and the CD drivers lose D:
-    p = dosbox(["-c", f"imgmount c {hd} -size 512,{geom}",
-                "-c", f"imgmount a {floppy} -t floppy",
-                "-c", "boot -l a"], work, os.path.join(work, "dosbox.log"))
+    boot_cmds = ["-c", f"imgmount c {hd} -size 512,{geom}",
+                 "-c", f"imgmount a {floppy} -t floppy",
+                 "-c", "boot -l a"]
+    if a.run:
+        print("dostest: booting into the launcher; close the dosbox-x window to end."
+              " Downloads land inside build/dostest/hd.img.")
+        p = dosbox(NET_FLAGS + boot_cmds, work, os.path.join(work, "dosbox.log"), gui=True)
+        p.wait()
+        return
+    p = dosbox(boot_cmds, work, os.path.join(work, "dosbox.log"))
     t1 = time.time()
     finished = False
     try:

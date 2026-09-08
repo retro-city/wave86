@@ -307,7 +307,13 @@ checks the batch the launcher generates. About half a minute.
 
     make dostest                                   FreeDOS
     make dostest DOS=~/Downloads/dos/Disk1.img     MS-DOS 6.22, from its setup disk 1
+    make dosrun                                    the same, on screen, booting into WAVE.BAT
     python3 tools/dostest.py --game SYNDICAT --script mytest.bat
+
+`make dosrun` is `make run` on a real kernel: the window boots DOS, loads
+the packet driver and DHCP, and starts the launcher with sound and the
+network view working against a waveserve on this machine. Games you
+download there land inside `build/dostest/hd.img`, not in `GAMES\`.
 
 Any bootable 1.44 MB floppy image works as `DOS=`; the first setup disk
 of MS-DOS 5 or 6 is a plain boot disk once the harness replaces its
