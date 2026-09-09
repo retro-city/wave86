@@ -30,7 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKER = "WAVE86DONE-MARKER"
 LAUNCHER_FILES = ["WAVE86.EXE", "WAVE.BAT", "SHCDHD86.EXE", "SHCDX86.COM",
                   "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG", "NE2000.COM",
-                  "NETDRIVE.SYS", "NETDRIVE.EXE"]
+                  "NETDRIVE.SYS", "NETDRIVE.EXE", "DRVOFF.EXE"]
 DOS_EXTRAS = ["CHOICE.EXE"]        # from dos/: what eXoDOS start batches expect of a DOS install
 NET_FLAGS = ["-set", "ne2000 ne2000=true", "-set", "ne2000 backend=slirp",
              "-set", "ne2000 nicbase=300", "-set", "ne2000 nicirq=3"]
@@ -108,7 +108,7 @@ def fill_hd(img, off, build, games_dir, games, ini_extra, test, run=False):
             if os.path.isdir(os.path.join(build, d)):
                 shutil.copytree(os.path.join(build, d), os.path.join(w, d))
     else:
-        ini = ["gamedir=C:\\GAMES", "music=0"] + ini_extra
+        ini = ["gamedir=C:\\GAMES", "music=0", "netdrive=E"] + ini_extra
         for name in games:
             ini += ["", f"[{name}]"]
         open(os.path.join(w, "WAVE86.INI"), "w", newline="").write(bat(ini))
@@ -191,6 +191,8 @@ def main():
     ap.add_argument("--size", type=int, help="hard-disk image size in MB (up to 2047; --run defaults to 500)")
     ap.add_argument("--ini", action="append", default=[], help="extra global INI line, e.g. sound=sb")
     ap.add_argument("--build", default=os.path.join(ROOT, "build"))
+    ap.add_argument("--netdrive-sys", action=argparse.BooleanOptionalAction, default=True,
+                    help="DEVICE=NETDRIVE.SYS in CONFIG.SYS (default on; --no-netdrive-sys to load it later)")
     ap.add_argument("--run", action="store_true",
                     help="no test: boot into WAVE.BAT in a dosbox-x window, with sound and network")
     a = ap.parse_args()
@@ -238,14 +240,16 @@ def main():
     if a.run:
         # the machine as the 486 would be: packet driver, DHCP, the launcher loop
         auto = bat(["@echo off", "set PATH=C:\\WAVE86;A:\\", "set BLASTER=A220 I7 D1 H5 T6", "C:", "cd \\WAVE86",
+                    "if exist DRVOFF.EXE DRVOFF D:",
                     "if exist NE2000.COM NE2000 0x60 3 0x300", "set MTCPCFG=C:\\WAVE86\\MTCP.CFG",
                     "set WAVESRV=10.0.2.2:8086", "if exist DHCP.EXE DHCP", "call WAVE.BAT"])
     else:
         auto = bat(["@echo off", "set MK=MARKER", "set PATH=C:\\WAVE86;A:\\", "C:", "cd \\WAVE86",
+                    "if exist DRVOFF.EXE DRVOFF D:",
                     "call C:\\WAVE86\\TEST.BAT", f"echo {MARKER.replace('MARKER', '%MK%')} > C:\\RESULTS\\DONE.TXT"])
     conf = ["FILES=20", "BUFFERS=20", "LASTDRIVE=Z"]
-    if os.path.exists(os.path.join(a.build, "NETDRIVE.SYS")):   # mTCP NetDrive: reserves the letter after C:
-        conf.append("DEVICE=C:\\WAVE86\\NETDRIVE.SYS")
+    if a.netdrive_sys and os.path.exists(os.path.join(a.build, "NETDRIVE.SYS")):   # mTCP NetDrive: reserves the letter after C:
+        conf.append("DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")     # D: and E:; DRVOFF frees D: for the disc
     listing = mtool("mdir", floppy, None, "::/").stdout.upper()
     if "KERNEL   SYS" in listing:            # FreeDOS: FreeCOM runs the batch we name
         conf.append("SHELL=A:\\COMMAND.COM A:\\ /E:1024 /P=A:\\AUTOEXEC.BAT")
