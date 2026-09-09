@@ -16,7 +16,7 @@ jobs:
         run: |
           curl -sL -o ow.tar.xz https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/ow-snapshot.tar.xz
           mkdir -p toolchain
-          tar -xJf ow.tar.xz -C toolchain binl64 h lib286
+          tar -xJf ow.tar.xz -C toolchain ./binl64 ./h ./lib286
 
       - name: Build the DOS side
         run: make dist
