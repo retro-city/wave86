@@ -360,7 +360,7 @@ static void net_download(int nsel)
     sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, net_size(g), key);
     sprintf(msg, "WAVE86: Installing %s from the %s%s ...", g->title,
             stricmp(g->src, "tdc") == 0 ? "Total DOS Collection" : "eXoDOS server",
-            !g->cd ? "" : netcd ? " (CD over network)" : " with its CD");
+            !g->cd ? "" : netcd ? " (CD over network)" : " (CD on disk)");
     run_command(cmd, msg);
 }
 
