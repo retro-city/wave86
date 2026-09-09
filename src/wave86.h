@@ -104,6 +104,7 @@ typedef struct {
     char cd;                    /* 1 = the game wants its CD */
     char partial;               /* 1 = the server has only part of it yet */
     char netcd;                 /* 1 = the server can also keep the CD (NetDrive) */
+    char netplay;               /* 1 = can be played off the server (NetDrive) */
     unsigned long cdkb;         /* the CD image's share of kb */
     char src[8];                /* "exodos" or "tdc" */
 } NetGame;

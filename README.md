@@ -42,7 +42,7 @@ in dosbox-x before it goes onto the real machine.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
-| N | the games on the server (Enter downloads, L refreshes, C: disc with the game or on the server) |
+| N | the games on the server (Enter downloads, P plays it off the server, L refreshes, C: disc with the game or on the server) |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
@@ -325,7 +325,22 @@ server's address in `WAVENDSRV` (the machine of `server=`, port 2002 or
 
 There is no CD audio either way: SHSUCDHD serves data tracks only and the
 server drops the audio tracks when it makes the ISO. What the ISO route
-keeps is a real CD-ROM drive as far as the game can tell. DOSBox's own shell has no packet driver, so
+keeps is a real CD-ROM drive as far as the game can tell.
+
+### Playing off the server
+
+With NetDrive set up, `P` in the network view plays a game without
+copying anything: the server builds a disk image of the whole game on
+first request (its files, its batches, the disc under `CD\`, kept in
+the same folder as the CD volumes), the DOS side attaches it as a
+drive, runs the game from there and detaches it afterwards. `WAVE86
+/play SYNDICAT` does the same from the prompt, given a fetched list.
+The image is session scoped, NetDrive's term for a private write
+journal per connection that is thrown away when the session ends: any
+number of machines can play from one image, and a game can save as it
+likes, but those saves are gone next time. Download the game for
+keeps. Speed is NetDrive's, around 370 KB/s on a 386, so big games
+load slower than from the hard disk. DOSBox's own shell has no packet driver, so
 these games run under a real DOS: `make dosrun` has the driver in its
 CONFIG.SYS.
 
@@ -368,8 +383,9 @@ checks the batch the launcher generates. About half a minute.
     python3 tools/dostest.py --game SYNDICAT --script mytest.bat
 
 `make dosrun` is `make run` on a real kernel: the window boots DOS, loads
-the packet driver and DHCP, and starts the launcher with sound and the
-network view working against a waveserve on this machine. The disk
+the packet driver, DHCP and a mouse driver, and starts the launcher with
+sound and the network view working against a waveserve on this machine,
+at 50,000 CPU cycles (`DOSTEST_ARGS=--cycles=N` for another speed). The disk
 starts clean, with only Alley Cat from `GAMES\` (`DOSTEST_ARGS="--game
 xcom --game keen4"` for others); what you download there lands inside
 `build/dosrun/hd.img`, a 500 MB disk (FAT16 stops at 2047 MB;

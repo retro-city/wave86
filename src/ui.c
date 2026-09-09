@@ -534,21 +534,17 @@ void ui_net_details(int sel)
         scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE CD IMAGE \xAF", A(10, 0));
     else if (g->partial)
         scr_puts(PANE_X + PANE_W - 2 - 14, 14, "\xAE INCOMPLETE \xAF", A(12, 0));
-    if (g->partial) {
-        scr_puts(PANE_X + 2, 19, "THE SERVER HAS ONLY PART OF", A(8, 0));
-        scr_puts(PANE_X + 2, 20, "THIS GAME SO FAR. ENTER GETS", A(8, 0));
-        scr_puts(PANE_X + 2, 21, "WHAT IS THERE.", A(8, 0));
-    } else if (g->cd && g->netcd && net_cdmode) {
-        scr_puts(PANE_X + 2, 19, "ITS CD STAYS ON THE SERVER AND", A(8, 0));
-        scr_puts(PANE_X + 2, 20, "IS READ OVER THE NETWORK WHEN", A(8, 0));
-        scr_puts(PANE_X + 2, 21, "IT RUNS. C DOWNLOADS IT INSTEAD.", A(8, 0));
-    } else if (g->cd) {
-        scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT WITH ITS CD", A(8, 0));
-        scr_puts(PANE_X + 2, 21, g->netcd ? "IMAGE. C LEAVES IT ON THE SERVER." : "IMAGE, MOUNTED WHEN IT RUNS.", A(8, 0));
-    } else {
-        scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO", A(8, 0));
-        scr_puts(PANE_X + 2, 21, "YOUR GAMES FOLDER.", A(8, 0));
-    }
+    if (g->partial)
+        scr_puts(PANE_X + 2, 19, "THE SERVER HAS ONLY PART OF IT.", A(8, 0));
+    else if (g->cd && g->netcd && net_cdmode)
+        scr_puts(PANE_X + 2, 19, "CD OVER NETWORK, C: ON DISK.", A(8, 0));
+    else if (g->cd && g->netcd)
+        scr_puts(PANE_X + 2, 19, "CD ON DISK, C: OVER NETWORK.", A(8, 0));
+    else if (g->cd)
+        scr_puts(PANE_X + 2, 19, "ITS CD IMAGE COMES ALONG.", A(8, 0));
+    scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO YOUR GAMES.", A(8, 0));
+    if (g->netplay)
+        scr_puts(PANE_X + 2, 21, "P PLAYS IT STRAIGHT OFF THE SERVER.", A(8, 0));
 }
 
 void ui_net_keybar(void)
@@ -557,6 +553,7 @@ void ui_net_keybar(void)
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
     keychip(&x, "ENTER", "GET", net_count == 0);
     keychip(&x, "L", "LIST", 0);
+    keychip(&x, "P", "PLAY", net_count == 0);
     keychip(&x, "C", net_cdmode ? "NET CD" : "LOCAL CD", 0);
     keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
     keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);

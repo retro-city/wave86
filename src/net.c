@@ -78,6 +78,7 @@ static void parse_line(char *line, NetGame *g)
     g->cd = (atoi(cd) & 1) != 0;          /* flags: 1 = needs CD, 2 = incomplete */
     g->partial = (atoi(cd) & 2) != 0;
     g->netcd = (atoi(cd) & 4) != 0;
+    g->netplay = (atoi(cd) & 8) != 0;
     strncpy(g->src, src[0] ? src : "exodos", 7);
 }
 

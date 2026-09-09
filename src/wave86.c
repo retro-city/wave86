@@ -47,6 +47,7 @@ static const char *opt_netsel = NULL;   /* /dump NET DIR: preselect that entry *
 static int opt_mustest = 0;
 static int opt_diag = 0;
 static const char *opt_launch = NULL;
+static const char *opt_play = NULL;     /* /play DIR: a game off the server */
 static int opt_name = 0;             /* argv index of /name */
 
 /* music.c / mod.c internals exposed for the self-test */
@@ -364,6 +365,67 @@ static void net_download(int nsel)
     run_command(cmd, msg);
 }
 
+/* the lines that find NetDrive's letter: WAVEND if that is one, else the
+   first of D: to H: that NETDRIVE STATUS accepts */
+static void emit_nd_letter(FILE *f)
+{
+    const char *v = ini_global("netdrive");
+    char l;
+    if (v && v[0])
+        fprintf(f, "set WAVEND=%c\n", toupper((unsigned char)v[0]));
+    fprintf(f, "if \"%%WAVEND%%\"==\"\" goto ndfind\n"
+               "NETDRIVE STATUS %%WAVEND%%: > NUL\n"
+               "if not errorlevel 1 goto ndok\n"
+               "set WAVEND=\n"
+               ":ndfind\n");
+    for (l = 'D'; l <= 'H'; l++)
+        fprintf(f, "if \"%%WAVEND%%\"==\"\" NETDRIVE STATUS %c: > NUL\n"
+                   "if \"%%WAVEND%%\"==\"\" if not errorlevel 1 set WAVEND=%c\n", l, l);
+    fprintf(f, "if \"%%WAVEND%%\"==\"\" goto nond\n:ndok\n");
+}
+
+/* play a game straight off the server: the whole game as a NetDrive
+   volume, attached, run, detached; nothing is copied */
+static void net_play(int nsel)
+{
+    char exe[PATH_LEN + 16], msg[80], host[32], key[32];
+    const NetGame *g = net_get(nsel);
+    const char *dot = strrchr(g->exe, '.');
+    const char *v = ini_global("netdrive_port");
+    char *colon;
+    FILE *f;
+
+    if (!g->netplay || !g->exe[0])
+        return;
+    waveget_path(exe);
+    strncpy(host, cfg_server, sizeof(host) - 1);
+    host[sizeof(host) - 1] = 0;
+    colon = strchr(host, ':');
+    if (colon) *colon = 0;
+    if (stricmp(g->src, "exodos") == 0) strcpy(key, g->dir);
+    else sprintf(key, "%s:%s", g->src, g->dir);
+    net_mark_view();
+    f = fopen("RUNGAME.BAT", "w");
+    if (!f)
+        return;
+    fprintf(f, "@echo off\nset WAVENDSRV=%s:%s\n", host, v && v[0] ? v : "2002");
+    emit_nd_letter(f);
+    fprintf(f, "%s DISK %s %s\n", exe, cfg_server, key);
+    fprintf(f, "if errorlevel 1 goto nodisk\n");
+    fprintf(f, "NETDRIVE C %%WAVENDSRV%% %s.DSK %%WAVEND%%:\n", g->dir);
+    fprintf(f, "if errorlevel 1 goto nodisk\n");
+    fprintf(f, "%%WAVEND%%:\ncd \\\n");
+    fprintf(f, "%s%s\n", dot && stricmp(dot + 1, "BAT") == 0 ? "call " : "", g->exe);
+    fprintf(f, "%%WAVEND%%:\ncd \\\nif exist IMGMOUNT.BAT call IMGMOUNT.BAT /U\n");
+    fprintf(f, "%c:\nNETDRIVE D %%WAVEND%%:\ngoto done\n", launcher_dir[0]);
+    fprintf(f, ":nond\necho No NetDrive letter: is NETDRIVE.SYS in CONFIG.SYS?\npause\ngoto done\n");
+    fprintf(f, ":nodisk\necho The server could not provide the game disk.\npause\n");
+    fprintf(f, ":done\n%c:\ncd %s\n", launcher_dir[0], launcher_dir);
+    fclose(f);
+    sprintf(msg, "WAVE86: Playing %s off the server ...", g->title);
+    hand_off(msg);
+}
+
 /* a download landed, but the scan found nothing to run in the folder */
 static void net_arrived_notice(void)
 {
@@ -397,6 +459,8 @@ int main(int argc, char **argv)
         }
         if (stricmp(argv[i], "/launch") == 0 && i + 1 < argc)
             opt_launch = argv[i + 1];   /* boot straight into a game */
+        if (stricmp(argv[i], "/play") == 0 && i + 1 < argc)
+            opt_play = argv[i + 1];     /* the same, off the server */
         if (stricmp(argv[i], "/name") == 0 && i + 2 < argc)
             opt_name = i;               /* /name DIR New Name Words */
         if (stricmp(argv[i], "/diag") == 0)
@@ -528,6 +592,16 @@ int main(int argc, char **argv)
     /* back from a download or a list fetch? */
     i = net_apply_pending();
     if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
+    if (opt_play) {                     /* boot straight into a game off the server */
+        int j;
+        net_load();
+        for (j = 0; j < net_count; j++)
+            if (stricmp(net_get(j)->dir, opt_play) == 0) { net_play(j); break; }
+        if (j == net_count) {
+            printf("WAVE86: %s is not in the server list (press L in the menu).\n", opt_play);
+            return 1;
+        }
+    }
     if (net_view_pending() || opt_dumpnet) {
         net_load();
         view = 1;
@@ -574,6 +648,12 @@ int main(int argc, char **argv)
             case 'c': case 'C':             /* CDs: on the server, or downloaded */
                 net_cdmode = !net_cdmode;
                 net_redraw(nsel, ntop);
+                continue;
+            case 'p': case 'P':             /* play it off the server */
+                if (net_count && net_get(nsel)->netplay) {
+                    net_play(nsel);
+                    net_redraw(nsel, ntop);     /* bare mode: back here */
+                }
                 continue;
             case 0x0D:
                 if (net_count) {

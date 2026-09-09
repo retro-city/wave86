@@ -193,6 +193,7 @@ def main():
     ap.add_argument("--build", default=os.path.join(ROOT, "build"))
     ap.add_argument("--netdrive-sys", action=argparse.BooleanOptionalAction, default=True,
                     help="DEVICE=NETDRIVE.SYS in CONFIG.SYS (default on; --no-netdrive-sys to load it later)")
+    ap.add_argument("--cycles", type=int, default=50000, help="dosbox-x CPU cycles for --run (default 50000; tests use auto)")
     ap.add_argument("--run", action="store_true",
                     help="no test: boot into WAVE.BAT in a dosbox-x window, with sound and network")
     a = ap.parse_args()
@@ -271,7 +272,8 @@ def main():
     if a.run:
         print("dostest: booting into the launcher; close the dosbox-x window to end."
               " Downloads land inside build/dosrun/hd.img.")
-        p = dosbox(NET_FLAGS + boot_cmds, work, os.path.join(work, "dosbox.log"), gui=True)
+        p = dosbox(NET_FLAGS + ["-set", f"cpu cycles={a.cycles}"] + boot_cmds, work,
+                   os.path.join(work, "dosbox.log"), gui=True)
         p.wait()
         return
     p = dosbox(NET_FLAGS + boot_cmds, work, os.path.join(work, "dosbox.log"))   # the NE2000 is there for scripts too

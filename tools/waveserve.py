@@ -26,7 +26,7 @@ with an eXoDOS folder of the same name.
 import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil, struct
 import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import fat16
+import fat16, tempfile
 
 NETDRIVE_DIR = None
 NETDRIVE_PORT = 2002
@@ -318,6 +318,48 @@ def netdrive_image(path, zippath, spec, iso_name):
     print(f"waveserve: NetDrive image {os.path.basename(path)} ({size // 1048576} MB)", file=sys.stderr)
 
 
+def game_disk(g):
+    """A NetDrive volume holding the whole game as the LOCAL pack would land
+    it (files, generated batches, the disc as CD\\NAME.ISO), built on first
+    request; session scoped, so every player writes into a private journal
+    and the master stays clean. Returns the image name."""
+    name = f"{g['dir']}.DSK"
+    path = os.path.join(NETDRIVE_DIR, name)
+    if not os.path.exists(path):
+        with tempfile.TemporaryDirectory(dir=NETDRIVE_DIR) as work:
+            tree = os.path.join(work, "tree")
+            os.makedirs(tree)
+            with zipfile.ZipFile(g["zip"]) if g["zip"] else open(os.devnull) as z:
+                for entry in g["files"]:
+                    rel, member, size = entry[:3]
+                    out = os.path.join(tree, *rel.split("\\"))
+                    os.makedirs(os.path.dirname(out), exist_ok=True)
+                    with open(out, "wb") as o:
+                        if len(entry) == 4 and isinstance(entry[3], bytes):
+                            o.write(entry[3])
+                        elif len(entry) == 4:
+                            for chunk in iso_chunks(z, entry[3]):
+                                o.write(chunk)
+                        elif g["zip"]:
+                            with z.open(member) as f:
+                                shutil.copyfileobj(f, o, 65536)
+                        else:
+                            with open(member, "rb") as f:
+                                shutil.copyfileobj(f, o, 65536)
+            mb, nroot = fat16.volume_size_mb(tree)
+            tmp = path + ".part"
+            try:
+                fat16.format_volume(tmp, mb, nroot)
+                fat16.fill_tree(tmp, 0, tree)
+                os.replace(tmp, path)
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+        print(f"waveserve: game disk {name} ({mb} MB)", file=sys.stderr)
+    open(path + ".session_scoped", "a").close()
+    return name
+
+
 def read_conf(root, short):
     """(candidate program names in autoexec order, CD drive letter or "")"""
     for r in roots_of(root):
@@ -571,12 +613,12 @@ class H(BaseHTTPRequestHandler):
             games = GAMES
         p = self.path
         if p == "/list":
-            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0)}|{g['src']}|{g.get('cd_kb', 0)}\r\n"
+            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0) | (8 if NETDRIVE_DIR else 0)}|{g['src']}|{g.get('cd_kb', 0)}\r\n"
                            for i, g in enumerate(games)).encode("ascii", "replace")
             self._head("text/plain", len(body))
             self.wfile.write(body)
             return
-        m = re.match(r'^/(info|pack)/([^/]+)$', p)
+        m = re.match(r'^/(info|pack|disk)/([^/]+)$', p)
         g = None
         if m:
             key, _, query = m.group(2).partition("?")
@@ -593,7 +635,8 @@ class H(BaseHTTPRequestHandler):
             lines = [f"{g['title']} ({g['year']})" if g['year'] else g['title'], f"DIR {g['dir']}", f"SRC {g['src']}", f"EXE {g['exe'] or '?'}",
                      f"GENRE {g['genre']}", f"BY {g['developer']}", f"FILES {len(g['files'])}",
                      f"KB {g['kb']}", f"CD {str(g.get('cd_kb', 0) // 1024) + ' MB image' + (', also on the server: ?cd=net' if g.get('netcd') else '') if g['cd'] else 'no'}",
-                     f"PARTIAL {'yes' if g.get('partial') else 'no'}", ""]
+                     f"PARTIAL {'yes' if g.get('partial') else 'no'}",
+                     f"PLAY {'off the server: /disk/' + g['dir'] if NETDRIVE_DIR else 'no'}", ""]
             notes = g["notes"]
             while notes:
                 cut = notes.rfind(" ", 0, 76) if len(notes) > 76 else len(notes)
@@ -602,6 +645,20 @@ class H(BaseHTTPRequestHandler):
                 lines.append(notes[:cut].strip())
                 notes = notes[cut:].strip()
             body = ("\r\n".join(lines) + "\r\n").encode("ascii", "replace")
+            self._head("text/plain", len(body))
+            self.wfile.write(body)
+            return
+        if m.group(1) == "disk":
+            if not NETDRIVE_DIR:
+                self.send_error(404, "no NetDrive on this server")
+                return
+            try:
+                name = game_disk(g)
+            except Exception as e:
+                print(f"waveserve: game disk for {g['dir']}: {e}", file=sys.stderr)
+                self.send_error(500, str(e))
+                return
+            body = f"OK {name}\r\n".encode()
             self._head("text/plain", len(body))
             self.wfile.write(body)
             return

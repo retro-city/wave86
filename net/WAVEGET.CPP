@@ -27,6 +27,7 @@
 #define TCP_RECV_BUFFER   (16384)
 #define INBUF             (8192)
 #define CONNECT_TIMEOUT   (10000ul)
+#define DISK_TIMEOUT (120000)   /* a big disc takes the server a while */
 #define IDLE_TIMEOUT      (30000ul)
 
 static TcpSocket *sock;
@@ -175,6 +176,38 @@ static int doList(IpAddr_t addr, uint16_t port, const char *outfile) {
   return 0;
 }
 
+/* ---------------------------------------------------------- DISK */
+/* ask the server for the game's NetDrive disk (built on first request);
+   prints its answer, "OK NAME.DSK", and returns 0 when it has one */
+static int doDisk(IpAddr_t addr, uint16_t port, const char *key) {
+  char path[64];
+  sprintf(path, "/disk/%s", key);
+  int16_t n; uint16_t start;
+  int rc = httpGet(addr, port, path, &n, &start);
+  if (rc) return rc;
+  char reply[80]; int len = 0;
+  clockTicks_t t0 = TIMER_GET_CURRENT();
+  while (1) {
+    if (n > (int16_t)start) {
+      int take = n - start;
+      if (len + take > (int)sizeof(reply) - 1) take = sizeof(reply) - 1 - len;
+      memcpy(reply + len, inBuf + start, take); len += take;
+    }
+    start = 0;
+    n = recvStep();
+    if (n == -2) return 2;
+    if (n == -1) break;
+    if (n == 0) {
+      if (Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(DISK_TIMEOUT)) { puts("WAVEGET: timeout waiting for the disk"); return 1; }
+      continue;
+    }
+    t0 = TIMER_GET_CURRENT();
+  }
+  reply[len] = 0;
+  printf("WAVEGET: %s", reply);
+  return strncmp(reply, "OK ", 3) == 0 ? 0 : 1;
+}
+
 /* ---------------------------------------------------------- GET */
 static char gameRoot[80];          /* gamesdir\DIR */
 static char lastDir[128] = "";
@@ -263,7 +296,7 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
 
 /* ---------------------------------------------------------- main */
 static void usage(void) {
-  puts("WAVEGET LIST host:port outfile\nWAVEGET GET host:port DIR gamesdir [kb [key]]");
+  puts("WAVEGET LIST host:port outfile\nWAVEGET GET host:port DIR gamesdir [kb [key]]\nWAVEGET DISK host:port key");
   exit(1);
 }
 
@@ -285,6 +318,8 @@ int main(int argc, char **argv) {
   int rc = 1;
   if (stricmp(argv[1], "LIST") == 0) {
     rc = doList(addr, port, argv[3]);
+  } else if (stricmp(argv[1], "DISK") == 0 && argc >= 4) {
+    rc = doDisk(addr, port, argv[3]);
   } else if (stricmp(argv[1], "GET") == 0 && argc >= 5) {
     rc = doGet(addr, port, argv[3], argv[4], argc > 5 ? strtoul(argv[5], NULL, 10) : 0, argc > 6 ? argv[6] : NULL);
   } else {
