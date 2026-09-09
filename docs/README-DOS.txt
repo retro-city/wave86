@@ -17,6 +17,11 @@ WAVE86 /diag prints what it found when something looks wrong.
 
 Games from a server on the LAN (PicoMem or any NE2000)
 ------------------------------------------------------
+DOS's default environment (256 bytes) runs out once MTCPCFG joins PATH,
+BLASTER and the rest ("Out of environment space"); give COMMAND.COM more
+in CONFIG.SYS:
+    SHELL=C:\COMMAND.COM C:\ /E:1024 /P
+
 On the DOS machine, in AUTOEXEC.BAT:
     LH NE2000 0x60 5 0x300          (your card's interrupt and port)
     SET MTCPCFG=C:\WAVE86\MTCP.CFG

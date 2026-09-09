@@ -249,6 +249,12 @@ On the DOS machine, copy `WAVEGET.EXE`, `DHCP.EXE` and `MTCP.CFG` from
 
     server=192.168.1.10:8086
 
+give COMMAND.COM a bigger environment in `CONFIG.SYS`, since DOS's
+256-byte default runs out once `MTCPCFG` joins PATH and the sound
+variables ("Out of environment space"):
+
+    SHELL=C:\COMMAND.COM C:\ /E:1024 /P
+
 and get the network card up in `AUTOEXEC.BAT` (PicoMem or any NE2000):
 
     LH NE2000 0x60 5 0x300
