@@ -69,7 +69,7 @@ cdrom: $(wildcard cdrom/*.COM cdrom/*.EXE)
 MTCP_DIR  = $(abspath net/mtcp)
 MTCP_OPTS = -0 -ml -oh -ok -ot -s -oa -ei -zp2 -zpw -ob -ol+ -oi+ -q \
             -i=$(MTCP_DIR)/TCPINC -i=$(MTCP_DIR)/INCLUDE
-MTCP_OBJS = packet arp eth ip tcp tcpsockm udp utils dns timer trace
+MTCP_OBJS = PACKET ARP ETH IP TCP TCPSOCKM UDP UTILS DNS TIMER TRACE
 MTCP_SRC  = $(wildcard net/mtcp/TCPLIB/*.CPP) net/mtcp/TCPLIB/IPASM.ASM
 
 net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM build/NETDRIVE.SYS build/NETDRIVE.EXE build/DRVOFF.EXE
@@ -98,12 +98,13 @@ build/MTCP.CFG: net/MTCP.CFG
 	@mkdir -p build
 	cp $< $@
 
-# $(1) = program (lower case), $(2) = directory holding its .CPP and .CFG
+# $(1) = program (lower case), $(2) = directory holding its .CPP and .CFG.
+# The sources carry upper-case names, which matters on Linux.
 define MTCP_BUILD
 	@mkdir -p build/net/$(1)
-	cd build/net/$(1) && for o in $(MTCP_OBJS); do wpp $(MTCP_DIR)/TCPLIB/$$o.cpp $(MTCP_OPTS) -DCFG_H=\"$(1).cfg\" -i=$(abspath $(2)) -fo=$$o.obj || exit 1; done
-	cd build/net/$(1) && wasm -0 -ml $(MTCP_DIR)/TCPLIB/ipasm.asm -fo=ipasm.obj -q
-	cd build/net/$(1) && wpp $(abspath $(2))/$(1).cpp $(MTCP_OPTS) -DCFG_H=\"$(1).cfg\" -i=$(abspath $(2)) -fo=$(1).obj
+	cd build/net/$(1) && for o in $(MTCP_OBJS); do wpp $(MTCP_DIR)/TCPLIB/$$o.CPP $(MTCP_OPTS) -DCFG_H=\"$(shell echo $(1) | tr a-z A-Z).CFG\" -i=$(abspath $(2)) -fo=$$o.obj || exit 1; done
+	cd build/net/$(1) && wasm -0 -ml $(MTCP_DIR)/TCPLIB/IPASM.ASM -fo=ipasm.obj -q
+	cd build/net/$(1) && wpp $(abspath $(2))/$(shell echo $(1) | tr a-z A-Z).CPP $(MTCP_OPTS) -DCFG_H=\"$(shell echo $(1) | tr a-z A-Z).CFG\" -i=$(abspath $(2)) -fo=$(1).obj
 	cd build/net/$(1) && wlink system dos option quiet option eliminate option stack=8192 name ../../$(1).exe file $$(echo $(MTCP_OBJS) | sed 's/ /.obj,/g').obj,ipasm.obj,$(1).obj
 	@mv build/$(1).exe build/$(shell echo $(1) | tr a-z A-Z).EXE 2>/dev/null || true
 	@ls -la build/$(shell echo $(1) | tr a-z A-Z).EXE
