@@ -24,3 +24,8 @@ repo; point `make dostest DOS=` at your own boot floppy to test on it.
 repository, `base/choice.zip`). Neither boot floppy carries one, and the
 eXoDOS start batches use it for their menus, so the harness puts it in
 `C:\WAVE86`, which is on the PATH. A real DOS install has its own.
+
+`CTMOUSE.EXE` is CuteMouse, FreeDOS's mouse driver (GPL, from the same
+package repository, `base/ctmouse.zip`). The harness loads it from the
+AUTOEXEC of both images, so games in `make dosrun` have a mouse; dosbox-x
+gives it a PS/2 one.
