@@ -39,6 +39,17 @@ and, first thing in AUTOEXEC.BAT:
     DRVOFF D:
 That keeps D: for the disc and gives NetDrive E:.
 
+Discs
+-----
+A game installed with its CD (LOCAL CD in the network view) keeps the
+image in its own CD\ folder, unless WAVE86.INI names a folder for all of
+them; with a PicoMem 2 that is its SD card, and its own CD-ROM emulation
+mounts them:
+    cdrom=S:\CDROM
+    imgmount=PICOMEM          (SOFTWARE, the default, uses SHSUCDHD+SHSUCDX)
+    cdletter=D                (the letter MSCDEX gave the card's drive)
+    cdmount_picomem=...       (the card's command to insert $ISO, when it has one)
+
 EXTRAS
 ------
 FreeDOS programs a DOS install may lack: CHOICE.EXE (menus in some start

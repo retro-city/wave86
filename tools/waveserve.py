@@ -181,8 +181,9 @@ def iso_specs(z, cue_name, members):
     return specs
 
 
-def iso_name(cue_name, used):
-    base = re.sub(r"[^A-Z0-9_-]", "", cue_name.rsplit("/", 1)[-1].rsplit(".", 1)[0].upper())[:8] or "DISC"
+def iso_name(base, used):
+    """the game's folder name, then NAME2, NAME3 for more discs"""
+    base = re.sub(r"[^A-Z0-9_-]", "", base.upper())[:8] or "DISC"
     name, n = base, 1
     while name in used:
         n += 1
@@ -206,7 +207,11 @@ def imgmount_bat(iso, letter, net=None):
     lines = ["@echo off", 'if "%1"=="/U" goto unmount',
              f"rem WAVE86: this game wants its CD image ({letter}: in the eXoDOS conf).",
              "rem waveserve made this; the start batch calls it first and the launcher",
-             "rem calls it with /U afterwards. CD gets the letter the disc is on."]
+             "rem calls it with /U afterwards. CD gets the letter the disc is on.",
+             "rem WAVECDROM: where the images are (default the game's CD folder);",
+             "rem IMGMOUNT: SOFTWARE (SHSUCDHD+SHSUCDX) or PICOMEM (the card's own",
+             "rem CD-ROM, image chosen by %WAVEPMCD% if set, letter %WAVECDL%).",
+             'if "%WAVECDROM%"=="" set WAVECDROM=CD']
     if net:
         srv, img = net
         lines += [f'if "%WAVENDSRV%"=="" set WAVENDSRV={srv}',
@@ -239,17 +244,24 @@ def imgmount_bat(iso, letter, net=None):
                   "echo own shell cannot reach. Run it under a real DOS: make dosrun.",
                   "goto done"]
     else:
-        lines += ["if exist Z:\\IMGMOUNT.COM goto dosbox",
+        img = iso.split("\\")[-1]
+        lines += ['if "%IMGMOUNT%"=="PICOMEM" goto picomem',
+                  "if exist Z:\\IMGMOUNT.COM goto dosbox",
                   "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx",
-                  f"LH SHCDHD86 /F:{iso} /Q",
+                  f"LH SHCDHD86 /F:%WAVECDROM%\\{img} /Q",
                   f"LH SHCDX86 /D:SHSU-CDH,{letter} /I /Q",
                   "goto letter",
+                  ":picomem",
+                  f'if not "%WAVEPMCD%"=="" %WAVEPMCD% %WAVECDROM%\\{img}',
+                  'if "%WAVECDL%"=="" set WAVECDL=D',
+                  "set CD=%WAVECDL%",
+                  "goto done",
                   ":dosbox",
-                  f"Z:\\IMGMOUNT.COM {letter} {iso} -t iso",
+                  f"Z:\\IMGMOUNT.COM {letter} %WAVECDROM%\\{img} -t iso",
                   f"set CD={letter}",
                   "goto done",
                   ":dosboxx",
-                  f"Z:\\SYSTEM\\IMGMOUNT.COM {letter} {iso} -t iso",
+                  f"Z:\\SYSTEM\\IMGMOUNT.COM {letter} %WAVECDROM%\\{img} -t iso",
                   f"set CD={letter}",
                   "goto done"]
     # SHSUCDX /L:1 returns the first drive's number (A: = 1) as the errorlevel
@@ -262,7 +274,11 @@ def imgmount_bat(iso, letter, net=None):
     if net:
         lines += ["SHCDX86 /U /Q", "SHCDHD86 /U /Q", "NETDRIVE D %WAVEND%:"]
     else:
-        lines += [f"if exist Z:\\IMGMOUNT.COM Z:\\IMGMOUNT.COM -u {letter}",
+        lines += ['if not "%IMGMOUNT%"=="PICOMEM" goto unsoft',
+                  'if not "%WAVEPMCDU%"=="" %WAVEPMCDU%',
+                  "goto done",
+                  ":unsoft",
+                  f"if exist Z:\\IMGMOUNT.COM Z:\\IMGMOUNT.COM -u {letter}",
                   f"if exist Z:\\SYSTEM\\IMGMOUNT.COM Z:\\SYSTEM\\IMGMOUNT.COM -u {letter}",
                   "if exist Z:\\IMGMOUNT.COM goto done",
                   "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto done",
@@ -512,7 +528,7 @@ def index(root, max_mb, include_cd):
                     specs += [(name, 0, 2048, 0, size // 2048) for name, size in sorted(raw_isos)]
                     for spec in specs:
                         size = spec[4] * 2048
-                        isos.append(f"CD\\{iso_name(spec[0], used)}.ISO")
+                        isos.append(f"CD\\{iso_name(top, used)}.ISO")
                         files.append((isos[-1], None, size, spec))
                         total += size
                         cd_kb += (size + 1023) // 1024

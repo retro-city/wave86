@@ -304,10 +304,20 @@ Under DOSBox the launcher uses `IMGMOUNT D image -t iso` instead; it
 knows it is in DOSBox by the Z: drive. `cdmount=` and `cdunmount=` in
 the INI replace either, with `$ISO` standing for the image path.
 
-A CD game from the server comes with its own `IMGMOUNT.BAT` (the same
-choice between the drivers and IMGMOUNT), and its start batch calls it
-first, so the game also runs from a plain prompt with the WAVE86 folder
-on the PATH. The batch puts the letter the disc landed on into `CD`,
+A CD game from the server comes with its own `IMGMOUNT.BAT`, and its
+start batch calls it first, so the game also runs from a plain prompt
+with the WAVE86 folder on the PATH. The batch reads two things from the
+environment, which the launcher sets from the INI: `WAVECDROM`, the
+folder holding the discs (`cdrom=`; without it a game keeps its disc in
+its own `CD\` folder, with it every disc goes there, named after the
+game, `SETTLR2G.ISO`), and `IMGMOUNT`, how to mount them: `SOFTWARE`
+(SHSUCDHD and SHSUCDX, the default) or `PICOMEM`, the card's own
+CD-ROM emulation, a real drive to DOS with its letter fixed at boot
+(`cdletter=`), the image chosen by the card's command (`cdmount_picomem=`
+and `cdunmount_picomem=`, with `$ISO` for the image, once the card has
+one). A PicoMem 2 keeps all discs on its SD card: `cdrom=S:\CDROM`,
+`imgmount=PICOMEM`. Under DOSBox the batch uses IMGMOUNT whatever the
+mode says; playing off the server always mounts in software. The batch puts the letter the disc landed on into `CD`,
 and the server rewrites the start batch to say `%CD%:` wherever the
 eXoDOS conf said `D:`, so it does not matter if D: is taken by a real
 CD-ROM or by NetDrive. When a game has `IMGMOUNT.BAT` the launcher

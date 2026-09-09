@@ -80,6 +80,19 @@ static void put_template(FILE *f, const char *t, const char *iso)
     fputc('\n', f);
 }
 
+/* what the game batches need to know about discs, from the INI: where the
+   images are (cdrom=), how to mount them (imgmount=SOFTWARE|PICOMEM), the
+   PicoMem's letter and its mount/unmount commands */
+static void emit_cd_env(FILE *f)
+{
+    const char *v;
+    if ((v = ini_global("cdrom")) && v[0])            fprintf(f, "set WAVECDROM=%s\n", v);
+    if ((v = ini_global("imgmount")) && v[0])         fprintf(f, "set IMGMOUNT=%s\n", v);
+    if ((v = ini_global("cdletter")) && v[0])         fprintf(f, "set WAVECDL=%c\n", toupper((unsigned char)v[0]));
+    if ((v = ini_global("cdmount_picomem")) && v[0])  fprintf(f, "set WAVEPMCD=%s\n", v);
+    if ((v = ini_global("cdunmount_picomem")) && v[0]) fprintf(f, "set WAVEPMCDU=%s\n", v);
+}
+
 /* DOSBox: its Z: drive carries the shell's programs. Returns IMGMOUNT's
    full path (a bare IMGMOUNT could resolve to a game's IMGMOUNT.BAT in
    the current directory), or NULL on real DOS. */
@@ -127,6 +140,7 @@ static void emit_cd(FILE *f, const Game *g, int after)
             v = ini_global("netdrive");
             if (v && v[0])
                 fprintf(f, "set WAVEND=%c\n", toupper((unsigned char)v[0]));
+            emit_cd_env(f);
         }
         return;
     }
@@ -359,6 +373,13 @@ static void net_download(int nsel)
     if (g->cd && g->netcd)
         strcat(key, netcd ? "?cd=net" : "?cd=local");
     sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, net_size(g), key);
+    {
+        const char *cdrom = ini_global("cdrom");
+        if (cdrom && cdrom[0] && strlen(cmd) + strlen(cdrom) + 2 < sizeof(cmd)) {
+            strcat(cmd, " ");
+            strcat(cmd, cdrom);
+        }
+    }
     sprintf(msg, "WAVE86: Installing %s from the %s%s ...", g->title,
             stricmp(g->src, "tdc") == 0 ? "Total DOS Collection" : "eXoDOS server",
             !g->cd ? "" : netcd ? " (CD over network)" : " (CD on disk)");
@@ -409,6 +430,7 @@ static void net_play(int nsel)
     if (!f)
         return;
     fprintf(f, "@echo off\nset WAVENDSRV=%s:%s\n", host, v && v[0] ? v : "2002");
+    fprintf(f, "set WAVECDROM=CD\nset IMGMOUNT=SOFTWARE\n");   /* the disc is on the game disk */
     emit_nd_letter(f);
     fprintf(f, "%s DISK %s %s\n", exe, cfg_server, key);
     fprintf(f, "if errorlevel 1 goto nodisk\n");
