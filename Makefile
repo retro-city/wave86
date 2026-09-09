@@ -68,7 +68,7 @@ cdrom: $(wildcard cdrom/*.COM cdrom/*.EXE)
 # --- the network side: WAVEGET (ours) and DHCP (mTCP's), both on mTCP, GPL
 MTCP_DIR  = $(abspath net/mtcp)
 MTCP_OPTS = -0 -ml -oh -ok -ot -s -oa -ei -zp2 -zpw -ob -ol+ -oi+ -q \
-            -i=$(MTCP_DIR)/TCPINC -i=$(MTCP_DIR)/INCLUDE
+            -i=$(abspath build/mtcp-inc) -i=$(MTCP_DIR)/TCPINC -i=$(MTCP_DIR)/INCLUDE
 MTCP_OBJS = PACKET ARP ETH IP TCP TCPSOCKM UDP UTILS DNS TIMER TRACE
 MTCP_SRC  = $(wildcard net/mtcp/TCPLIB/*.CPP) net/mtcp/TCPLIB/IPASM.ASM
 
@@ -110,10 +110,14 @@ define MTCP_BUILD
 	@ls -la build/$(shell echo $(1) | tr a-z A-Z).EXE
 endef
 
-build/WAVEGET.EXE: net/WAVEGET.CPP net/WAVEGET.CFG $(MTCP_SRC)
+# the headers under the names the sources include them by (case matters on Linux)
+build/mtcp-inc/.stamp: $(wildcard net/mtcp/*/*.H net/mtcp/*/*.h net/*.H net/dhcp/*.H)
+	python3 tools/mtcp_inc.py build/mtcp-inc
+
+build/WAVEGET.EXE: net/WAVEGET.CPP net/WAVEGET.CFG $(MTCP_SRC) build/mtcp-inc/.stamp
 	$(call MTCP_BUILD,waveget,net)
 
-build/DHCP.EXE: net/dhcp/DHCP.CPP net/dhcp/DHCP.CFG $(MTCP_SRC)
+build/DHCP.EXE: net/dhcp/DHCP.CPP net/dhcp/DHCP.CFG $(MTCP_SRC) build/mtcp-inc/.stamp
 	$(call MTCP_BUILD,dhcp,net/dhcp)
 
 
