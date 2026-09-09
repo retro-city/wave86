@@ -31,9 +31,9 @@ build/WAVE86.INI: WAVE86.INI
 	@mkdir -p build
 	cp $< $@
 
-thumbs: $(wildcard THUMBS/*.THM)
+thumbs: $(wildcard THUMBS/*.THM THUMBS/*/*.THM)
 	@mkdir -p build/THUMBS
-	@cp THUMBS/*.THM build/THUMBS/ 2>/dev/null || true
+	@cp -R THUMBS/. build/THUMBS/ 2>/dev/null || true
 
 music-files: $(MUSIC)
 	@mkdir -p build/MUSIC

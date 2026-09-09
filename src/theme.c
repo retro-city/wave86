@@ -1,7 +1,7 @@
 /*
  * theme.c - the looks. A theme is the logo (5 rows of '#'), its row
  * colours and shadow, the tagline, the divider band and the 16 DAC
- * colours. theme= in WAVE86.INI picks one; wave86 is the default.
+ * colours. theme= in WAVE86.INI picks one; exodos is the default.
  */
 #include <string.h>
 #include "wave86.h"
@@ -36,12 +36,12 @@ static const Theme themes[] = {
         { 62, 14, 40 }, { 50, 28, 63 }, { 63, 50, 12 }, { 63, 62, 63 } } },
 };
 
-const Theme *theme = &themes[0];
+const Theme *theme = &themes[1];         /* exodos */
 
 void theme_select(const char *name)
 {
     int i;
-    theme = &themes[0];
+    theme = &themes[1];
     if (!name || !name[0])
         return;
     for (i = 0; i < (int)(sizeof(themes) / sizeof(themes[0])); i++)

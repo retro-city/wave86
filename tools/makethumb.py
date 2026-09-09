@@ -22,8 +22,19 @@ import sys, subprocess
 COLS, ROWS = 26, 7
 W, H = COLS * 8, ROWS * 16
 
-PAL6 = [(2,0,8),(9,4,24),(0,34,24),(0,46,52),(52,6,22),(44,0,42),(58,24,2),(36,32,46),
-        (15,9,26),(27,24,60),(18,60,40),(28,63,63),(63,26,34),(63,24,56),(63,54,16),(62,58,63)]
+# the launcher's palettes (src/theme.c), 6-bit VGA DAC values
+PALETTES = {
+    "wave86": [(2,0,8),(9,4,24),(0,34,24),(0,46,52),(52,6,22),(44,0,42),(58,24,2),(36,32,46),
+               (15,9,26),(27,24,60),(18,60,40),(28,63,63),(63,26,34),(63,24,56),(63,54,16),(62,58,63)],
+    "exodos": [(3,0,6),(16,4,30),(0,34,18),(34,20,50),(44,4,22),(34,8,48),(63,34,4),(42,38,46),
+               (18,12,26),(34,26,63),(24,60,30),(52,40,63),(62,14,40),(50,28,63),(63,50,12),(63,62,63)],
+}
+THEME = "exodos"                 # --theme wave86 for the other look's colours
+if "--theme" in sys.argv:
+    _i = sys.argv.index("--theme")
+    THEME = sys.argv[_i + 1]
+    del sys.argv[_i:_i + 2]
+PAL6 = PALETTES[THEME]
 PAL = [(r*255//63, g*255//63, b*255//63) for r, g, b in PAL6]
 
 # codes the UI never displays, available in both banks (0xAE/0xAF are the

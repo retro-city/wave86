@@ -20,10 +20,10 @@ in dosbox-x before it goes onto the real machine.
   turns it on. The header shows a VU meter, which becomes the volume bar
   while you adjust it.
 - VGA gets a custom palette. EGA, CGA and mono cards get the standard
-  colours and the layout still holds up. `theme=exodos` in the INI swaps
-  the synthwave look for an eXoDOS one: a blue block-letter logo with a
-  drop shadow in the colours of the eXoDOS icon (violet, a red D, an
-  orange S) and matching DOS colours.
+  colours and the layout still holds up. The default look is the eXoDOS
+  one: a block-letter logo in the colours of the eXoDOS icon (violet, a
+  red D, an orange S) with a drop shadow and matching DOS colours;
+  `theme=wave86` in the INI brings back the synthwave look.
 - Tells you what it is running on. The header line comes from CPUID and
   a clock measurement (exact via RDTSC on Pentium-class CPUs, estimated
   from a timed loop and marked with `~` on 486s and older) plus the
@@ -72,7 +72,7 @@ Lives next to the EXE. Example:
 
     gamedir=C:\GAMES
     music=0          ; 1 = play at startup
-    theme=wave86     ; or exodos: blue block letters, classic DOS colours
+    theme=exodos     ; or wave86: the synthwave look
     ; adlib=1        ; force FM on (0 = off); normally auto-detected
     ; modrate=11025  ; MOD mixer rate; 0 turns MODs off
 
@@ -191,6 +191,11 @@ standard block characters borrow those, and busy pictures get
 near-identical patterns merged until they fit. VGA only.
 
     python3 tools/makethumb.py screenshot.png THUMBS/KEEN4.THM    # needs ffmpeg
+
+The cells are matched to a theme's colours, so a picture belongs to a
+theme: `THUMBS\KEEN4.THM` is for the default look, `THUMBS\wave86\` holds
+the ones made with `--theme wave86`, and the launcher looks in the
+folder named after its theme first.
 
 ## Games from eXoDOS or the Total DOS Collection over the network
 

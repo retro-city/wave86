@@ -417,9 +417,15 @@ int ui_thumb(const Game *g)
 
     if (!vid_is_vga)
         return 0;
-    sprintf(path, "%s%sTHUMBS\\%s.THM", home_dir,
-            home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\", g->dir);
+    /* a picture made for this theme's colours first, then the plain one */
+    sprintf(path, "%s%sTHUMBS\\%s\\%s.THM", home_dir,
+            home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\", theme->name, g->dir);
     f = fopen(path, "rb");
+    if (!f) {
+        sprintf(path, "%s%sTHUMBS\\%s.THM", home_dir,
+                home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\", g->dir);
+        f = fopen(path, "rb");
+    }
     if (!f)
         return 0;
     if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, "W86T", 4) != 0 ||
