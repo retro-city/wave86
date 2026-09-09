@@ -346,16 +346,21 @@ static void net_fetch_list(void)
 /* download the selected game; comes back with it selected in the games view */
 static void net_download(int nsel)
 {
-    char cmd[PATH_LEN * 2 + 96], exe[PATH_LEN + 16], msg[80], key[20];
+    char cmd[PATH_LEN * 2 + 96], exe[PATH_LEN + 16], msg[80], key[32];
     const NetGame *g = net_get(nsel);
+    int netcd = g->cd && g->netcd && net_cdmode;
     waveget_path(exe);
     net_mark_pending(g);
-    /* the server key: DIR for eXoDOS, src:DIR for other collections */
+    /* the server key: DIR for eXoDOS, src:DIR for other collections; for
+       a CD game the mode decides whether the disc comes along */
     if (stricmp(g->src, "exodos") == 0) strcpy(key, g->dir);
     else sprintf(key, "%s:%s", g->src, g->dir);
-    sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, g->kb, key);
-    sprintf(msg, "WAVE86: Installing %s from the %s ...", g->title,
-            stricmp(g->src, "tdc") == 0 ? "Total DOS Collection" : "eXoDOS server");
+    if (g->cd && g->netcd)
+        strcat(key, netcd ? "?cd=net" : "?cd=local");
+    sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, net_size(g), key);
+    sprintf(msg, "WAVE86: Installing %s from the %s%s ...", g->title,
+            stricmp(g->src, "tdc") == 0 ? "Total DOS Collection" : "eXoDOS server",
+            !g->cd ? "" : netcd ? " (CD stays there)" : " with its CD");
     run_command(cmd, msg);
 }
 
@@ -419,6 +424,7 @@ int main(int argc, char **argv)
                 home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
         ini_load(path);
         theme_select(cfg_theme);
+        net_cdmode = cfg_netcd;
     }
     if (getenv("WAVESRV")) {            /* make run: the emulator's host */
         strncpy(cfg_server, getenv("WAVESRV"), sizeof(cfg_server) - 1);
@@ -563,6 +569,10 @@ int main(int argc, char **argv)
             case 'l': case 'L':
                 net_fetch_list();
                 nsel = ntop = 0;
+                net_redraw(nsel, ntop);
+                continue;
+            case 'c': case 'C':             /* CDs: on the server, or downloaded */
+                net_cdmode = !net_cdmode;
                 net_redraw(nsel, ntop);
                 continue;
             case 0x0D:

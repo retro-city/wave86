@@ -22,7 +22,8 @@ in dosbox-x before it goes onto the real machine.
 - VGA gets a custom palette. EGA, CGA and mono cards get the standard
   colours and the layout still holds up. `theme=exodos` in the INI swaps
   the synthwave look for an eXoDOS one: a blue block-letter logo with a
-  drop shadow and classic DOS colours.
+  drop shadow in the colours of the eXoDOS icon (violet, a red D, an
+  orange S) and matching DOS colours.
 - Tells you what it is running on. The header line comes from CPUID and
   a clock measurement (exact via RDTSC on Pentium-class CPUs, estimated
   from a timed loop and marked with `~` on 486s and older) plus the
@@ -41,7 +42,7 @@ in dosbox-x before it goes onto the real machine.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
-| N | the games on the server (Enter downloads, L refreshes) |
+| N | the games on the server (Enter downloads, L refreshes, C: disc with the game or on the server) |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
@@ -308,6 +309,12 @@ What the DOS machine needs for that:
     PACKETINT 0x60, 0x65                 in MTCP.CFG (the second interrupt
                                          is for DHCP and WAVEGET while
                                          NetDrive holds the first); MTU 1500
+
+In the network view `C` switches between NET CD (the disc stays on the
+server, the download is small) and LOCAL CD (the disc comes along, as
+`CD\NAME.ISO`, and the game needs no network to run); `netcd=0` in the
+INI makes LOCAL the default. The details pane tags a downloaded game
+"CD" or "NET CD" accordingly, next to "386+" and where it came from.
 
 `NETDRIVE.SYS` takes the first letter after the hard disk, D:, which is
 why the disc goes to E: and the start batches use `%WAVECD%`. The

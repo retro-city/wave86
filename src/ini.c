@@ -31,6 +31,7 @@ int cfg_modrate = -1;           /* modrate= : MOD mixer rate, 0 disables */
 int cfg_adlib = -1;             /* adlib=   : 1 force FM on, 0 off */
 int cfg_music = 0;              /* music=   : 1 = play at startup */
 char cfg_theme[16] = "";        /* theme=   : wave86 (default) or exodos */
+int cfg_netcd = 1;              /* netcd=   : 1 = leave CDs on the server (NET CD) */
 
 static char *trim(char *s)
 {
@@ -85,6 +86,8 @@ void ini_load(const char *fname)
                 cfg_adlib = atoi(trim(s + 6));
             } else if (strnicmp(s, "music=", 6) == 0) {
                 cfg_music = atoi(trim(s + 6)) ? 1 : 0;
+            } else if (strnicmp(s, "netcd=", 6) == 0) {
+                cfg_netcd = atoi(trim(s + 6)) ? 1 : 0;
             } else if (strnicmp(s, "theme=", 6) == 0) {
                 int k;
                 strncpy(cfg_theme, trim(s + 6), sizeof(cfg_theme) - 1);

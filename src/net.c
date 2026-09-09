@@ -28,6 +28,7 @@
 int net_count = 0;
 char cfg_server[32] = "";
 char net_pending_dir[9] = "";
+int net_cdmode = 1;
 
 static unsigned long __far *offs[OFF_BLOCKS];
 static int letter_first[27];       /* first index per initial A..Z, [26] = none */
@@ -60,12 +61,12 @@ static void chomp(char *line)
 static void parse_line(char *line, NetGame *g)
 {
     char *p = line;
-    char *id, *dir, *title, *year, *genre, *kb, *exe, *cd, *src;
+    char *id, *dir, *title, *year, *genre, *kb, *exe, *cd, *src, *cdkb;
 
     chomp(line);
     id = field(&p); dir = field(&p); title = field(&p); year = field(&p);
     genre = field(&p); kb = field(&p); exe = field(&p); cd = field(&p);
-    src = field(&p);
+    src = field(&p); cdkb = field(&p);
     (void)id; (void)genre;
     memset(g, 0, sizeof(*g));
     strncpy(g->dir, dir, 8);
@@ -73,6 +74,7 @@ static void parse_line(char *line, NetGame *g)
     strncpy(g->exe, exe, 12);
     g->year = (unsigned)atoi(year);
     g->kb = strtoul(kb, NULL, 10);
+    g->cdkb = strtoul(cdkb, NULL, 10);
     g->cd = (atoi(cd) & 1) != 0;          /* flags: 1 = needs CD, 2 = incomplete */
     g->partial = (atoi(cd) & 2) != 0;
     g->netcd = (atoi(cd) & 4) != 0;
@@ -143,6 +145,15 @@ const NetGame *net_get(int i)
         parse_line(line, &cur);
     cur_idx = i;
     return &cur;
+}
+
+/* the size of the download as the mode has it: without the disc when it
+   stays on the server */
+unsigned long net_size(const NetGame *g)
+{
+    if (g->cd && g->netcd && net_cdmode && g->cdkb < g->kb)
+        return g->kb - g->cdkb;
+    return g->kb;
 }
 
 /* index of the first title starting with c (A-Z), or -1 */

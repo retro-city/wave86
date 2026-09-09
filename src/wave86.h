@@ -92,6 +92,7 @@ extern char mus_track[9];       /* current track base name */
 extern int cfg_modrate;         /* ini modrate=: -1 auto, 0 off, Hz */
 extern int cfg_adlib;           /* ini adlib=: -1 auto, 0 off, 1 force */
 extern int cfg_music;           /* ini music=: 1 = autoplay at startup */
+extern int cfg_netcd;           /* ini netcd=: 1 = NET CD by default */
 
 /* --- net.c: the eXoDOS list and downloads (WAVEGET.EXE does the TCP) --- */
 typedef struct {
@@ -102,12 +103,15 @@ typedef struct {
     unsigned long kb;
     char cd;                    /* 1 = the game wants its CD */
     char partial;               /* 1 = the server has only part of it yet */
-    char netcd;                 /* 1 = the CD image stays on the server (NetDrive) */
+    char netcd;                 /* 1 = the server can also keep the CD (NetDrive) */
+    unsigned long cdkb;         /* the CD image's share of kb */
     char src[8];                /* "exodos" or "tdc" */
 } NetGame;
 extern int net_count;
 extern char cfg_server[32];     /* ini server=a.b.c.d:port */
 extern char net_pending_dir[9]; /* folder of the last download, after net_apply_pending */
+extern int net_cdmode;          /* 1 = leave CDs on the server (NET CD), 0 = download them */
+unsigned long net_size(const NetGame *g);   /* the download in the current mode */
 int net_load(void);             /* offsets into NETLIST.TXT; count */
 const NetGame *net_get(int i);  /* reads that line; valid until the next call */
 int net_letter_first(char c);   /* first title starting with c, or -1 */

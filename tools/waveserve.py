@@ -477,9 +477,6 @@ def index(root, max_mb, include_cd):
                 try:
                     netdrive_image(os.path.join(NETDRIVE_DIR, img), path, spec, isos[0].split("\\")[-1])
                     net = ("%NDSRV%", img)
-                    for e in [e for e in files if e[0] in isos]:
-                        total -= e[2]
-                        files.remove(e)
                 except (OSError, ValueError) as e:
                     print(f"waveserve: no NetDrive image for {top}: {e}", file=sys.stderr)
             # where the start program really is: the conf's cd chain, else the
@@ -490,8 +487,8 @@ def index(root, max_mb, include_cd):
                 want = (subdir.upper() + "\\" + exe_file).lstrip("\\") if subdir else exe_file
                 exe_rel = next((r for r in rels if r.upper() == want), rels[0] if rels else "")
             exe_dir = exe_rel.rsplit("\\", 1)[0] if "\\" in exe_rel else ""
-            if isos:
-                mount = imgmount_bat(isos[0].split("\\")[-1] if net else isos[0], cd or "D", net)
+            if isos:                            # the local variant; the net one is swapped in below
+                mount = imgmount_bat(isos[0], cd or "D", None)
                 files.append(("IMGMOUNT.BAT", None, len(mount), mount))
             is_bat = exe_file.endswith(".BAT")
             if exe_file and (exe_dir or (isos and not is_bat)):
@@ -525,11 +522,16 @@ def index(root, max_mb, include_cd):
                         break
             cd = bool(cd_kb)
             netcd = bool(net)
+            files_net = None
+            if net:                             # same pack without the disc, mounting over NetDrive
+                mount = imgmount_bat(isos[0].split("\\")[-1], cd or "D", net)
+                files_net = [("IMGMOUNT.BAT", None, len(mount), mount) if e[0] == "IMGMOUNT.BAT" else e
+                             for e in files if e[0] not in isos]
             md = meta.get(top.lower(), {})
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
                               zip=path, src="exodos", kb=(total + 1023) // 1024, files=files, exe=exe_file,
-                              cd=cd, cd_kb=cd_kb, netcd=netcd, genre=md.get("genre", ""), developer=md.get("developer", ""),
+                              cd=cd, cd_kb=cd_kb, netcd=netcd, files_net=files_net, genre=md.get("genre", ""), developer=md.get("developer", ""),
                               notes=md.get("notes", "")))
     games.sort(key=lambda g: g["title"].lower())
     return games
@@ -551,7 +553,7 @@ class H(BaseHTTPRequestHandler):
             games = GAMES
         p = self.path
         if p == "/list":
-            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0)}|{g['src']}\r\n"
+            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0)}|{g['src']}|{g.get('cd_kb', 0)}\r\n"
                            for i, g in enumerate(games)).encode("ascii", "replace")
             self._head("text/plain", len(body))
             self.wfile.write(body)
@@ -559,7 +561,7 @@ class H(BaseHTTPRequestHandler):
         m = re.match(r'^/(info|pack)/([^/]+)$', p)
         g = None
         if m:
-            key = m.group(2)
+            key, _, query = m.group(2).partition("?")
             if key.isdigit() and int(key) < len(games):
                 g = games[int(key)]
             else:                       # "DIR" (eXoDOS) or "src:DIR"
@@ -572,7 +574,7 @@ class H(BaseHTTPRequestHandler):
         if m.group(1) == "info":
             lines = [f"{g['title']} ({g['year']})" if g['year'] else g['title'], f"DIR {g['dir']}", f"SRC {g['src']}", f"EXE {g['exe'] or '?'}",
                      f"GENRE {g['genre']}", f"BY {g['developer']}", f"FILES {len(g['files'])}",
-                     f"KB {g['kb']}", f"CD {str(g.get('cd_kb', 0) // 1024) + ' MB image' + (', on the server (NetDrive)' if g.get('netcd') else '') if g['cd'] else 'no'}",
+                     f"KB {g['kb']}", f"CD {str(g.get('cd_kb', 0) // 1024) + ' MB image' + (', also on the server: ?cd=net' if g.get('netcd') else '') if g['cd'] else 'no'}",
                      f"PARTIAL {'yes' if g.get('partial') else 'no'}", ""]
             notes = g["notes"]
             while notes:
@@ -586,9 +588,12 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         self._head("application/octet-stream")
+        entries = g["files"]
+        if g.get("files_net") and query != "cd=local":
+            entries = g["files_net"]
         if g["zip"]:
             with zipfile.ZipFile(g["zip"]) as z:
-                for entry in g["files"]:
+                for entry in entries:
                     rel, name, size = entry[:3]
                     if len(entry) == 4 and isinstance(entry[3], bytes):
                         body = entry[3]

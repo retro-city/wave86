@@ -41,19 +41,26 @@ int ui_thumb(const Game *g);
 static void draw_logo(void)
 {
     int r, i;
+    /* a cell is '#' in the row's colour, or a hex digit naming its own */
     if (theme->shadow) {                /* one cell down and right, under the blocks */
         for (r = 0; r < 5; r++) {
             const char *s = theme->logo[r];
             for (i = 0; s[i]; i++)
-                if (s[i] == '#')
+                if (s[i] != ' ')
                     scr_put(3 + i, 2 + r, CH_SHADE1, A(theme->shadow, 0));
         }
     }
     for (r = 0; r < 5; r++) {
         const char *s = theme->logo[r];
-        for (i = 0; s[i]; i++)
-            if (s[i] == '#')
-                scr_put(2 + i, 1 + r, CH_BLOCK, A(theme->logo_clr[r], 0));
+        for (i = 0; s[i]; i++) {
+            unsigned char c = (unsigned char)s[i];
+            if (c == ' ') continue;
+            if (c != '#')
+                c = (unsigned char)(c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10);
+            else
+                c = theme->logo_clr[r];
+            scr_put(2 + i, 1 + r, CH_BLOCK, A(c, 0));
+        }
     }
     scr_puts(50, 1, theme->tagline, A(11, 0));
     scr_puts(50, 2, cpu_desc[0] ? cpu_desc : "FOR 8086 AND UP", A(8, 0));
@@ -80,6 +87,18 @@ static void draw_box(int x, int y, int w, int h, unsigned char attr)
         scr_put(x, y + i, CH_V, attr);
         scr_put(x + w - 1, y + i, CH_V, attr);
     }
+}
+
+/* a rounded tag: half-block ends in the colour, the text inverse on it */
+static void pill(int *x, int y, const char *text, unsigned char clr)
+{
+    int n = (int)strlen(text);
+    if (*x + n + 3 > PANE_X + PANE_W - 1)
+        return;
+    scr_put(*x, y, 222, A(clr, 0));            /* right half block */
+    scr_puts(*x + 1, y, text, A(0, clr));
+    scr_put(*x + 1 + n, y, 221, A(clr, 0));    /* left half block */
+    *x += n + 3;
 }
 
 static void keychip(int *x, const char *key, const char *label, int dim)
@@ -305,36 +324,37 @@ void ui_details(int sel)
     if (strlen(buf) > PANE_W - 11)
         buf[PANE_W - 11] = 0;
     field(11, "PATH", buf, A(7, 0));
-    field(12, "EXEC", g->exe, A(7, 0));
-    if (g->flags & GF_EXODOS)
-        scr_puts(PANE_X + PANE_W - 2 - 10, 13, "\xAE eXoDOS \xAF", A(11, 0));
-    if (g->flags & GF_TDC)
-        scr_puts(PANE_X + PANE_W - 2 - 7, 13, "\xAE TDC \xAF", A(11, 0));
-    field(13, "SETUP", g->setup[0] ? g->setup : "none",
-          g->setup[0] ? A(7, 0) : A(8, 0));
     {
-        /* row 14: SOUND and ARGS share a line, the picture needs the rest */
+        /* EXEC with the sound mode beside it, SETUP with the arguments */
         const char *m = g->sound[0] ? g->sound : ini_global("sound");
-        int x = PANE_X + 2;
-        if (m && m[0]) {
+        int x = PANE_X + 9 + (int)strlen(g->exe) + 2;
+        field(12, "EXEC", g->exe, A(7, 0));
+        if (m && m[0] && x + 6 + (int)strlen(m) < PANE_X + PANE_W - 1) {
             char up[16];
             int k;
             for (k = 0; m[k] && k < 15; k++)
                 up[k] = (char)toupper((unsigned char)m[k]);
             up[k] = 0;
-            field(14, "SOUND", up, A(7, 0));
-            x = PANE_X + 9 + (int)strlen(up) + 2;
+            scr_puts(x, 12, "SOUND", A(3, 0));
+            scr_puts(x + 6, 12, up, A(7, 0));
         }
-        if (g->args[0] && x + 6 + (int)strlen(g->args) < PANE_X + PANE_W - 1 - (g->cdimg[0] ? 7 : 0)) {
-            scr_puts(x, 14, "ARGS", A(3, 0));
-            scr_puts(x + 5, 14, g->args, A(7, 0));
+        field(13, "SETUP", g->setup[0] ? g->setup : "none",
+              g->setup[0] ? A(7, 0) : A(8, 0));
+        x = PANE_X + 9 + (int)strlen(g->setup[0] ? g->setup : "none") + 2;
+        if (g->args[0] && x + 5 + (int)strlen(g->args) < PANE_X + PANE_W - 1) {
+            scr_puts(x, 13, "ARGS", A(3, 0));
+            scr_puts(x + 5, 13, g->args, A(7, 0));
         }
     }
-    if (g->cdimg[0] || (g->flags & GF_CDBAT))
-        scr_puts(PANE_X + PANE_W - 2 - 6, 14, "\xAE CD \xAF", A(10, 0));
-
-    if (g->flags & GF_DOS4GW)
-        scr_puts(PANE_X + PANE_W - 2 - 8, 12, "\xAE 386+ \xAF", A(12, 0));  /* EXEC row */
+    {
+        /* row 14: the tags as pills */
+        int x = PANE_X + 2;
+        if (g->flags & GF_DOS4GW)  pill(&x, 14, "386+", 12);
+        if (g->flags & GF_EXODOS)  pill(&x, 14, "eXoDOS", 11);
+        if (g->flags & GF_TDC)     pill(&x, 14, "TDC", 11);
+        if (g->cdimg[0])           pill(&x, 14, "CD", 10);
+        else if (g->flags & GF_CDBAT) pill(&x, 14, "NET CD", 10);
+    }
 
     if (!ui_thumb(g)) {
         scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
@@ -469,7 +489,7 @@ void ui_net_list(int sel, int top)
             strncpy(nm, g->title, 26);
             nm[26] = 0;
             scr_puts(LIST_X + 3, y, nm, at);
-            fmt_kb(sz, g->kb);
+            fmt_kb(sz, net_size(g));
             scr_puts(LIST_X + LIST_W - 2 - strlen(sz), y, sz, ad);
         }
     }
@@ -506,9 +526,9 @@ void ui_net_details(int sel)
     if (strlen(buf) > PANE_W - 11) buf[PANE_W - 11] = 0;
     field(12, "TO", buf, A(7, 0));
     field(13, "EXEC", g->exe[0] ? g->exe : "(will be detected)", g->exe[0] ? A(7, 0) : A(8, 0));
-    fmt_kb(sz, g->kb);
+    fmt_kb(sz, net_size(g));
     field(14, "SIZE", sz, A(7, 0));
-    if (g->cd && g->netcd)
+    if (g->cd && g->netcd && net_cdmode)
         scr_puts(PANE_X + PANE_W - 2 - 10, 14, "\xAE NET CD \xAF", A(10, 0));
     else if (g->cd)
         scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE CD IMAGE \xAF", A(10, 0));
@@ -518,13 +538,13 @@ void ui_net_details(int sel)
         scr_puts(PANE_X + 2, 19, "THE SERVER HAS ONLY PART OF", A(8, 0));
         scr_puts(PANE_X + 2, 20, "THIS GAME SO FAR. ENTER GETS", A(8, 0));
         scr_puts(PANE_X + 2, 21, "WHAT IS THERE.", A(8, 0));
-    } else if (g->cd && g->netcd) {
+    } else if (g->cd && g->netcd && net_cdmode) {
         scr_puts(PANE_X + 2, 19, "ITS CD STAYS ON THE SERVER AND", A(8, 0));
         scr_puts(PANE_X + 2, 20, "IS READ OVER THE NETWORK WHEN", A(8, 0));
-        scr_puts(PANE_X + 2, 21, "IT RUNS (REAL DOS ONLY).", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "IT RUNS. C DOWNLOADS IT INSTEAD.", A(8, 0));
     } else if (g->cd) {
         scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT WITH ITS CD", A(8, 0));
-        scr_puts(PANE_X + 2, 21, "IMAGE, MOUNTED WHEN IT RUNS.", A(8, 0));
+        scr_puts(PANE_X + 2, 21, g->netcd ? "IMAGE. C LEAVES IT ON THE SERVER." : "IMAGE, MOUNTED WHEN IT RUNS.", A(8, 0));
     } else {
         scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO", A(8, 0));
         scr_puts(PANE_X + 2, 21, "YOUR GAMES FOLDER.", A(8, 0));
@@ -537,6 +557,7 @@ void ui_net_keybar(void)
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
     keychip(&x, "ENTER", "GET", net_count == 0);
     keychip(&x, "L", "LIST", 0);
+    keychip(&x, "C", net_cdmode ? "NET CD" : "LOCAL CD", 0);
     keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
     keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
     keychip(&x, "<>", "TRACK", !mus_present || mus_ntracks < 2);
