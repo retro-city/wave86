@@ -763,7 +763,10 @@ def main():
                                                         shutil.which("netdrive")) if p and os.path.exists(p)), None)
         if binary:
             import subprocess, atexit
-            nd = subprocess.Popen([binary, "serve", "-headless", "-image_dir", NETDRIVE_DIR, "-port", str(NETDRIVE_PORT)],
+            sessions = os.path.join(NETDRIVE_DIR, "sessions")     # per-session write journals
+            os.makedirs(sessions, exist_ok=True)
+            nd = subprocess.Popen([binary, "serve", "-headless", "-image_dir", NETDRIVE_DIR, "-port", str(NETDRIVE_PORT),
+                                   "-session_scoped_writes_dir", sessions],
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             atexit.register(nd.kill)
             print(f"waveserve: NetDrive server on UDP {NETDRIVE_PORT}, images in {NETDRIVE_DIR}", file=sys.stderr)
