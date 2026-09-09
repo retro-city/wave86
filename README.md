@@ -294,14 +294,24 @@ A 300 MB disc does not have to travel to the DOS disk at all. With
 
     python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd --netdrive ~/wave86-cd
 
-the server wraps each game's ISO in a FAT volume under `~/wave86-cd`
-(built once, at index time) and runs Michael Brutman's mTCP NetDrive
-server on UDP port 2002 to hand those volumes out. `make netdrive`
-fetches his official build of that server for this machine into
-`build/netdrive`. On the DOS side the game's `IMGMOUNT.BAT` attaches
-the volume as a drive with NetDrive, points SHSUCDHD at the ISO on it
-and lets SHSUCDX give the disc a letter. Brutman measured this stack on
-a 386DX-40 at the same speed as NetDrive alone, around 370 KB/s.
+the server unpacks each game's disc into a FAT volume under
+`~/wave86-cd` (built once, at index time) and runs Michael Brutman's
+mTCP NetDrive server on UDP port 2002 to hand those volumes out. `make
+netdrive` fetches his official build of that server for this machine
+into `build/netdrive`. On the DOS side the game's `IMGMOUNT.BAT` just
+attaches the volume with NetDrive, read-only, and the game finds its
+disc's files there. Brutman measured NetDrive on a 386DX-40 at around
+370 KB/s.
+
+The volume is the disc, and it sits on NetDrive's own letter. That
+matters: `NETDRIVE.SYS` takes the first letter after the hard disk, D:,
+which is exactly where eXoDOS games expect their CD, and DOS offers no
+way to give a boot-time block device a later letter. Mounting an ISO
+through SHSUCDHD from that volume would put the disc on E:, which
+games with `D:` written into their setup (Settlers II) cannot follow.
+What the plain-files volume cannot do is MSCDEX: no CD audio, and a
+game that insists on seeing a CD-ROM drive will not; for those, LOCAL
+CD brings the ISO along and the CD drivers mount it.
 
 What the DOS machine needs for that:
 
@@ -316,12 +326,11 @@ server, the download is small) and LOCAL CD (the disc comes along, as
 INI makes LOCAL the default. The details pane tags a downloaded game
 "CD" or "NET CD" accordingly, next to "386+" and where it came from.
 
-`NETDRIVE.SYS` takes the first letter after the hard disk, D:, which is
-why the disc goes to E: and the start batches use `%WAVECD%`. The
-launcher passes the server's address in `WAVENDSRV` (the machine of
-`server=`, port 2002 or `netdrive_port=`) and, if `netdrive=E` is set
-in the INI, the letter NetDrive got in `WAVEND`. The network view marks
-such games "NET CD". DOSBox's own shell has no packet driver, so
+With NetDrive loaded, a LOCAL CD lands on E: (D: is taken), which the
+`%WAVECD%` rewrite of the start batches covers. The launcher passes the
+server's address in `WAVENDSRV` (the machine of `server=`, port 2002 or
+`netdrive_port=`) and, if `netdrive=E` is set in the INI, the letter
+NetDrive got in `WAVEND`. The network view marks such games "NET CD". DOSBox's own shell has no packet driver, so
 these games run under a real DOS: `make dosrun` has the driver in its
 CONFIG.SYS.
 

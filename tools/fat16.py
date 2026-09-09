@@ -15,14 +15,15 @@ import os, re, struct, sys, time
 OK_CHARS = "A-Z0-9_\\-!#$%&@^`{}~'"
 
 
-def format_volume(path, size_mb):
+def format_volume(path, size_mb, nroot=512):
     """An empty FAT16B volume with no partition table, like mTCP NetDrive's
     own `create hd`: reserved sector 1, two FATs of 256 sectors, 512 root
-    entries, media F8, cluster size doubled until the count fits."""
+    entries (more for a disc with a crowded root; whole sectors of them),
+    media F8, cluster size doubled until the count fits."""
     if not 3 <= size_mb <= 2047:
         raise ValueError("NetDrive volumes are 3 to 2047 MB")
     sectors = size_mb * 1024 * 1024 // 512
-    spf, nroot = 256, 512
+    spf, nroot = 256, (nroot + 15) // 16 * 16
     data = sectors - 1 - nroot * 32 // 512 - 2 * spf
     spc = 1
     while data // spc > 65524:
@@ -41,6 +42,41 @@ def format_volume(path, size_mb):
             f.seek(512 + i * spf * 512)
             f.write(b"\xF8\xFF\xFF\xFF")
         f.truncate(sectors * 512)
+
+
+def cluster_size(size_mb, nroot=512):
+    """The cluster size format_volume would pick for a volume of size_mb."""
+    sectors = size_mb * 1024 * 1024 // 512
+    data = sectors - 1 - nroot * 32 // 512 - 2 * 256
+    spc = 1
+    while data // spc > 65524:
+        spc *= 2
+    return spc * 512
+
+
+def volume_size_mb(tree, margin_mb=2):
+    """(size in MB, root entries) the tree needs: each file and directory
+    rounded up to the cluster size the volume will actually have, a root
+    directory big enough for its entries, plus a margin."""
+    files, dirs = [], []
+    root_entries = 0
+    for r, ds, fs in os.walk(tree):
+        if r == tree:
+            root_entries = len(ds) + len(fs)
+        else:
+            dirs.append(2 + len(ds) + len(fs))
+        files += [os.path.getsize(os.path.join(r, f)) for f in fs]
+    nroot = max(512, (root_entries + 16 + 15) // 16 * 16)
+    mb = 3
+    while True:
+        cs = cluster_size(mb, nroot)
+        need = sum(-(-f // cs) * cs for f in files) + sum(max(1, -(-d * 32 // cs)) * cs for d in dirs)
+        need += 512 + 2 * 256 * 512 + nroot * 32
+        if need + margin_mb * 1048576 <= mb * 1048576:
+            return mb, nroot
+        mb = max(mb + 1, int(mb * 1.25))
+        if mb > 2047:
+            raise ValueError("too big for a FAT16 volume")
 
 
 class Volume:
@@ -168,7 +204,7 @@ def fill_tree(img, off, src):
                 entries += v.entry(name, ext, 0x20, chain[0] if chain else 0, len(data), st.st_mtime)
         if fixed is None:                       # the root directory area
             if len(entries) > v.nroot * 32:
-                sys.exit("fat16: too many entries in the root directory")
+                raise IOError("too many entries in the root directory")
             v.f.seek(v.root_off)
             v.f.write(entries.ljust(v.nroot * 32, b"\0"))
         else:
