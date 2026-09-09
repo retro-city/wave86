@@ -32,6 +32,20 @@ typedef struct {
 #define GF_TDC     0x10     /* source=tdc: from the Total DOS Collection */
 #define GF_CDBAT   0x20     /* has IMGMOUNT.BAT: its start batch mounts the CD itself */
 
+/* --- the looks (theme.c) --- */
+typedef struct {
+    const char *name;
+    const char *logo[5];        /* '#' = block, 5 rows */
+    unsigned char logo_clr[5];  /* colour per row */
+    unsigned char shadow;       /* drop shadow colour, 0 = none */
+    const char *tagline;
+    unsigned char band[6];      /* divider gradient */
+    unsigned char pal[16][3];   /* VGA DAC, 6-bit */
+} Theme;
+extern const Theme *theme;
+void theme_select(const char *name);
+extern char cfg_theme[16];      /* ini theme= */
+
 /* --- video (vga.c) --- */
 extern int vid_is_vga;      /* 1 if VGA/MCGA detected */
 extern int vid_is_color;    /* 0 = MDA/mono text segment */

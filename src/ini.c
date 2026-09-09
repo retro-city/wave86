@@ -30,6 +30,7 @@ static int nlines = 0;
 int cfg_modrate = -1;           /* modrate= : MOD mixer rate, 0 disables */
 int cfg_adlib = -1;             /* adlib=   : 1 force FM on, 0 off */
 int cfg_music = 0;              /* music=   : 1 = play at startup */
+char cfg_theme[16] = "";        /* theme=   : wave86 (default) or exodos */
 
 static char *trim(char *s)
 {
@@ -84,6 +85,13 @@ void ini_load(const char *fname)
                 cfg_adlib = atoi(trim(s + 6));
             } else if (strnicmp(s, "music=", 6) == 0) {
                 cfg_music = atoi(trim(s + 6)) ? 1 : 0;
+            } else if (strnicmp(s, "theme=", 6) == 0) {
+                int k;
+                strncpy(cfg_theme, trim(s + 6), sizeof(cfg_theme) - 1);
+                cfg_theme[sizeof(cfg_theme) - 1] = 0;
+                for (k = 0; cfg_theme[k]; k++)          /* just the word */
+                    if (cfg_theme[k] == ' ' || cfg_theme[k] == ';' || cfg_theme[k] == '\t')
+                        cfg_theme[k] = 0;
             } else if (strnicmp(s, "server=", 7) == 0) {
                 strncpy(cfg_server, trim(s + 7), sizeof(cfg_server) - 1);
                 cfg_server[sizeof(cfg_server) - 1] = 0;

@@ -418,6 +418,7 @@ int main(int argc, char **argv)
         sprintf(path, "%s%sWAVE86.INI", home_dir,
                 home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
         ini_load(path);
+        theme_select(cfg_theme);
     }
     if (getenv("WAVESRV")) {            /* make run: the emulator's host */
         strncpy(cfg_server, getenv("WAVESRV"), sizeof(cfg_server) - 1);

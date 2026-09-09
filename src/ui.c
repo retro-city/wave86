@@ -38,35 +38,33 @@ int ui_thumb(const Game *g);
 #define PANE_H     16          /* rows 7..22 */
 #define LIST_ROWS  14          /* rows 8..21 */
 
-static const char *logo[5] = {
-    "#   #  ###  #   # #####         ###   ### ",
-    "#   # #   # #   # #            #   # #    ",
-    "# # # ##### #   # ####     #    ###  #### ",
-    "# # # #   #  # #  #            #   # #   #",
-    " # #  #   #   #   #####         ###   ### ",
-};
-static const unsigned char logo_clr[5] = { 14, 6, 12, 13, 5 };
-
 static void draw_logo(void)
 {
     int r, i;
+    if (theme->shadow) {                /* one cell down and right, under the blocks */
+        for (r = 0; r < 5; r++) {
+            const char *s = theme->logo[r];
+            for (i = 0; s[i]; i++)
+                if (s[i] == '#')
+                    scr_put(3 + i, 2 + r, CH_SHADE1, A(theme->shadow, 0));
+        }
+    }
     for (r = 0; r < 5; r++) {
-        const char *s = logo[r];
+        const char *s = theme->logo[r];
         for (i = 0; s[i]; i++)
             if (s[i] == '#')
-                scr_put(2 + i, 1 + r, CH_BLOCK, A(logo_clr[r], 0));
+                scr_put(2 + i, 1 + r, CH_BLOCK, A(theme->logo_clr[r], 0));
     }
-    scr_puts(50, 1, "EPIC GAME LAUNCHER", A(11, 0));
+    scr_puts(50, 1, theme->tagline, A(11, 0));
     scr_puts(50, 2, cpu_desc[0] ? cpu_desc : "FOR 8086 AND UP", A(8, 0));
 }
 
 static void draw_divider(void)
 {
     /* sunset gradient band, left to right */
-    static const unsigned char band[6] = { 14, 6, 12, 13, 5, 1 };
     int x;
     for (x = 0; x < 80; x++)
-        scr_put(x, 6, CH_HALF_HI, A(band[x * 6 / 80], 0));
+        scr_put(x, 6, CH_HALF_HI, A(theme->band[x * 6 / 80], 0));
 }
 
 static void draw_box(int x, int y, int w, int h, unsigned char attr)
@@ -511,7 +509,7 @@ void ui_net_details(int sel)
     fmt_kb(sz, g->kb);
     field(14, "SIZE", sz, A(7, 0));
     if (g->cd && g->netcd)
-        scr_puts(PANE_X + PANE_W - 2 - 16, 14, "\xAE CD ON SERVER \xAF", A(10, 0));
+        scr_puts(PANE_X + PANE_W - 2 - 10, 14, "\xAE NET CD \xAF", A(10, 0));
     else if (g->cd)
         scr_puts(PANE_X + PANE_W - 2 - 12, 14, "\xAE CD IMAGE \xAF", A(10, 0));
     else if (g->partial)

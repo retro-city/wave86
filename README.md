@@ -20,7 +20,9 @@ in dosbox-x before it goes onto the real machine.
   turns it on. The header shows a VU meter, which becomes the volume bar
   while you adjust it.
 - VGA gets a custom palette. EGA, CGA and mono cards get the standard
-  colours and the layout still holds up.
+  colours and the layout still holds up. `theme=exodos` in the INI swaps
+  the synthwave look for an eXoDOS one: a blue block-letter logo with a
+  drop shadow and classic DOS colours.
 - Tells you what it is running on. The header line comes from CPUID and
   a clock measurement (exact via RDTSC on Pentium-class CPUs, estimated
   from a timed loop and marked with `~` on 486s and older) plus the
@@ -69,6 +71,7 @@ Lives next to the EXE. Example:
 
     gamedir=C:\GAMES
     music=0          ; 1 = play at startup
+    theme=wave86     ; or exodos: blue block letters, classic DOS colours
     ; adlib=1        ; force FM on (0 = off); normally auto-detected
     ; modrate=11025  ; MOD mixer rate; 0 turns MODs off
 
@@ -311,7 +314,7 @@ why the disc goes to E: and the start batches use `%WAVECD%`. The
 launcher passes the server's address in `WAVENDSRV` (the machine of
 `server=`, port 2002 or `netdrive_port=`) and, if `netdrive=E` is set
 in the INI, the letter NetDrive got in `WAVEND`. The network view marks
-such games "CD ON SERVER". DOSBox's own shell has no packet driver, so
+such games "NET CD". DOSBox's own shell has no packet driver, so
 these games run under a real DOS: `make dosrun` has the driver in its
 CONFIG.SYS.
 

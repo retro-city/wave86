@@ -44,24 +44,7 @@ void vid_detect(void)
  * then the DAC entries get our colors. VGA only; EGA/CGA keep stock
  * colors (which are already conveniently magenta/cyan flavored).
  */
-static const unsigned char synth_pal[16][3] = {
-    {  2,  0,  8 },  /* 0 black  -> void purple           */
-    {  9,  4, 24 },  /* 1 blue   -> deep indigo           */
-    {  0, 34, 24 },  /* 2 green  -> sea teal              */
-    {  0, 46, 52 },  /* 3 cyan   -> neon cyan             */
-    { 52,  6, 22 },  /* 4 red    -> laser crimson         */
-    { 44,  0, 42 },  /* 5 magenta-> ultraviolet           */
-    { 58, 24,  2 },  /* 6 brown  -> sunset orange         */
-    { 36, 32, 46 },  /* 7 lgray  -> lavender gray         */
-    { 15,  9, 26 },  /* 8 dgray  -> dusk purple           */
-    { 27, 24, 60 },  /* 9 lblue  -> periwinkle            */
-    { 18, 60, 40 },  /* A lgreen -> mint glow             */
-    { 28, 63, 63 },  /* B lcyan  -> electric cyan         */
-    { 63, 26, 34 },  /* C lred   -> coral flare           */
-    { 63, 24, 56 },  /* D lmag   -> hot pink              */
-    { 63, 54, 16 },  /* E yellow -> chrome gold           */
-    { 62, 58, 63 },  /* F white  -> starlight             */
-};
+/* the DAC colours come from the theme (theme.c) */
 
 void vid_set_palette(void)
 {
@@ -80,9 +63,9 @@ void vid_set_palette(void)
         /* program DAC entry i */
         r.x.ax = 0x1010;
         r.x.bx = i;
-        r.h.dh = synth_pal[i][0];
-        r.h.ch = synth_pal[i][1];
-        r.h.cl = synth_pal[i][2];
+        r.h.dh = theme->pal[i][0];
+        r.h.ch = theme->pal[i][1];
+        r.h.cl = theme->pal[i][2];
         int86(0x10, &r, &r);
     }
 }
@@ -237,7 +220,7 @@ unsigned scr_dump(const char *scrfile, const char *fontfile,
     f = fopen(palfile, "wb");
     if (!f) return 1;
     if (vid_is_vga && !opt_nopal) {
-        fwrite(synth_pal, 1, 48, f);
+        fwrite(theme->pal, 1, 48, f);
     } else {
         /* standard CGA/EGA colors, 6-bit */
         static const unsigned char std_pal[16][3] = {
