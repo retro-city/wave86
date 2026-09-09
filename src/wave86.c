@@ -162,7 +162,7 @@ static void emit_cd(FILE *f, const Game *g, int after)
         fprintf(f, "%s%s%s /U /Q\n", home_dir, sep, hd);
     } else {
         fprintf(f, "LH %s%s%s /F:%s /Q\n", home_dir, sep, hd, iso);
-        fprintf(f, "LH %s%s%s /D:SHSU-CDH,D /Q\n", home_dir, sep, cdx);
+        fprintf(f, "LH %s%s%s /D:SHSU-CDH,D /I /Q\n", home_dir, sep, cdx);
     }
 }
 
