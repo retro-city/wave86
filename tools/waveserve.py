@@ -193,8 +193,8 @@ def iso_name(cue_name, used):
 
 def imgmount_bat(iso, letter, net=None):
     """IMGMOUNT.BAT: the game's CD image as a CD-ROM drive, whichever DOS it
-    finds itself on, and the letter it got in WAVECD (the start batch is
-    rewritten to use %WAVECD% where the eXoDOS conf said D:). Called again
+    finds itself on, and the letter it got in CD (the start batch is
+    rewritten to use %CD% where the eXoDOS conf said D:). Called again
     with /U it takes everything down. DOS needs the WAVE86 folder on the
     PATH for the drivers; DOSBox has IMGMOUNT on its Z:, called by full path
     since a bare IMGMOUNT would find this batch first and loop.
@@ -206,7 +206,7 @@ def imgmount_bat(iso, letter, net=None):
     lines = ["@echo off", 'if "%1"=="/U" goto unmount',
              f"rem WAVE86: this game wants its CD image ({letter}: in the eXoDOS conf).",
              "rem waveserve made this; the start batch calls it first and the launcher",
-             "rem calls it with /U afterwards. WAVECD gets the letter the disc is on."]
+             "rem calls it with /U afterwards. CD gets the letter the disc is on."]
     if net:
         srv, img = net
         lines += ["rem NetDrive's letter: D: unless DRVOFF freed it for the disc, then E:",
@@ -231,17 +231,17 @@ def imgmount_bat(iso, letter, net=None):
                   "goto letter",
                   ":dosbox",
                   f"Z:\\IMGMOUNT.COM {letter} {iso} -t iso",
-                  f"set WAVECD={letter}",
+                  f"set CD={letter}",
                   "goto done",
                   ":dosboxx",
                   f"Z:\\SYSTEM\\IMGMOUNT.COM {letter} {iso} -t iso",
-                  f"set WAVECD={letter}",
+                  f"set CD={letter}",
                   "goto done"]
     # SHSUCDX /L:1 returns the first drive's number (A: = 1) as the errorlevel
     lines += [":letter", "SHCDX86 /L:1 /QQ"]
-    lines += [f"if errorlevel {n} set WAVECD={chr(64 + n)}" for n in range(3, 27)]
-    lines += ["if errorlevel 27 set WAVECD=",
-              f'if "%WAVECD%"=="" set WAVECD={letter}',
+    lines += [f"if errorlevel {n} set CD={chr(64 + n)}" for n in range(3, 27)]
+    lines += ["if errorlevel 27 set CD=",
+              f'if "%CD%"=="" set CD={letter}',
               "goto done",
               ":unmount"]
     if net:
@@ -252,17 +252,17 @@ def imgmount_bat(iso, letter, net=None):
                   "if exist Z:\\IMGMOUNT.COM goto done",
                   "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto done",
                   "SHCDX86 /U /Q", "SHCDHD86 /U /Q"]
-    lines += ["set WAVECD=", ":done"]
+    lines += ["set CD=", ":done"]
     return ("\r\n".join(lines) + "\r\n").encode("ascii")
 
 
 def start_batch(text, prefix, letter):
     """The game's start batch with the IMGMOUNT.BAT call first and the CD
-    letter of the eXoDOS conf replaced by %WAVECD%, which IMGMOUNT.BAT sets
+    letter of the eXoDOS conf replaced by %CD%, which IMGMOUNT.BAT sets
     to wherever the disc actually landed (E: when NetDrive holds D:, or a
     real CD-ROM does)."""
     pat = re.compile(r"(?<![A-Za-z0-9_\\/:.%\-])" + re.escape(letter) + r":", re.I)
-    return prefix + pat.sub("%WAVECD%:", text)
+    return prefix + pat.sub("%CD%:", text)
 
 
 def iso_chunks(z, spec):
@@ -504,7 +504,7 @@ def index(root, max_mb, include_cd):
                 body = ("\r\n".join(lines) + "\r\n").encode("ascii")
                 files.append((wrapper, None, len(body), body))
                 total += len(body)
-                if isos and is_bat:                 # the inner batch still needs %WAVECD%
+                if isos and is_bat:                 # the inner batch still needs %CD%
                     for k, entry in enumerate(files):
                         if entry[0] == exe_rel and entry[1]:
                             with zipfile.ZipFile(path) as z:

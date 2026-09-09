@@ -282,8 +282,8 @@ the INI replace either, with `$ISO` standing for the image path.
 A CD game from the server comes with its own `IMGMOUNT.BAT` (the same
 choice between the drivers and IMGMOUNT), and its start batch calls it
 first, so the game also runs from a plain prompt with the WAVE86 folder
-on the PATH. The batch puts the letter the disc landed on into `WAVECD`,
-and the server rewrites the start batch to say `%WAVECD%:` wherever the
+on the PATH. The batch puts the letter the disc landed on into `CD`,
+and the server rewrites the start batch to say `%CD%:` wherever the
 eXoDOS conf said `D:`, so it does not matter if D: is taken by a real
 CD-ROM or by NetDrive. When a game has `IMGMOUNT.BAT` the launcher
 leaves the mounting to it and calls it with `/U` afterwards.
