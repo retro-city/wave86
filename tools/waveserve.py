@@ -209,16 +209,31 @@ def imgmount_bat(iso, letter, net=None):
              "rem calls it with /U afterwards. CD gets the letter the disc is on."]
     if net:
         srv, img = net
-        lines += ["rem NetDrive's letter: D: unless DRVOFF freed it for the disc, then E:",
-                  'if "%WAVEND%"=="" if exist D:\\NUL set WAVEND=D',
-                  'if "%WAVEND%"=="" set WAVEND=E',
-                  f'if "%WAVENDSRV%"=="" set WAVENDSRV={srv}',
+        lines += [f'if "%WAVENDSRV%"=="" set WAVENDSRV={srv}',
                   "if exist Z:\\IMGMOUNT.COM goto nodosbox",
                   "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto nodosbox",
+                  "rem NetDrive's letter: whatever WAVEND says if that really is one,",
+                  "rem else the first of D: to H: that NETDRIVE STATUS accepts",
+                  'if "%WAVEND%"=="" goto ndfind',
+                  "NETDRIVE STATUS %WAVEND%: > NUL",
+                  "if not errorlevel 1 goto ndok",
+                  "set WAVEND=",
+                  ":ndfind"]
+        for l in "DEFGH":
+            lines += [f'if "%WAVEND%"=="" NETDRIVE STATUS {l}: > NUL',
+                      f'if "%WAVEND%"=="" if not errorlevel 1 set WAVEND={l}']
+        lines += ['if not "%WAVEND%"=="" goto ndok',
+                  "echo No NetDrive letter found: is NETDRIVE.SYS in CONFIG.SYS?",
+                  "goto done",
+                  ":ndok",
                   f"NETDRIVE C %WAVENDSRV% {img} %WAVEND%: -ro",
+                  "if errorlevel 1 goto ndfail",
                   f"SHCDHD86 /F:%WAVEND%:\\{iso} /Q",
                   f"SHCDX86 /D:SHSU-CDH,{letter} /Q",
                   "goto letter",
+                  ":ndfail",
+                  "echo NetDrive could not attach the disc from %WAVENDSRV% on %WAVEND%:.",
+                  "goto done",
                   ":nodosbox",
                   "echo This game's CD stays on the server (mTCP NetDrive), which DOSBox's",
                   "echo own shell cannot reach. Run it under a real DOS: make dosrun.",
