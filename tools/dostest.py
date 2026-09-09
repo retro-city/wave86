@@ -31,7 +31,7 @@ MARKER = "WAVE86DONE-MARKER"
 LAUNCHER_FILES = ["WAVE86.EXE", "WAVE.BAT", "SHCDHD86.EXE", "SHCDX86.COM",
                   "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG", "NE2000.COM",
                   "NETDRIVE.SYS", "NETDRIVE.EXE", "DRVOFF.EXE"]
-DOS_EXTRAS = ["CHOICE.EXE", "CTMOUSE.EXE"]        # from dos/: what eXoDOS start batches expect of a DOS install
+DOS_EXTRAS = ["CHOICE.EXE", "CTMOUSE.EXE", "JEMMEX.EXE"]        # from dos/: what eXoDOS start batches expect of a DOS install
 NET_FLAGS = ["-set", "ne2000 ne2000=true", "-set", "ne2000 backend=slirp",
              "-set", "ne2000 nicbase=300", "-set", "ne2000 nicirq=3"]
 
@@ -242,17 +242,18 @@ def main():
         # the machine as the 486 would be: packet driver, DHCP, the launcher loop
         auto = bat(["@echo off", "set PATH=C:\\WAVE86;A:\\", "set BLASTER=A220 I7 D1 H5 T6", "C:", "cd \\WAVE86",
                     "if exist DRVOFF.EXE DRVOFF D:",
-                    "if exist CTMOUSE.EXE CTMOUSE > NUL",
-                    "if exist NE2000.COM NE2000 0x60 3 0x300", "set MTCPCFG=C:\\WAVE86\\MTCP.CFG",
+                    "if exist CTMOUSE.EXE LH CTMOUSE > NUL",
+                    "if exist NE2000.COM LH NE2000 0x60 3 0x300", "set MTCPCFG=C:\\WAVE86\\MTCP.CFG",
                     "set WAVESRV=10.0.2.2:8086", "if exist DHCP.EXE DHCP", "call WAVE.BAT"])
     else:
         auto = bat(["@echo off", "set MK=MARKER", "set PATH=C:\\WAVE86;A:\\", "C:", "cd \\WAVE86",
                     "if exist DRVOFF.EXE DRVOFF D:",
-                    "if exist CTMOUSE.EXE CTMOUSE > C:\\RESULTS\\MOUSE.TXT",
+                    "if exist CTMOUSE.EXE LH CTMOUSE > C:\\RESULTS\\MOUSE.TXT",
                     "call C:\\WAVE86\\TEST.BAT", f"echo {MARKER.replace('MARKER', '%MK%')} > C:\\RESULTS\\DONE.TXT"])
-    conf = ["FILES=20", "BUFFERS=20", "LASTDRIVE=Z"]
+    # JEMMEX: XMS, EMS and upper memory; DOS and the drivers go up there
+    conf = ["DEVICE=C:\\WAVE86\\JEMMEX.EXE", "DOS=HIGH,UMB", "FILES=20", "BUFFERS=20", "LASTDRIVE=Z"]
     if a.netdrive_sys and os.path.exists(os.path.join(a.build, "NETDRIVE.SYS")):   # mTCP NetDrive: reserves the letter after C:
-        conf.append("DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")     # D: and E:; DRVOFF frees D: for the disc
+        conf.append("DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2")     # D: and E:; DRVOFF frees D: for the disc
     listing = mtool("mdir", floppy, None, "::/").stdout.upper()
     if "KERNEL   SYS" in listing:            # FreeDOS: FreeCOM runs the batch we name
         conf.append("SHELL=A:\\COMMAND.COM A:\\ /E:1024 /P=A:\\AUTOEXEC.BAT")

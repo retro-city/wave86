@@ -29,3 +29,10 @@ eXoDOS start batches use it for their menus, so the harness puts it in
 package repository, `base/ctmouse.zip`). The harness loads it from the
 AUTOEXEC of both images, so games in `make dosrun` have a mouse; dosbox-x
 gives it a PS/2 one.
+
+`JEMMEX.EXE` is JEMM 5.84's all-in-one memory manager (XMS, EMS and
+upper memory; Artistic License, from the same repository, `base/jemm.zip`).
+The harness loads it first in CONFIG.SYS with `DOS=HIGH,UMB`, puts
+NetDrive up with DEVICEHIGH and the packet driver, the mouse and the CD
+drivers with LH, so the games get the conventional memory back. It works
+under MS-DOS and FreeDOS alike.

@@ -241,9 +241,13 @@ On the DOS machine, copy `WAVEGET.EXE`, `DHCP.EXE` and `MTCP.CFG` from
 
 and get the network card up in `AUTOEXEC.BAT` (PicoMem or any NE2000):
 
-    NE2000 0x60 5 0x300
+    LH NE2000 0x60 5 0x300
     SET MTCPCFG=C:\WAVE86\MTCP.CFG
     C:\WAVE86\DHCP
+
+`LH` wants a memory manager providing upper memory (HIMEM plus EMM386,
+or `dos\JEMMEX.EXE` with `DOS=HIGH,UMB`); without one it just loads
+low. The CD drivers the launcher's batches load use `LH` too.
 
 `make run` does all of this inside dosbox-x: it turns on the NE2000
 emulation (slirp backend), loads the packet driver from `Z:\SYSTEM`,
@@ -398,7 +402,11 @@ xcom --game keen4"` for others); what you download there lands inside
 
 Any bootable 1.44 MB floppy image works as `DOS=`; the first setup disk
 of MS-DOS 5 or 6 is a plain boot disk once the harness replaces its
-AUTOEXEC. Keep those outside the repo. Your own test batch runs on C:
+AUTOEXEC. Keep those outside the repo. The CONFIG.SYS the harness
+writes loads JEMMEX (FreeDOS's memory manager: XMS, EMS, upper memory)
+with `DOS=HIGH,UMB`, NetDrive with DEVICEHIGH and the packet driver, the
+mouse and the CD drivers with LH, so a booted game has its conventional
+memory. Your own test batch runs on C:
 with the launcher in `C:\WAVE86` and the games in `C:\GAMES`; whatever
 it writes to `C:\RESULTS` is printed, and `FAIL.TXT` there fails the
 run. `tools/nettest.bat` is one such batch: the packet driver, DHCP and a
