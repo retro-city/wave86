@@ -63,13 +63,7 @@ MTCP_OPTS = -0 -ml -oh -ok -ot -s -oa -ei -zp2 -zpw -ob -ol+ -oi+ -q \
 MTCP_OBJS = packet arp eth ip tcp tcpsockm udp utils dns timer trace
 MTCP_SRC  = $(wildcard net/mtcp/TCPLIB/*.CPP) net/mtcp/TCPLIB/IPASM.ASM
 
-net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM build/NETDRIVE.SYS build/NETDRIVE.EXE build/DRVOFF.EXE
-
-# DRVOFF X: frees a drive letter, so the CD can have D: beside NetDrive
-build/DRVOFF.EXE: net/DRVOFF.C
-	@mkdir -p build
-	cd build && wcl $(CFLAGS) -fe=DRVOFF.EXE ../net/DRVOFF.C
-	@rm -f build/*.o
+net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM build/NETDRIVE.SYS build/NETDRIVE.EXE
 
 # mTCP NetDrive (GPL): a remote disk image as a drive letter, for CD images kept on the server
 build/NETDRIVE.SYS: net/NETDRIVE.SYS
