@@ -307,7 +307,7 @@ def read_conf(root, short):
         p = os.path.join(r, "eXo", "eXoDOS", "!dos", short, "dosbox.conf")
         if not os.path.isfile(p):
             continue
-        cands, cd, inauto = [], "", False
+        cands, cd, inauto, cds = [], "", False, []
         for line in open(p, "r", encoding="latin-1", errors="replace"):
             t = line.strip()
             if t.lower().startswith("[autoexec]"):
@@ -321,6 +321,8 @@ def read_conf(root, short):
                 m = re.match(r"imgmount\s+([a-z])\b", low)
                 cd = m.group(1).upper() if m else "D"
             word = low.split()[0] if low.split() else ""
+            if word == "cd" and len(low.split()) > 1:
+                cds.append(t.split(None, 1)[1].strip().strip('"').replace("/", "\\"))
             if word in SKIP_CMDS or word.endswith(":"):
                 continue
             if word == "call" and len(low.split()) > 1:
@@ -328,8 +330,8 @@ def read_conf(root, short):
             word = word.rsplit(".", 1)[0] if "." in word else word
             if word and word not in cands:
                 cands.append(word)
-        return cands, cd
-    return [], ""
+        return cands, cd, "\\".join(c for c in cds if c not in ("\\", "..", "."))
+    return [], "", ""
 
 
 TDC_RE = re.compile(r'^(?P<title>.*?)\s*\((?P<year>\d{4}|\d{3}x|\d{2}xx)\)\((?P<pub>[^)]*)\)\s*(?:\[(?P<genre>[^\]]*)\])?(?:\s*\[[^\]]*\])*\s*$')
@@ -419,13 +421,15 @@ def index(root, max_mb, include_cd):
             if not infos:
                 continue
             top = infos[0].filename.split("/")[0]
-            files, total, names, cues = [], 0, set(), []
+            files, total, names, cues, raw_isos = [], 0, set(), [], []
             for i in infos:
                 parts = i.filename.split("/")
                 if parts[0] != top or len(parts) < 2 or parts[-1].lower().endswith(".exo"):
                     continue
                 if parts[-1].lower().endswith(".cue"):
                     cues.append(i.filename)
+                elif parts[-1].lower().endswith(".iso"):
+                    raw_isos.append((i.filename, i.file_size))
                 rel = dos_path(parts[1:])
                 if rel is None:
                     continue
@@ -436,22 +440,23 @@ def index(root, max_mb, include_cd):
                 names.add(parts[-1].upper())
             if not files or total > max_mb * 1024 * 1024:
                 continue              # the limit is for the game, not its CD
-            cands, cd = read_conf(root, top)
+            cands, cd, subdir = read_conf(root, top)
             if cd and not include_cd:
                 continue
             # the CD, as one ISO per data track, made from the cue/bin while
             # streaming; the DOS side mounts CD\NAME.ISO when the game runs
             cd_kb, used, isos = 0, set(), []
-            if include_cd:
+            if include_cd and cd:               # the conf mounts a disc: cue/bin pairs, or plain ISOs
                 with zipfile.ZipFile(path) as z:
                     members = z.namelist()
-                    for cue in sorted(cues):
-                        for spec in iso_specs(z, cue, members):
-                            size = spec[4] * 2048
-                            isos.append(f"CD\\{iso_name(cue, used)}.ISO")
-                            files.append((isos[-1], None, size, spec))
-                            total += size
-                            cd_kb += (size + 1023) // 1024
+                    specs = [s for cue in sorted(cues) for s in iso_specs(z, cue, members)]
+                    specs += [(name, 0, 2048, 0, size // 2048) for name, size in sorted(raw_isos)]
+                    for spec in specs:
+                        size = spec[4] * 2048
+                        isos.append(f"CD\\{iso_name(spec[0], used)}.ISO")
+                        files.append((isos[-1], None, size, spec))
+                        total += size
+                        cd_kb += (size + 1023) // 1024
             exe_file = ""
             for exe in cands:           # first word that is a real program wins
                 for ext in ("BAT", "EXE", "COM"):
@@ -477,9 +482,39 @@ def index(root, max_mb, include_cd):
                         files.remove(e)
                 except (OSError, ValueError) as e:
                     print(f"waveserve: no NetDrive image for {top}: {e}", file=sys.stderr)
-            if isos and exe_file.endswith(".BAT"):
+            # where the start program really is: the conf's cd chain, else the
+            # first place a file of that name turns up
+            exe_rel = ""
+            if exe_file:
+                rels = [e[0] for e in files if e[0].upper().split("\\")[-1] == exe_file]
+                want = (subdir.upper() + "\\" + exe_file).lstrip("\\") if subdir else exe_file
+                exe_rel = next((r for r in rels if r.upper() == want), rels[0] if rels else "")
+            exe_dir = exe_rel.rsplit("\\", 1)[0] if "\\" in exe_rel else ""
+            if isos:
                 mount = imgmount_bat(isos[0].split("\\")[-1] if net else isos[0], cd or "D", net)
                 files.append(("IMGMOUNT.BAT", None, len(mount), mount))
+            is_bat = exe_file.endswith(".BAT")
+            if exe_file and (exe_dir or (isos and not is_bat)):
+                # a wrapper at the root: mount, step into the folder, run, step out
+                roots = {e[0].upper() for e in files if "\\" not in e[0]}
+                wrapper = "START.BAT" if "START.BAT" not in roots else "WAVE86.BAT"
+                lines = ["@echo off"] + (["@call IMGMOUNT.BAT"] if isos else []) + \
+                        ([f"cd {exe_dir}"] if exe_dir else []) + \
+                        [("call " if is_bat else "") + exe_file] + \
+                        ([f"cd {'..' if exe_dir.count(chr(92)) == 0 else chr(92).join(['..'] * (exe_dir.count(chr(92)) + 1))}"] if exe_dir else [])
+                body = ("\r\n".join(lines) + "\r\n").encode("ascii")
+                files.append((wrapper, None, len(body), body))
+                total += len(body)
+                if isos and is_bat:                 # the inner batch still needs %WAVECD%
+                    for k, entry in enumerate(files):
+                        if entry[0] == exe_rel and entry[1]:
+                            with zipfile.ZipFile(path) as z:
+                                inner = start_batch(z.read(entry[1]).decode("cp437"), "", cd or "D").encode("cp437")
+                            files[k] = (entry[0], None, len(inner), inner)
+                            total += len(inner) - entry[2]
+                            break
+                exe_file = wrapper
+            elif isos and is_bat:
                 for k, entry in enumerate(files):
                     if entry[0].upper() == exe_file and entry[1]:
                         with zipfile.ZipFile(path) as z:

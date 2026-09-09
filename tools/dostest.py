@@ -205,6 +205,8 @@ def main():
         sys.exit("build first: make")
     games = a.game or sorted(d for d in os.listdir(a.games) if os.path.isdir(os.path.join(a.games, d))
                              and not d.startswith("."))
+    if a.run and not a.game:            # a clean disk: Alley Cat to try, the rest from the server
+        games = [g for g in games if g.upper() == "ALLEYCAT"]
     for name in games:
         if not os.path.isdir(os.path.join(a.games, name)):
             sys.exit(f"no game folder {name} under {a.games}")
