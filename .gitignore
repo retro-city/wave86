@@ -19,3 +19,4 @@ music/warrior.mod
 music/worms.mod
 build_*/
 __pycache__/
+dist/

@@ -1,10 +1,14 @@
 # WAVE86
 
-A game launcher for MS-DOS with a synthwave look and its own soundtrack.
+A game launcher for MS-DOS that can fetch its games from an eXoDOS
+collection on your LAN, or play them straight off it, with a look of
+its own and its own soundtrack.
 
 It is a plain 16-bit real-mode program, so it runs on anything from an
 XT to a 486 and beyond. I build it on a Mac with Open Watcom and try it
-in dosbox-x before it goes onto the real machine.
+in dosbox-x, and on a real DOS booted in dosbox-x, before it goes onto
+the real machine. Version 0.1: the network side is young, so expect
+rough edges there.
 
 ![WAVE86 running in dosbox-x](docs/screenshot.png)
 
@@ -164,15 +168,21 @@ has one. `adlib=` and `modrate=` in the INI override all of this.
 
 You need Open Watcom V2 in `toolchain/` (it is not in git). Download
 `ow-snapshot.tar.xz` from the `Current-build` release of
-github.com/open-watcom/open-watcom-v2 and extract `armo64` (the macOS
-ARM host tools), `h` and `lib286` into `toolchain/`. On an Intel Mac use
-`bino64` instead and adjust the path at the top of the Makefile.
+github.com/open-watcom/open-watcom-v2 and extract the host tools for
+your machine (`armo64` on an Apple silicon Mac, `bino64` on an Intel
+one, `binl64` on Linux) plus `h` and `lib286` into `toolchain/`.
 
     make          builds build/WAVE86.EXE and copies WAVE.BAT, the INI and MUSIC\
     make run      opens it in dosbox-x, with sound and networking (see below)
     make test     renders the UI headlessly to build/screen.png
+    make dist     the DOS side as dist/wave86-<version>-dos.zip, ready to copy over
     make music    regenerates the soundtrack
     make clean
+
+The Makefile picks the host tools for the machine it runs on (`armo64`,
+`bino64` or `binl64` under `toolchain/`); the GitHub workflow in
+`.github/workflows/build.yml` does the same on Linux and attaches the
+zip to every build, and to a release for a tag like `v0.1`.
 
 The code is compiled for the 8086 instruction set with the small memory
 model, and comes out around 40 KB.
@@ -237,7 +247,7 @@ listing an empty folder. The server re-indexes every five minutes.
 On the DOS machine, copy `WAVEGET.EXE`, `DHCP.EXE` and `MTCP.CFG` from
 `build/` next to the launcher, put the server's address in the INI:
 
-    server=192.168.1.109:8086
+    server=192.168.1.10:8086
 
 and get the network card up in `AUTOEXEC.BAT` (PicoMem or any NE2000):
 
@@ -433,12 +443,16 @@ list fetch from a waveserve here, the chain the 486 uses. Needs mtools
 
 ## Later
 
-- Network support through a PicoMem card's NE2000, so the launcher can
-  pull games and lists from a machine on the LAN. That is where this is
-  heading.
-- Leaving CD images on the server: Michael Brutman's mTCP NetDrive
-  mounts a remote disk image as a drive, and SHSUCDHD reads an ISO from
-  it with no measurable overhead, so the 60 MB need not sit on the DOS
-  disk at all.
+- The network side on the real 486 with its PicoMem: everything above
+  is verified in dosbox-x and on real DOS kernels booted in it, not yet
+  on the card itself.
 - XM playback, if the 486 can take it.
 - Joystick navigation, 50-line mode, a wider list for big collections.
+
+## Licence
+
+WAVE86 is free software under the GNU General Public License, version 3
+or later; see `LICENSE`. It ships with other people's programs under
+their own terms, mTCP, the SHSUCD suite, the Crynwr packet driver and a
+few FreeDOS pieces; `THIRD-PARTY.md` lists each with its licence and
+where it came from.

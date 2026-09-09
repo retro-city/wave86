@@ -3,8 +3,17 @@
 
 WATCOM := $(abspath toolchain)
 export WATCOM
-export PATH := $(WATCOM)/armo64:$(PATH)
+# the host tools for this machine: armo64 (Apple silicon), bino64 (Intel Mac), binl64 (Linux)
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_S),Darwin)
+  WATCOM_BIN ?= $(if $(filter arm64,$(UNAME_M)),armo64,bino64)
+else
+  WATCOM_BIN ?= binl64
+endif
+export PATH := $(WATCOM)/$(WATCOM_BIN):$(PATH)
 export INCLUDE := $(WATCOM)/h
+VERSION := $(shell sed -n 's/.*VERSION_STR *"\([^"]*\)".*/\1/p' src/wave86.h)
 
 # -0: 8086 instructions only  -ms: small model  -os: optimize for size
 CFLAGS = -q -bcl=dos -0 -ms -os -wx
@@ -107,6 +116,23 @@ build/DHCP.EXE: net/dhcp/DHCP.CPP net/dhcp/DHCP.CFG $(MTCP_SRC)
 	$(call MTCP_BUILD,dhcp,net/dhcp)
 
 
+# the DOS side, zipped: everything that goes next to the launcher on the
+# DOS machine, only our own tunes, the FreeDOS extras, the licences
+dist: all
+	rm -rf dist/wave86 && mkdir -p dist/wave86/MUSIC dist/wave86/THUMBS dist/wave86/EXTRAS
+	cp build/WAVE86.EXE build/WAVE.BAT build/WAVE86.INI dist/wave86/
+	cp $$(git ls-files music) dist/wave86/MUSIC/
+	cp -R THUMBS/. dist/wave86/THUMBS/
+	cp build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM build/NETDRIVE.SYS build/NETDRIVE.EXE build/DRVOFF.EXE dist/wave86/
+	cp build/SHCDX86.COM build/SHCDHD86.EXE dist/wave86/
+	cp dos/CHOICE.EXE dos/CTMOUSE.EXE dos/JEMMEX.EXE dist/wave86/EXTRAS/
+	sed 's/$$/\r/' docs/README-DOS.txt > dist/wave86/README.TXT
+	sed 's/$$/\r/' LICENSE > dist/wave86/LICENSE.TXT
+	sed 's/$$/\r/' THIRD-PARTY.md > dist/wave86/THIRDPTY.TXT
+	sed 's/$$/\r/' cdrom/LICENSE.txt > dist/wave86/SHSUCD.TXT
+	cd dist && rm -f wave86-$(VERSION)-dos.zip && zip -q -r wave86-$(VERSION)-dos.zip wave86
+	@ls -la dist/wave86-$(VERSION)-dos.zip
+
 # regenerate the soundtrack from the composers
 music:
 	python3 tools/makemusic.py music
@@ -151,4 +177,4 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test dostest dosrun netdrive clean music music-files thumbs net cdrom
+.PHONY: all run test dostest dosrun netdrive dist clean music music-files thumbs net cdrom
