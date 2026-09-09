@@ -26,7 +26,7 @@ with an eXoDOS folder of the same name.
 import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil, struct
 import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import fat16, iso9660, tempfile
+import fat16
 
 NETDRIVE_DIR = None
 NETDRIVE_PORT = 2002
@@ -213,10 +213,10 @@ def imgmount_bat(iso, letter, net=None):
                   f'if "%WAVENDSRV%"=="" set WAVENDSRV={srv}',
                   "if exist Z:\\IMGMOUNT.COM goto nodosbox",
                   "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto nodosbox",
-                  "rem the volume holds the disc's files, so NetDrive's letter is the CD",
                   f"NETDRIVE C %WAVENDSRV% {img} %WAVEND%: -ro",
-                  "set WAVECD=%WAVEND%",
-                  "goto done",
+                  f"SHCDHD86 /F:%WAVEND%:\\{iso} /Q",
+                  "SHCDX86 /D:SHSU-CDH,E /Q",
+                  "goto letter",
                   ":nodosbox",
                   "echo This game's CD stays on the server (mTCP NetDrive), which DOSBox's",
                   "echo own shell cannot reach. Run it under a real DOS: make dosrun.",
@@ -243,7 +243,7 @@ def imgmount_bat(iso, letter, net=None):
               "goto done",
               ":unmount"]
     if net:
-        lines += ["NETDRIVE D %WAVEND%:"]
+        lines += ["SHCDX86 /U /Q", "SHCDHD86 /U /Q", "NETDRIVE D %WAVEND%:"]
     else:
         lines += [f"if exist Z:\\IMGMOUNT.COM Z:\\IMGMOUNT.COM -u {letter}",
                   f"if exist Z:\\SYSTEM\\IMGMOUNT.COM Z:\\SYSTEM\\IMGMOUNT.COM -u {letter}",
@@ -288,38 +288,17 @@ def iso_chunks(z, spec):
 
 
 def netdrive_image(path, zippath, spec, iso_name):
-    """A NetDrive volume holding the disc's files, built if it is not there
-    yet. NETDRIVE.SYS takes the first letter after the hard disk, D:, which
-    is where the games expect their CD; with the files right on that
-    volume the game sees D:\\ as installed, no CD driver needed. (What it
-    does not get is MSCDEX, so no CD audio: that is what LOCAL CD is for.)
-    An older image with the ISO inside is rebuilt."""
-    if os.path.exists(path):
-        with open(path, "rb") as f:
-            f.seek(512 + 2 * 256 * 512)
-            root = f.read(512 * 32)
-        stale = any(root[i:i + 11].endswith(b"ISO") for i in range(0, len(root), 32) if root[i] not in (0, 0xE5))
-        if not stale:
-            return
-    with tempfile.TemporaryDirectory(dir=os.path.dirname(path)) as work:
-        iso = os.path.join(work, "disc.iso")
-        with zipfile.ZipFile(zippath) as z, open(iso, "wb") as o:
-            for chunk in iso_chunks(z, spec):
-                o.write(chunk)
-        tree = os.path.join(work, "tree")
-        os.makedirs(tree)
-        n, total = iso9660.extract(iso, tree)
-        os.remove(iso)
-        tmp = path + ".part"
-        try:
-            mb, nroot = fat16.volume_size_mb(tree)
-            fat16.format_volume(tmp, mb, nroot)
-            fat16.fill_tree(tmp, 0, tree)
-            os.replace(tmp, path)
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-    print(f"waveserve: NetDrive image {os.path.basename(path)} ({n} files, {total // 1048576} MB)", file=sys.stderr)
+    """A NetDrive volume holding one ISO, built if it is not there yet."""
+    size = spec[4] * 2048
+    if os.path.exists(path) and os.path.getsize(path) >= size + 512:
+        return
+    mb = -(-(size + 2 * 256 * 512 + 32 * 512 + 512) // 1048576) + 1
+    tmp = path + ".part"
+    fat16.format_volume(tmp, max(3, mb))
+    with zipfile.ZipFile(zippath) as z, fat16.Volume(tmp) as v:
+        v.add_file(iso_name, size, iso_chunks(z, spec))
+    os.replace(tmp, path)
+    print(f"waveserve: NetDrive image {os.path.basename(path)} ({size // 1048576} MB)", file=sys.stderr)
 
 
 def read_conf(root, short):
@@ -498,7 +477,7 @@ def index(root, max_mb, include_cd):
                 try:
                     netdrive_image(os.path.join(NETDRIVE_DIR, img), path, spec, isos[0].split("\\")[-1])
                     net = ("%NDSRV%", img)
-                except Exception as e:          # one bad disc must not take the server down
+                except (OSError, ValueError) as e:
                     print(f"waveserve: no NetDrive image for {top}: {e}", file=sys.stderr)
             # where the start program really is: the conf's cd chain, else the
             # first place a file of that name turns up
