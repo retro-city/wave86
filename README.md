@@ -42,7 +42,7 @@ in dosbox-x before it goes onto the real machine.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
-| N | the games on the server (Enter downloads, P plays it off the server, L refreshes, C: disc with the game or on the server) |
+| N | the games on the server (Enter plays it off the server, I installs it, L refreshes, C: disc with the game or on the server) |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
@@ -200,9 +200,9 @@ folder named after its theme first.
 ## Games from eXoDOS or the Total DOS Collection over the network
 
 Press `N` in the menu and the launcher shows the games in your
-collection, served from a machine on the LAN; Enter downloads one
-straight into `C:\GAMES` and it appears in the games list, named and
-with its executable set. Nothing is unzipped on the DOS side: the server
+collection, served from a machine on the LAN; I installs one straight
+into `C:\GAMES` and it appears in the games list, named and with its
+executable set, and Enter plays it off the server without copying. Nothing is unzipped on the DOS side: the server
 streams plain files.
 
 On the machine with the collection (Mac, Linux, a NAS with Python):
@@ -338,8 +338,8 @@ keeps is a real CD-ROM drive as far as the game can tell.
 
 ### Playing off the server
 
-With NetDrive set up, `P` in the network view plays a game without
-copying anything: the server builds a disk image of the whole game on
+With NetDrive set up, Enter in the network view plays a game without
+copying anything (I installs it instead): the server builds a disk image of the whole game on
 first request (its files, its batches, the disc under `CD\`, kept in
 the same folder as the CD volumes), the DOS side attaches it as a
 drive, runs the game from there and detaches it afterwards. `WAVE86

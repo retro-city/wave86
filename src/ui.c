@@ -121,11 +121,11 @@ void ui_keybar(const Game *sel)
     (void)updown;
     keychip(&x, "ENTER", "RUN", game_count == 0);
     keychip(&x, "S", "SETUP", !sel || !sel->setup[0]);
+    keychip(&x, "N", "NET", !cfg_server[0]);      /* R (rescan) still works */
     keychip(&x, "F2", "NAME", game_count == 0);
     keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
     keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
     keychip(&x, "<>", "TRACK", !mus_present || mus_ntracks < 2);
-    keychip(&x, "N", "NET", !cfg_server[0]);      /* R (rescan) still works */
     keychip(&x, "ESC", "QUIT", 0);
 }
 
@@ -548,21 +548,23 @@ void ui_net_details(int sel)
         scr_puts(PANE_X + 2, 19, "CD ON DISK, C: OVER NETWORK.", A(8, 0));
     else if (g->cd)
         scr_puts(PANE_X + 2, 19, "ITS CD IMAGE COMES ALONG.", A(8, 0));
-    scr_puts(PANE_X + 2, 20, "ENTER DOWNLOADS IT INTO YOUR GAMES.", A(8, 0));
-    if (g->netplay)
-        scr_puts(PANE_X + 2, 21, "P PLAYS IT STRAIGHT OFF THE SERVER.", A(8, 0));
+    if (g->netplay) {
+        scr_puts(PANE_X + 2, 20, "ENTER PLAYS IT OFF THE SERVER,", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "I INSTALLS IT INTO YOUR GAMES.", A(8, 0));
+    } else {
+        scr_puts(PANE_X + 2, 20, "I INSTALLS IT INTO YOUR GAMES.", A(8, 0));
+    }
 }
 
 void ui_net_keybar(void)
 {
     int x = 2;
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
-    keychip(&x, "ENTER", "GET", net_count == 0);
+    keychip(&x, "ENTER", "PLAY", net_count == 0 || !net_get(0)->netplay);
+    keychip(&x, "I", "INSTALL", net_count == 0);
     keychip(&x, "L", "LIST", 0);
-    keychip(&x, "P", "PLAY", net_count == 0);
     keychip(&x, "C", net_cdmode ? "NET CD" : "LOCAL CD", 0);
     keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
     keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
-    keychip(&x, "<>", "TRACK", !mus_present || mus_ntracks < 2);
     keychip(&x, "ESC", "GAMES", 0);
 }

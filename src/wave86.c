@@ -649,13 +649,13 @@ int main(int argc, char **argv)
                 net_cdmode = !net_cdmode;
                 net_redraw(nsel, ntop);
                 continue;
-            case 'p': case 'P':             /* play it off the server */
+            case 0x0D:                      /* play it off the server */
                 if (net_count && net_get(nsel)->netplay) {
                     net_play(nsel);
                     net_redraw(nsel, ntop);     /* bare mode: back here */
                 }
                 continue;
-            case 0x0D:
+            case 'i': case 'I':             /* install: download into the games folder */
                 if (net_count) {
                     net_download(nsel);
                     /* bare mode only: back here with the game on disk */
