@@ -209,13 +209,15 @@ def imgmount_bat(iso, letter, net=None):
              "rem calls it with /U afterwards. WAVECD gets the letter the disc is on."]
     if net:
         srv, img = net
-        lines += ['if "%WAVEND%"=="" set WAVEND=D',
+        lines += ["rem NetDrive's letter: D: unless DRVOFF freed it for the disc, then E:",
+                  'if "%WAVEND%"=="" if exist D:\\NUL set WAVEND=D',
+                  'if "%WAVEND%"=="" set WAVEND=E',
                   f'if "%WAVENDSRV%"=="" set WAVENDSRV={srv}',
                   "if exist Z:\\IMGMOUNT.COM goto nodosbox",
                   "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto nodosbox",
                   f"NETDRIVE C %WAVENDSRV% {img} %WAVEND%: -ro",
                   f"SHCDHD86 /F:%WAVEND%:\\{iso} /Q",
-                  "SHCDX86 /D:SHSU-CDH,E /Q",
+                  f"SHCDX86 /D:SHSU-CDH,{letter} /Q",
                   "goto letter",
                   ":nodosbox",
                   "echo This game's CD stays on the server (mTCP NetDrive), which DOSBox's",
@@ -477,7 +479,7 @@ def index(root, max_mb, include_cd):
                 try:
                     netdrive_image(os.path.join(NETDRIVE_DIR, img), path, spec, isos[0].split("\\")[-1])
                     net = ("%NDSRV%", img)
-                except (OSError, ValueError) as e:
+                except Exception as e:          # one bad disc must not take the server down
                     print(f"waveserve: no NetDrive image for {top}: {e}", file=sys.stderr)
             # where the start program really is: the conf's cd chain, else the
             # first place a file of that name turns up
@@ -520,11 +522,12 @@ def index(root, max_mb, include_cd):
                         files[k] = (entry[0], None, len(body), body)
                         total += len(body) - entry[2]
                         break
+            cd_letter = cd or "D"
             cd = bool(cd_kb)
             netcd = bool(net)
             files_net = None
             if net:                             # same pack without the disc, mounting over NetDrive
-                mount = imgmount_bat(isos[0].split("\\")[-1], cd or "D", net)
+                mount = imgmount_bat(isos[0].split("\\")[-1], cd_letter, net)
                 files_net = [("IMGMOUNT.BAT", None, len(mount), mount) if e[0] == "IMGMOUNT.BAT" else e
                              for e in files if e[0] not in isos]
             md = meta.get(top.lower(), {})

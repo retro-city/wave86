@@ -305,23 +305,27 @@ a 386DX-40 at the same speed as NetDrive alone, around 370 KB/s.
 
 What the DOS machine needs for that:
 
-    DEVICE=C:\WAVE86\NETDRIVE.SYS        in CONFIG.SYS (LASTDRIVE=Z too)
+    DEVICE=C:\WAVE86\NETDRIVE.SYS -d:2   in CONFIG.SYS (LASTDRIVE=Z too)
+    DRVOFF D:                            first thing in AUTOEXEC.BAT
     PACKETINT 0x60, 0x65                 in MTCP.CFG (the second interrupt
                                          is for DHCP and WAVEGET while
                                          NetDrive holds the first); MTU 1500
 
-In the network view `C` switches between NET CD (the disc stays on the
-server, the download is small) and LOCAL CD (the disc comes along, as
-`CD\NAME.ISO`, and the game needs no network to run); `netcd=0` in the
-INI makes LOCAL the default. The details pane tags a downloaded game
-"CD" or "NET CD" accordingly, next to "386+" and where it came from.
+The two lines are about the letter. DOS hands a block device driver the
+next free letter, so `NETDRIVE.SYS` lands on D:, exactly where the games
+want their disc, and no driver can ask for another letter. The way out
+(DivByZero's, from the NetDrive thread on VOGONS) is to let NetDrive
+reserve two letters and take the first out of use again: `DRVOFF`
+(`net/DRVOFF.C`, a dozen lines against DOS's drive table) marks D:
+invalid, so SHSUCDX can give the disc D: while NetDrive works on E:.
+The game's `IMGMOUNT.BAT` finds NetDrive's letter by itself; `netdrive=`
+in the INI names it if that guess is wrong. The launcher passes the
+server's address in `WAVENDSRV` (the machine of `server=`, port 2002 or
+`netdrive_port=`). The network view marks such games "NET CD".
 
-`NETDRIVE.SYS` takes the first letter after the hard disk, D:, which is
-why the disc goes to E: and the start batches use `%WAVECD%`. The
-launcher passes the server's address in `WAVENDSRV` (the machine of
-`server=`, port 2002 or `netdrive_port=`) and, if `netdrive=E` is set
-in the INI, the letter NetDrive got in `WAVEND`. The network view marks
-such games "NET CD". DOSBox's own shell has no packet driver, so
+There is no CD audio either way: SHSUCDHD serves data tracks only and the
+server drops the audio tracks when it makes the ISO. What the ISO route
+keeps is a real CD-ROM drive as far as the game can tell. DOSBox's own shell has no packet driver, so
 these games run under a real DOS: `make dosrun` has the driver in its
 CONFIG.SYS.
 
