@@ -188,7 +188,7 @@ def main():
     ap.add_argument("--game", action="append", help="only these game folders (repeatable)")
     ap.add_argument("--script", help="DOS batch to run instead of the smoke test")
     ap.add_argument("--seconds", type=int, default=90, help="how long the guest may run")
-    ap.add_argument("--size", type=int, help="hard-disk image size in MB")
+    ap.add_argument("--size", type=int, help="hard-disk image size in MB (up to 2047; --run defaults to 500)")
     ap.add_argument("--ini", action="append", default=[], help="extra global INI line, e.g. sound=sb")
     ap.add_argument("--build", default=os.path.join(ROOT, "build"))
     ap.add_argument("--run", action="store_true",
@@ -214,7 +214,9 @@ def main():
     os.makedirs(work)
     total = sum(os.path.getsize(os.path.join(r, f)) for name in games
                 for r, _, fs in os.walk(os.path.join(a.games, name)) for f in fs)
-    size_mb = a.size or max(64, int(total / 1048576 * 1.3) + 16)
+    # a test disk just fits its games; the interactive disk gets room for
+    # downloads (500 MB; FAT16 and DOS 6.22 stop at 2047 MB, --size overrides)
+    size_mb = a.size or max(500 if a.run else 64, int(total / 1048576 * 1.3) + 16)
 
     t0 = time.time()
     print(f"dostest: {os.path.basename(boot)}, {len(games)} game(s), {size_mb} MB disk")

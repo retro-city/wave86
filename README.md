@@ -356,7 +356,9 @@ checks the batch the launcher generates. About half a minute.
 `make dosrun` is `make run` on a real kernel: the window boots DOS, loads
 the packet driver and DHCP, and starts the launcher with sound and the
 network view working against a waveserve on this machine. Games you
-download there land inside `build/dosrun/hd.img`, not in `GAMES\`.
+download there land inside `build/dosrun/hd.img`, a 500 MB disk (FAT16
+stops at 2047 MB; `make dosrun DOSTEST_ARGS=--size=1500` for more), not
+in `GAMES\`.
 
 Any bootable 1.44 MB floppy image works as `DOS=`; the first setup disk
 of MS-DOS 5 or 6 is a plain boot disk once the harness replaces its
