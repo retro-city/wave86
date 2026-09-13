@@ -369,17 +369,32 @@ static void uiClose(void) {
   fflush(stdout);                   /* redirected output, should we hang */
 }
 
-/* the tune and its level, at the bottom of the box */
+/* The tune, its level and the volume, under the box. When there is no
+   music it says why - which beats silence when you were expecting some:
+   MUSIC\ is looked for beside WAVEGET.EXE, the same folder the launcher
+   plays from. */
 static void uiMusic(void) {
-  int y = BOX_Y + BOX_H + 1, i, vu;
-  if (!screenOn || !mus_present || !mus_ntracks) return;
-  scrCell(BOX_X + 3, y, (char)14, A(mus_on ? 13 : 8, 0));
-  scrFill(BOX_X + 5, y, 10, ' ', A(7, 0));
-  scrPuts(BOX_X + 5, y, mus_on ? mus_track : "OFF", A(mus_on ? 7 : 8, 0));
-  vu = mus_on ? mus_vu() : 0;
-  for (i = 0; i < 10; i++)
-    scrCell(BOX_X + 16 + i, y, (char)(i < vu ? 221 : 250),
+  int y = BOX_Y + BOX_H + 1, i, vu, playing;
+  char what[64];
+  if (!screenOn) return;
+  playing = musicWanted && mus_present && mus_ntracks && mus_on;
+  if (!musicWanted)      strcpy(what, "MUSIC OFF (netmusic=0)");
+  else if (!mus_present) strcpy(what, "NO ADLIB OR SOUND BLASTER FOUND");
+  else if (!mus_ntracks) sprintf(what, "NO TRACKS IN %sMUSIC", home_dir);
+  else if (!mus_on)      strcpy(what, "MUSIC OFF (M)");
+  else                   strcpy(what, mus_track);
+  scrCell(BOX_X + 3, y, (char)14, A(playing ? 13 : 8, 0));
+  scrFill(BOX_X + 5, y, 48, ' ', A(7, 0));
+  scrPuts(BOX_X + 5, y, what, A(playing ? 7 : 8, 0));
+  if (!mus_present || !mus_ntracks) return;
+  vu = playing ? mus_vu() : 0;
+  for (i = 0; i < 10; i++)                  /* the level, live */
+    scrCell(BOX_X + 22 + i, y, (char)(i < vu ? 221 : 250),
             A(i < vu ? band[(i * 5) / 10] : 8, 0));
+  scrPuts(BOX_X + 36, y, "VOL", A(8, 0));   /* and where + and - put it */
+  for (i = 0; i < 10; i++)
+    scrCell(BOX_X + 40 + i, y, (char)(i < mus_vol ? 219 : 176),
+            A(i < mus_vol ? 11 : 8, 0));
 }
 
 static unsigned barPhase = 0;
@@ -472,7 +487,7 @@ static void uiProgress(const char *file, unsigned long done, unsigned long total
   scrPuts(BAR_X, BOX_Y + 6, line, A(7, 0));
   uiMusic();
   uiLogDraw();
-  if (barPhase % 5 == 0) uiDump();
+  uiDump();
 }
 
 /* MUSIC\ sits next to WAVEGET.EXE; netmusic=0 in WAVE86.INI says no, and
@@ -782,6 +797,18 @@ static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
   uiOpen("WAVE86 ITSELF", serverText);
   if (!screenOn) printf("WAVEGET: updating WAVE86 in %s\n", gameRoot);
   int rc = doStream(addr, port, "/update", "update", 0, 1);
+  if (rc == 0 && screenOn) {        /* it takes a second: hold it long
+                                       enough to be read (a key skips) */
+    clockTicks_t t0 = TIMER_GET_CURRENT(), tv = t0;
+    while (!biosIsKeyReady() && Timer_diff(t0, TIMER_GET_CURRENT()) < TIMER_MS_TO_TICKS(2500)) {
+      mus_poll();
+      if (TIMER_GET_CURRENT() != tv) {    /* the VU wants the tick rate */
+        tv = TIMER_GET_CURRENT();
+        uiMusic();
+      }
+    }
+    if (biosIsKeyReady()) biosKeyRead();
+  }
   uiClose();
   return rc;
 }

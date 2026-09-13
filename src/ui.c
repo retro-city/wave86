@@ -186,6 +186,8 @@ static void music_status(void)
     scr_puts(MUS_X + 2, MUS_Y, mus_track, A(11, 0));
     vu_shown = mus_vu();
     draw_bar(vu_shown, 0);
+    sprintf(buf, "VOL %d", mus_vol);        /* where + and - have it */
+    scr_puts(80 - 7, MUS_Y, buf, A(8, 0));
 }
 
 /* +/- pressed: show the volume bar instead of the VU for a while */

@@ -434,7 +434,12 @@ progress bar in the same gradient, KB done and left, the rate, the time
 remaining and the files as they land. It plays the soundtrack too - the
 launcher's music engine (`src/music.c`) built again in large model and
 linked into WAVEGET, reading the same `MUSIC\` folder. `M`, `+`, `-`,
-`<` and `>` do what they do in the menu; `Esc` stops the download.
+`<` and `>` do what they do in the menu; `Esc` stops the download. The
+music line carries the track, a live level and the volume, and when
+there is nothing to hear it says why - no OPL, no tracks (with the
+folder it looked in), or `netmusic=0`. An update is over in a second or
+two, so that screen holds for a moment at the end rather than flashing
+past.
 
 Only the FM tracks play: `cfg_modrate` is nailed to 0 in WAVEGET, which
 keeps the MOD mixer and its DMA away from the packet driver, so the cost
