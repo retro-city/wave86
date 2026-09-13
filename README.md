@@ -324,10 +324,22 @@ them there and let PGUSINIT load them:
     cdrom_storage=W:
     imgmount=PICOGUS
     cdrom_letter=D
-    cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdload
+    cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdloadname
 
-`PGUSINIT.EXE /cdload` is what PICOGUS runs when `cdmount_picogus=` is
-not given. A PicoMem 2 would be `cdrom_storage=S:\CDROM`, `imgmount=PICOMEM`,
+`PGUSINIT.EXE /cdloadname` is what PICOGUS runs when `cdmount_picogus=`
+is not given - `/cdload` takes the number of an image, `/cdloadname` its
+name.
+
+The launcher writes a game's `IMGMOUNT.BAT` itself from these settings,
+every time it starts that game, with the image path, the command and the
+letter written in as they are. The server's version reads all of that
+from the environment, which asks the shell for five `SET`s it may not
+have room for and cannot know what card the machine has; this one needs
+only `CD`, which the game's own batch reads. It also means a change in
+the INI reaches a game that is already installed. A batch that fetches
+its disc over NetDrive is left alone - that one needs the server's
+address at run time - and so is anything not generated in the first
+place. A PicoMem 2 would be `cdrom_storage=S:\CDROM`, `imgmount=PICOMEM`,
 once its firmware has a command to load an image; until then keep it on
 `SOFTWARE` and the discs still collect on its SD card. Under DOSBox the
 batch uses IMGMOUNT whatever the mode says; playing off the server

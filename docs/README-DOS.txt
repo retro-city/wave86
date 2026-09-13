@@ -49,9 +49,16 @@ a PicoGUS, and a PicoMem 2 once its firmware can load an image:
     cdrom_storage=W:          (where the images go; W: here is the PicoGUS's)
     imgmount=PICOGUS          (SOFTWARE, the default, uses SHSUCDHD+SHSUCDX)
     cdrom_letter=D            (the letter MSCDEX gave the card's drive)
-    cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdload
-The image is appended to that command; cdrom_name=1 appends its bare
-file name instead of the whole path. PGUSINIT.EXE /cdload is the default, so
+    cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdloadname
+The image is appended to that command - /cdloadname takes a name, while
+/cdload takes the number of an image - and cdrom_name=1 appends the bare
+file name instead of the whole path.
+
+WAVE86 writes each game's IMGMOUNT.BAT itself, from these settings, every
+time it starts that game: the paths, the command and the letter go into
+the batch as they are, so nothing depends on the environment having room
+for them, and a change here reaches games that are already installed. A
+game whose disc stays on the server keeps the batch the server sent. PGUSINIT.EXE /cdload is the default, so
 cdmount_picogus= is only needed to give PGUSINIT's path.
 
 Space marks a game for the install queue and I then fetches every

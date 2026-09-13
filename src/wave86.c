@@ -101,19 +101,24 @@ static const char *cd_root(void)
 
 /* the card commands are prefixes - the image is appended - but $ISO at the
    end is how cdmount= is written, so accept it there too and drop it */
+static void clean_cmd(char *dst, const char *cmd)
+{
+    int n;
+    strncpy(dst, cmd, 79);
+    dst[79] = 0;
+    n = strlen(dst);
+    if (n >= 4 && stricmp(dst + n - 4, "$ISO") == 0)
+        n -= 4;
+    while (n && (dst[n - 1] == ' ' || dst[n - 1] == '\t'))
+        n--;
+    dst[n] = 0;
+}
+
 static void put_cmd(FILE *f, const char *var, const char *cmd)
 {
-    char buf[96];
-    int n;
-    strncpy(buf, cmd, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = 0;
-    n = strlen(buf);
-    if (n >= 4 && stricmp(buf + n - 4, "$ISO") == 0)
-        n -= 4;
-    while (n && (buf[n - 1] == ' ' || buf[n - 1] == '\t'))
-        n--;
-    buf[n] = 0;
-    if (n)
+    char buf[80];
+    clean_cmd(buf, cmd);
+    if (buf[0])
         fprintf(f, "set %s=%s\n", var, buf);
 }
 
@@ -142,7 +147,7 @@ static void emit_cd_env(FILE *f)
             if (v && v[0])
                 put_cmd(f, "WAVECDCMD", v);
             else if (stricmp(mode, "PICOGUS") == 0)
-                fprintf(f, "set WAVECDCMD=PGUSINIT.EXE /cdload\n");
+                fprintf(f, "set WAVECDCMD=PGUSINIT.EXE /cdloadname\n");
             sprintf(key, "cdunmount_%s", mode);
             v = ini_global(key);
             if (v && v[0])
@@ -189,10 +194,12 @@ static const char *under_dosbox(void)
  */
 #define BAT_NETDRIVE 1
 #define BAT_ISO      2
+#define BAT_GEN      4          /* generated: ours to rewrite */
+#define BAT_OWN      8          /* rewritten just now, values written in */
 
 static int bat_scan(const Game *g, char *iso)
 {
-    char path[PATH_LEN + 24], buf[152];
+    char path[PATH_LEN + 24], buf[160];
     int h, flags = 0, keep = 0, n;
 
     iso[0] = 0;
@@ -206,22 +213,131 @@ static int bat_scan(const Game *g, char *iso)
         buf[n] = 0;
         if (strstr(buf, "NETDRIVE"))
             flags |= BAT_NETDRIVE;
+        if (strstr(buf, "waveserve made") || strstr(buf, "WAVE86 wrote"))
+            flags |= BAT_GEN;
         for (dot = iso[0] ? NULL : strstr(buf, ".ISO"); dot; dot = strstr(dot + 1, ".ISO")) {
             char *s = dot;
             while (s > buf && s[-1] != '\\' && s[-1] != ' ' && s[-1] != ':')
                 s--;
-            if (dot > s && dot - s <= 8) {
+            if (s > buf && dot - s <= 8) {   /* a whole name, delimiter and all */
                 memcpy(iso, s, (unsigned)(dot - s) + 4);
                 iso[(dot - s) + 4] = 0;
                 flags |= BAT_ISO;
                 break;
             }
         }
-        keep = n < 12 ? n : 12;         /* a name split across two reads */
+        keep = n < 20 ? n : 20;         /* a name or marker split across reads */
         memmove(buf, buf + n - keep, keep);
     }
     close(h);
     return flags;
+}
+
+/* where this machine keeps the image for a game: cdrom_storage if the INI
+   names a folder for all of them, else the game's own CD folder */
+static void disc_path(const Game *g, const char *iso, char *dst)
+{
+    const char *root = cd_root();
+    if (root && root[0])
+        sprintf(dst, "%s\\%s", root, iso);
+    else
+        sprintf(dst, "%s\\%s\\CD\\%s", gamedir, g->dir, iso);
+}
+
+static char dbg_mount[100] = "";    /* the mount line, for debug mode */
+
+/*
+ * Write the game's IMGMOUNT.BAT from this machine's WAVE86.INI, with the
+ * image path, the card's command and the letter written into it as they
+ * are. The server ships one that reads all of that from the environment,
+ * which asks the shell for five SETs it may not have room for, and which
+ * cannot know what card this machine has anyway; this one needs only
+ * CD, which the game's own batch reads. It also means a change in the
+ * INI reaches a game that is already installed.
+ *
+ * Only ever replaces a batch that was generated - the server's or one of
+ * ours - and never one whose disc comes over NetDrive: that is the
+ * server's business and needs its address at run time.
+ */
+static int write_imgmount(const Game *g, const char *img, const char *iso)
+{
+    char path[PATH_LEN + 24], mode[16], cmd[80], cmdu[80];
+    const char *v, *sep;
+    char letter = 'D';
+    int byname = 0, card, i;
+    FILE *f;
+
+    mode[0] = cmd[0] = cmdu[0] = 0;
+    if ((v = ini_global("imgmount")) != NULL)
+        for (i = 0; i < (int)sizeof(mode) - 1 && v[i]; i++) {
+            mode[i] = (char)toupper((unsigned char)v[i]);
+            mode[i + 1] = 0;
+        }
+    card = mode[0] && stricmp(mode, "SOFTWARE") != 0;
+    if (card) {
+        char key[24];
+        sprintf(key, "cdmount_%s", mode);
+        if ((v = ini_global(key)) != NULL && v[0])
+            clean_cmd(cmd, v);
+        else if (stricmp(mode, "PICOGUS") == 0)
+            strcpy(cmd, "PGUSINIT.EXE /cdloadname");
+        sprintf(key, "cdunmount_%s", mode);
+        if ((v = ini_global(key)) != NULL && v[0])
+            clean_cmd(cmdu, v);
+        if (!cmd[0])
+            return 0;               /* a card with no command yet: leave it */
+    }
+    if ((v = ini_global("cdrom_letter")) != NULL && v[0])
+        letter = (char)toupper((unsigned char)v[0]);
+    if ((v = ini_global("cdrom_name")) != NULL && v[0] == '1')
+        byname = 1;
+
+    sprintf(path, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
+    f = fopen(path, "w");
+    if (!f)
+        return 0;
+    sep = home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\";
+    fprintf(f, "@echo off\n");
+    fprintf(f, "if \"%%1\"==\"/U\" goto unmount\n");
+    fprintf(f, "rem WAVE86 wrote this from WAVE86.INI, and writes it again\n");
+    fprintf(f, "rem at every launch. The game's batch calls it and reads CD.\n");
+    fprintf(f, "if exist Z:\\IMGMOUNT.COM goto dosbox\n");
+    fprintf(f, "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx\n");
+    if (card) {
+        sprintf(dbg_mount, "%s %s", cmd, byname ? iso : img);
+        fprintf(f, "%s\n", dbg_mount);
+        fprintf(f, "set CD=%c\n", letter);
+        fprintf(f, "goto done\n");
+    } else {
+        sprintf(dbg_mount, "LH %s%sSHCDHD86.EXE /F:%s /Q", home_dir, sep, img);
+        fprintf(f, "%s\n", dbg_mount);
+        fprintf(f, "LH %s%sSHCDX86.COM /D:SHSU-CDH,%c /I /Q\n", home_dir, sep, letter);
+        fprintf(f, "%s%sSHCDX86.COM /L:1 /QQ\n", home_dir, sep);
+        for (i = 3; i <= 26; i++)   /* which letter SHSUCDX actually gave it */
+            fprintf(f, "if errorlevel %d set CD=%c\n", i, 'A' + i - 1);
+        fprintf(f, "if errorlevel 27 set CD=\n");
+        fprintf(f, "if \"%%CD%%\"==\"\" set CD=%c\n", letter);
+        fprintf(f, "goto done\n");
+    }
+    fprintf(f, ":dosbox\nZ:\\IMGMOUNT.COM %c %s -t iso\nset CD=%c\ngoto done\n",
+            letter, img, letter);
+    fprintf(f, ":dosboxx\nZ:\\SYSTEM\\IMGMOUNT.COM %c %s -t iso\nset CD=%c\ngoto done\n",
+            letter, img, letter);
+    fprintf(f, ":unmount\n");
+    fprintf(f, "if exist Z:\\IMGMOUNT.COM Z:\\IMGMOUNT.COM -u %c\n", letter);
+    fprintf(f, "if exist Z:\\SYSTEM\\IMGMOUNT.COM Z:\\SYSTEM\\IMGMOUNT.COM -u %c\n", letter);
+    fprintf(f, "if exist Z:\\IMGMOUNT.COM goto gone\n");
+    fprintf(f, "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto gone\n");
+    if (card) {
+        if (cmdu[0])
+            fprintf(f, "%s\n", cmdu);
+    } else {
+        fprintf(f, "%s%sSHCDX86.COM /U /Q\n", home_dir, sep);
+        fprintf(f, "%s%sSHCDHD86.EXE /U /Q\n", home_dir, sep);
+    }
+    fprintf(f, ":gone\nset CD=\n:done\n");
+    fclose(f);
+    return 1;
 }
 
 static void emit_cd(FILE *f, const Game *g, int after, int bat)
@@ -231,6 +347,11 @@ static void emit_cd(FILE *f, const Game *g, int after, int bat)
     const char *dot = strrchr(g->exe, '.');
 
     if ((g->flags & GF_CDBAT) && dot && stricmp(dot + 1, "BAT") == 0) {
+        if (bat & BAT_OWN) {            /* the batch carries its own values */
+            if (after)
+                fprintf(f, "call IMGMOUNT.BAT /U\n");
+            return;
+        }
         /* the start batch mounts the disc through its IMGMOUNT.BAT; we tell
            it where the NetDrive server is (the machine of server=, port
            netdrive_port=) and take everything down afterwards */
@@ -345,10 +466,19 @@ static void write_bat(const Game *g, int use_setup)
     const char *dot = strrchr(prog, '.');
     int is_bat = dot && stricmp(dot + 1, "BAT") == 0;
     int dbg = debug_mode();
-    char iso[16];
+    char iso[16], img[PATH_LEN + 24];
     int bat = (g->flags & GF_CDBAT) ? bat_scan(g, iso) : 0;   /* before the open */
-    FILE *f = fopen("RUNGAME.BAT", "w");
+    FILE *f;
 
+    img[0] = 0;
+    if (bat & BAT_ISO) {
+        disc_path(g, iso, img);
+        /* a generated batch that works off a local image is ours to write
+           from the INI; one that fetches over NetDrive is left alone */
+        if ((bat & BAT_GEN) && !(bat & BAT_NETDRIVE) && write_imgmount(g, img, iso))
+            bat |= BAT_OWN;
+    }
+    f = fopen("RUNGAME.BAT", "w");
     if (!f)
         return;
     if (dbg) {
@@ -374,22 +504,21 @@ static void write_bat(const Game *g, int use_setup)
            where the batch will look for it, then run it here on its own,
            look at what it produced, and take it down again before the game
            does the same thing for real. */
-        const char *byname = ini_global("cdrom_name");
         fprintf(f, "@echo off\n");
         if (bat & BAT_ISO) {
-            if (byname && byname[0] == '1')
-                fprintf(f, "echo [WAVE86] the card will be told: %%WAVECDCMD%% %s\n", iso);
+            if (bat & BAT_OWN)
+                fprintf(f, "echo [WAVE86] IMGMOUNT.BAT will run: %s\n", dbg_mount);
             else
-                fprintf(f, "echo [WAVE86] the card will be told: %%WAVECDCMD%% %%WAVECDROM%%\\%s\n", iso);
-            fprintf(f, "echo [WAVE86] and the image should be here:\n");
-            fprintf(f, "dir %%WAVECDROM%%\\%s\n", iso);
+                fprintf(f, "echo [WAVE86] IMGMOUNT.BAT works off the server's own values\n");
+            fprintf(f, "if exist %s echo [WAVE86] and the image is there\n", img);
+            fprintf(f, "if not exist %s echo [WAVE86] BUT THERE IS NO IMAGE AT %s\n", img, img);
             fprintf(f, "pause\n");
         }
         fprintf(f, "echo [WAVE86] mounting the disc on its own first:\n@echo on\n");
         fprintf(f, "call IMGMOUNT.BAT\n");
         fprintf(f, "@echo off\necho [WAVE86] IMGMOUNT.BAT is done and says CD=%%CD%%\n");
         fprintf(f, "if \"%%CD%%\"==\"\" echo [WAVE86] it set no letter at all\n");
-        fprintf(f, "dir %%CD%%:\\\n");
+        fprintf(f, "if not \"%%CD%%\"==\"\" dir /w %%CD%%:\\\n");
         fprintf(f, "pause\n");
         fprintf(f, "call IMGMOUNT.BAT /U\n");
         fprintf(f, "echo [WAVE86] taken down again; now the game mounts it itself\n");
@@ -402,7 +531,6 @@ static void write_bat(const Game *g, int use_setup)
     if (dbg) {                         /* the disc as it stands, before it goes */
         fprintf(f, "@echo off\npause\n");
         fprintf(f, "echo [WAVE86] the game has finished. CD=%%CD%%\n");
-        fprintf(f, "dir %%CD%%:\\\n");
         fprintf(f, "pause\n@echo on\n");
     }
     emit_cd(f, g, 1, bat);
