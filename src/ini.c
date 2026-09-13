@@ -31,7 +31,7 @@ int cfg_modrate = -1;           /* modrate= : MOD mixer rate, 0 disables */
 int cfg_adlib = -1;             /* adlib=   : 1 force FM on, 0 off */
 int cfg_music = 0;              /* music=   : 1 = play at startup */
 char cfg_theme[16] = "";        /* theme=   : wave86 (default) or exodos */
-int cfg_netcd = 1;              /* netcd=   : 1 = leave CDs on the server (NET CD) */
+int cfg_netcd = 0;              /* netcd=   : 1 = leave CDs on the server (NET CD) */
 
 static char *trim(char *s)
 {

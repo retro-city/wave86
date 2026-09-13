@@ -28,7 +28,7 @@
 int net_count = 0;
 char cfg_server[32] = "";
 char net_pending_dir[9] = "";
-int net_cdmode = 1;
+int net_cdmode = 0;             /* LOCAL CD until netcd=1 says otherwise */
 
 static unsigned long __far *offs[OFF_BLOCKS];
 static int letter_first[27];       /* first index per initial A..Z, [26] = none */

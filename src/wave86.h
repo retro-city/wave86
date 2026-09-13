@@ -92,7 +92,7 @@ extern char mus_track[9];       /* current track base name */
 extern int cfg_modrate;         /* ini modrate=: -1 auto, 0 off, Hz */
 extern int cfg_adlib;           /* ini adlib=: -1 auto, 0 off, 1 force */
 extern int cfg_music;           /* ini music=: 1 = autoplay at startup */
-extern int cfg_netcd;           /* ini netcd=: 1 = NET CD by default */
+extern int cfg_netcd;           /* ini netcd=: 1 = NET CD instead of LOCAL CD */
 
 /* --- net.c: the eXoDOS list and downloads (WAVEGET.EXE does the TCP) --- */
 typedef struct {
