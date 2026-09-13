@@ -847,7 +847,11 @@ static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
   rsmKey = NULL;
   uiOpen("WAVE86 ITSELF", serverText);
   if (!screenOn) printf("WAVEGET: updating WAVE86 in %s\n", gameRoot);
-  int rc = doStream(addr, port, "/update?crc=1", "update", 0, 1);
+  int rc = doStream(addr, port, crcWanted ? "/update?crc=1" : "/update", "update", 0, 1);
+  if (rc == 3) {                    /* a server too old to know the query */
+    crcWanted = 0;
+    rc = doStream(addr, port, "/update", "update", 0, 1);
+  }
   if (rc == 0 && screenOn) {        /* it takes a second: hold it long
                                        enough to be read (a key skips) */
     clockTicks_t t0 = TIMER_GET_CURRENT(), tv = t0;
