@@ -22,6 +22,10 @@ with an eXoDOS folder of the same name.
     GET /info/<id>     a few lines about one game (<id> or DIR)
     GET /pack/<id>     the game's files: "F <bytes> <DOS path>\\n" + data
                        for each file, then "E\\n". Nothing to unzip on DOS.
+    GET /update        the same stream, holding WAVE86 itself: the programs
+                       from build/ plus anything in --update DIR, so a DOS
+                       machine can fetch a fresh build (WAVEGET UPDATE, or
+                       U in the network view) instead of a floppy.
 """
 import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil, struct
 import xml.etree.ElementTree as ET
@@ -209,8 +213,9 @@ def imgmount_bat(iso, letter, net=None):
              "rem waveserve made this; the start batch calls it first and the launcher",
              "rem calls it with /U afterwards. CD gets the letter the disc is on.",
              "rem WAVECDROM: where the images are (default the game's CD folder);",
-             "rem IMGMOUNT: SOFTWARE (SHSUCDHD+SHSUCDX) or PICOMEM (the card's own",
-             "rem CD-ROM, image chosen by %WAVEPMCD% if set, letter %WAVECDL%).",
+             "rem IMGMOUNT: SOFTWARE (SHSUCDHD+SHSUCDX) or a card with its own",
+             "rem CD-ROM emulation (PICOGUS, PICOMEM): %WAVECDCMD% loads the image",
+             "rem and the disc turns up on %WAVECDL%.",
              'if "%WAVECDROM%"=="" set WAVECDROM=CD']
     if net:
         srv, img = net
@@ -245,14 +250,24 @@ def imgmount_bat(iso, letter, net=None):
                   "goto done"]
     else:
         img = iso.split("\\")[-1]
-        lines += ['if "%IMGMOUNT%"=="PICOMEM" goto picomem',
-                  "if exist Z:\\IMGMOUNT.COM goto dosbox",
+        lines += ["if exist Z:\\IMGMOUNT.COM goto dosbox",
                   "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx",
+                  'if "%IMGMOUNT%"=="" goto software',
+                  'if "%IMGMOUNT%"=="SOFTWARE" goto software',
+                  "goto card",
+                  ":software",
                   f"LH SHCDHD86 /F:%WAVECDROM%\\{img} /Q",
                   f"LH SHCDX86 /D:SHSU-CDH,{letter} /I /Q",
                   "goto letter",
-                  ":picomem",
-                  f'if not "%WAVEPMCD%"=="" %WAVEPMCD% %WAVECDROM%\\{img}',
+                  ":card",
+                  "rem the card loads the image itself; WAVECDN=1 gives its command",
+                  "rem the bare file name instead of the whole path",
+                  'if "%WAVECDN%"=="1" goto cardname',
+                  f'if not "%WAVECDCMD%"=="" %WAVECDCMD% %WAVECDROM%\\{img}',
+                  "goto cardl",
+                  ":cardname",
+                  f'if not "%WAVECDCMD%"=="" %WAVECDCMD% {img}',
+                  ":cardl",
                   'if "%WAVECDL%"=="" set WAVECDL=D',
                   "set CD=%WAVECDL%",
                   "goto done",
@@ -274,8 +289,12 @@ def imgmount_bat(iso, letter, net=None):
     if net:
         lines += ["SHCDX86 /U /Q", "SHCDHD86 /U /Q", "NETDRIVE D %WAVEND%:"]
     else:
-        lines += ['if not "%IMGMOUNT%"=="PICOMEM" goto unsoft',
-                  'if not "%WAVEPMCDU%"=="" %WAVEPMCDU%',
+        lines += ["if exist Z:\\IMGMOUNT.COM goto unsoft",
+                  "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto unsoft",
+                  'if "%IMGMOUNT%"=="" goto unsoft',
+                  'if "%IMGMOUNT%"=="SOFTWARE" goto unsoft',
+                  'if not "%WAVECDCMDU%"=="" %WAVECDCMDU%',
+                  "set CD=",
                   "goto done",
                   ":unsoft",
                   f"if exist Z:\\IMGMOUNT.COM Z:\\IMGMOUNT.COM -u {letter}",
@@ -613,6 +632,35 @@ def index(root, max_mb, include_cd):
     return games
 
 
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+UPDATE_NAMES = ["WAVE86.EXE", "WAVEGET.EXE", "DRVOFF.EXE"]
+UPDATE_DIR = None
+
+
+def update_set():
+    """What a client gets from /update: the freshly built programs in build/,
+    plus everything under --update DIR, which wins on a name clash (that is
+    where you put a WAVE86.INI or anything else you want pushed out).
+
+    Deliberately not in the default list: WAVE.BAT, because COMMAND.COM is
+    reading it line by line while the update runs; MTCP.CFG, because DHCP
+    keeps the lease in it; WAVE86.INI, because it is the machine's own
+    settings and the launcher writes to it."""
+    out = {}
+    for n in UPDATE_NAMES:
+        fp = os.path.join(HERE, "build", n)
+        if os.path.exists(fp):
+            out[n] = fp
+    if UPDATE_DIR:
+        for r, _, fs in os.walk(UPDATE_DIR):
+            for fn in sorted(fs):
+                if fn.startswith("."):
+                    continue
+                rel = os.path.relpath(os.path.join(r, fn), UPDATE_DIR)
+                out[rel.replace("/", "\\").upper()] = os.path.join(r, fn)
+    return sorted(out.items())
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
@@ -628,6 +676,16 @@ class H(BaseHTTPRequestHandler):
         with LOCK:
             games = GAMES
         p = self.path
+        if p == "/update":          # WAVEGET UPDATE: the programs themselves
+            files = update_set()
+            print("waveserve: update ->", ", ".join(n for n, _ in files), file=sys.stderr)
+            self._head("application/octet-stream")
+            for name, fp in files:
+                self.wfile.write(f"F {os.path.getsize(fp)} {name}\n".encode())
+                with open(fp, "rb") as f:
+                    shutil.copyfileobj(f, self.wfile, 65536)
+            self.wfile.write(b"E\n")
+            return
         if p == "/list":
             body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0) | (8 if NETDRIVE_DIR else 0)}|{g['src']}|{g.get('cd_kb', 0)}\r\n"
                            for i, g in enumerate(games)).encode("ascii", "replace")
@@ -769,7 +827,12 @@ def main():
     ap.add_argument("--netdrive-port", type=int, default=2002, help="UDP port of the NetDrive server (default 2002)")
     ap.add_argument("--netdrive-server", metavar="BIN", help="the NetDrive server binary to run (default build/netdrive, else PATH)")
     ap.add_argument("--rescan", type=int, default=300, help="seconds between re-indexing")
+    ap.add_argument("--update", metavar="DIR", help="extra files for WAVEGET UPDATE (a WAVE86.INI, drivers...); "
+                                                    "the built programs go out anyway")
     a = ap.parse_args()
+    global UPDATE_DIR
+    if a.update:
+        UPDATE_DIR = os.path.abspath(a.update)
     global NETDRIVE_DIR, NETDRIVE_PORT
     if a.netdrive:
         NETDRIVE_DIR, NETDRIVE_PORT = os.path.abspath(a.netdrive), a.netdrive_port

@@ -6,6 +6,11 @@
  *   WAVEGET GET host:port DIR gamesdir [kb [key [cdrom]]]
  *       GET /pack/key (default: DIR) and write the files into gamesdir\DIR\;
  *       with cdrom given, CD\NAME.ISO goes to cdrom\NAME.ISO instead.
+ *   WAVEGET DISK host:port key
+ *       ask for the game's NetDrive disk, to play it off the server.
+ *   WAVEGET UPDATE host:port [dir]
+ *       GET /update: a fresh WAVE86.EXE and helpers into dir (default: here),
+ *       each renamed into place only once it has arrived whole.
  *
  * Needs a packet driver and MTCPCFG (run DHCP first), like every mTCP
  * program. Esc or Ctrl-Break aborts. Exit code 0 = done, 1 = network
@@ -230,20 +235,32 @@ static void ensureDirs(const char *rel) {
 
 static const char *cdromDir = NULL;      /* where the discs go, if not the game folder */
 
-static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal, const char *key) {
-  char path[64];
-  sprintf(path, "/pack/%s", key ? key : dir);
-  sprintf(gameRoot, "%s\\%s", gamesdir, dir);
-  mkdir(gamesdir);
-  mkdir(gameRoot);
+/* an update writes each file beside its target first: NAME.W86 */
+static void tempName(char *dst, const char *full) {
+  char *dot, *bs;
+  strcpy(dst, full);
+  dot = strrchr(dst, '.');
+  bs = strrchr(dst, '\\');
+  if (dot && (!bs || dot > bs)) *dot = 0;
+  strcat(dst, ".W86");
+}
 
+/* The file stream both GET and UPDATE speak: "F <size> <relpath>\n" then the
+   bytes, over and over, and "E\n" at the end. Everything lands under
+   gameRoot. With safe set (UPDATE) a file is written under a temporary name
+   and renamed once its last byte is in, so a connection that drops halfway
+   leaves the program already on the disk intact - including WAVEGET.EXE,
+   which is busy overwriting itself. */
+static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *what,
+                    unsigned long kbTotal, int safe) {
   int16_t n; uint16_t pos;
   int rc = httpGet(addr, port, path, &n, &pos);
   if (rc) return rc;
 
   char line[200]; uint16_t lineLen = 0;
   FILE *cur = NULL; unsigned long remain = 0, done = 0; int files = 0;
-  char curName[80] = "";
+  char curName[80] = "", full[160], tmp[160];
+  int renaming = 0;
   clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0;
   int finished = 0;
 
@@ -254,7 +271,10 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
         if ((unsigned long)chunk > remain) chunk = (uint16_t)remain;
         if (fwrite(inBuf + pos, 1, chunk, cur) != chunk) { puts("\nWAVEGET: disk write failed (full?)"); fclose(cur); return 1; }
         pos += chunk; remain -= chunk; done += chunk;
-        if (remain == 0) { fclose(cur); cur = NULL; files++; }
+        if (remain == 0) {
+          fclose(cur); cur = NULL; files++;
+          if (renaming) { remove(full); rename(tmp, full); }
+        }
       } else {                                     /* a header line */
         char c = inBuf[pos++];
         if (c != '\n') { if (lineLen < sizeof(line) - 1) line[lineLen++] = c; continue; }
@@ -265,7 +285,6 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
         const char *rel = strchr(line + 2, ' ');
         if (!rel) return 1;
         rel++;
-        char full[160];
         if (cdromDir && strnicmp(rel, "CD\\", 3) == 0) {   /* the disc goes to the CD folder */
           mkdir(cdromDir);
           sprintf(full, "%s\\%s", cdromDir, rel + 3);
@@ -273,11 +292,16 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
           ensureDirs(rel);
           sprintf(full, "%s\\%s", gameRoot, rel);
         }
+        renaming = 0;
+        if (safe) { tempName(tmp, full); renaming = strcmp(tmp, full) != 0; }
         strncpy(curName, rel, sizeof(curName) - 1);
-        cur = fopen(full, "wb");
-        if (!cur) { printf("\nWAVEGET: cannot create %s\n", full); return 1; }
+        cur = fopen(renaming ? tmp : full, "wb");
+        if (!cur) { printf("\nWAVEGET: cannot create %s\n", renaming ? tmp : full); return 1; }
         remain = size;
-        if (size == 0) { fclose(cur); cur = NULL; files++; }
+        if (size == 0) {
+          fclose(cur); cur = NULL; files++;
+          if (renaming) { remove(full); rename(tmp, full); }
+        }
       }
     }
     if (finished) break;
@@ -298,19 +322,42 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
     t0 = TIMER_GET_CURRENT();
   }
   unsigned long secs = Timer_diff(tStart, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;
-  printf("\rWAVEGET: %s ready: %d files, %luK in %lu s                    \n", dir, files, done / 1024, secs);
+  printf("\rWAVEGET: %s ready: %d files, %luK in %lu s                    \n", what, files, done / 1024, secs);
   return 0;
+}
+
+static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal, const char *key) {
+  char path[64];
+  sprintf(path, "/pack/%s", key ? key : dir);
+  sprintf(gameRoot, "%s\\%s", gamesdir, dir);
+  mkdir(gamesdir);
+  mkdir(gameRoot);
+  return doStream(addr, port, path, dir, kbTotal, 0);
+}
+
+/* ------------------------------------------------------- UPDATE */
+/* WAVE86.EXE and its helpers, straight from the machine that builds them,
+   into dir (the launcher's folder). Run from the batch loop, so the
+   launcher itself is not in memory when its EXE is replaced. */
+static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
+  strncpy(gameRoot, dir && dir[0] ? dir : ".", sizeof(gameRoot) - 1);
+  gameRoot[sizeof(gameRoot) - 1] = 0;
+  int len = strlen(gameRoot);       /* C:\WAVE86\ -> C:\WAVE86 */
+  if (len > 1 && gameRoot[len - 1] == '\\' && gameRoot[len - 2] != ':') gameRoot[len - 1] = 0;
+  printf("WAVEGET: updating WAVE86 in %s\n", gameRoot);
+  return doStream(addr, port, "/update", "update", 0, 1);
 }
 
 /* ---------------------------------------------------------- main */
 static void usage(void) {
-  puts("WAVEGET LIST host:port outfile\nWAVEGET GET host:port DIR gamesdir [kb [key [cdrom]]]\nWAVEGET DISK host:port key");
+  puts("WAVEGET LIST host:port outfile\nWAVEGET GET host:port DIR gamesdir [kb [key [cdrom]]]\n"
+       "WAVEGET DISK host:port key\nWAVEGET UPDATE host:port [dir]");
   exit(1);
 }
 
 int main(int argc, char **argv) {
   IpAddr_t addr; uint16_t port;
-  if (argc < 4) usage();
+  if (argc < 3 || (argc < 4 && stricmp(argv[1], "UPDATE") != 0)) usage();
   if (parseHostPort(argv[2], addr, &port)) { puts("WAVEGET: server must be a.b.c.d:port (set server= in WAVE86.INI)"); return 1; }
 
   if (Utils::parseEnv() != 0) {
@@ -328,6 +375,8 @@ int main(int argc, char **argv) {
     rc = doList(addr, port, argv[3]);
   } else if (stricmp(argv[1], "DISK") == 0 && argc >= 4) {
     rc = doDisk(addr, port, argv[3]);
+  } else if (stricmp(argv[1], "UPDATE") == 0) {
+    rc = doUpdate(addr, port, argc > 3 ? argv[3] : NULL);
   } else if (stricmp(argv[1], "GET") == 0 && argc >= 5) {
     if (argc > 7) cdromDir = argv[7];
     rc = doGet(addr, port, argv[3], argv[4], argc > 5 ? strtoul(argv[5], NULL, 10) : 0, argc > 6 ? argv[6] : NULL);

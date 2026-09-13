@@ -42,13 +42,29 @@ That keeps D: for the disc and gives NetDrive E:.
 Discs
 -----
 A game installed with its CD (LOCAL CD in the network view) keeps the
-image in its own CD\ folder, unless WAVE86.INI names a folder for all of
-them; with a PicoMem 2 that is its SD card, and its own CD-ROM emulation
-mounts them:
-    cdrom=S:\CDROM
-    imgmount=PICOMEM          (SOFTWARE, the default, uses SHSUCDHD+SHSUCDX)
+image in its own CD\ folder, and SHSUCDHD + SHSUCDX put it on D: while
+the game runs. WAVE86.INI can name one folder for every disc instead,
+and hand the mounting to a card that emulates a CD-ROM drive itself -
+a PicoGUS, and a PicoMem 2 once its firmware can load an image:
+    cdrom=W:                  (where the images go; W: here is the PicoGUS's)
+    imgmount=PICOGUS          (SOFTWARE, the default, uses SHSUCDHD+SHSUCDX)
     cdletter=D                (the letter MSCDEX gave the card's drive)
-    cdmount_picomem=...       (the card's command to insert $ISO, when it has one)
+    cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdload
+The image is appended to that command; cdname=1 appends its bare file
+name instead of the whole path. PGUSINIT.EXE /cdload is the default, so
+cdmount_picogus= is only needed to give PGUSINIT's path.
+
+Updating over the network
+-------------------------
+U in the network view fetches a fresh WAVE86.EXE, WAVEGET.EXE and
+DRVOFF.EXE from the server and starts the new launcher - no floppy
+shuffle when testing a build on the real machine. The same thing from
+the prompt:
+    WAVEGET UPDATE 192.168.1.10:8086 C:\WAVE86
+Each file is renamed into place only once it has arrived whole, so a
+dropped connection leaves what is already there alone. The server sends
+what it built; anything else it should push (a WAVE86.INI of your own,
+drivers) goes in its --update folder.
 
 EXTRAS
 ------

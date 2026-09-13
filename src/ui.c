@@ -564,7 +564,7 @@ void ui_net_keybar(void)
     keychip(&x, "I", "INSTALL", net_count == 0);
     keychip(&x, "L", "LIST", 0);
     keychip(&x, "C", net_cdmode ? "NET CD" : "LOCAL CD", 0);
+    keychip(&x, "U", "UPDATE", 0);      /* +- still works, the row is full */
     keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
-    keychip(&x, "+-", "VOL", !mus_present || !mus_ntracks);
     keychip(&x, "ESC", "GAMES", 0);
 }

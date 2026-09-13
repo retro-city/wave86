@@ -46,7 +46,7 @@ rough edges there.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
-| N | the games on the server (Enter plays it off the server, I installs it, L refreshes, C: disc with the game or on the server) |
+| N | the games on the server (Enter plays it off the server, I installs it, L refreshes, C: disc with the game or on the server, U updates WAVE86 itself) |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
@@ -311,13 +311,27 @@ environment, which the launcher sets from the INI: `WAVECDROM`, the
 folder holding the discs (`cdrom=`; without it a game keeps its disc in
 its own `CD\` folder, with it every disc goes there, named after the
 game, `SETTLR2G.ISO`), and `IMGMOUNT`, how to mount them: `SOFTWARE`
-(SHSUCDHD and SHSUCDX, the default) or `PICOMEM`, the card's own
-CD-ROM emulation, a real drive to DOS with its letter fixed at boot
-(`cdletter=`), the image chosen by the card's command (`cdmount_picomem=`
-and `cdunmount_picomem=`, with `$ISO` for the image, once the card has
-one). A PicoMem 2 keeps all discs on its SD card: `cdrom=S:\CDROM`,
-`imgmount=PICOMEM`. Under DOSBox the batch uses IMGMOUNT whatever the
-mode says; playing off the server always mounts in software. The batch puts the letter the disc landed on into `CD`,
+(SHSUCDHD and SHSUCDX, the default) or the name of a card that emulates
+a CD-ROM drive itself - `PICOGUS`, `PICOMEM` - which DOS sees as a real
+drive with its letter fixed at boot (`cdletter=`), the image loaded by
+the card's own command, `cdmount_<mode>=` (and `cdunmount_<mode>=`).
+The image is appended to that command, as its full path or, with
+`cdname=1`, as its bare file name.
+
+A PicoGUS with CD-ROM support reads its images from a drive, so put
+them there and let PGUSINIT load them:
+
+    cdrom=W:
+    imgmount=PICOGUS
+    cdletter=D
+    cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdload
+
+`PGUSINIT.EXE /cdload` is what PICOGUS runs when `cdmount_picogus=` is
+not given. A PicoMem 2 would be `cdrom=S:\CDROM`, `imgmount=PICOMEM`,
+once its firmware has a command to load an image; until then keep it on
+`SOFTWARE` and the discs still collect on its SD card. Under DOSBox the
+batch uses IMGMOUNT whatever the mode says; playing off the server
+always mounts in software. The batch puts the letter the disc landed on into `CD`,
 and the server rewrites the start batch to say `%CD%:` wherever the
 eXoDOS conf said `D:`, so it does not matter if D: is taken by a real
 CD-ROM or by NetDrive. When a game has `IMGMOUNT.BAT` the launcher
@@ -385,6 +399,27 @@ CD-ROM already owns D: with MSCDEX loaded, SHSUCDX refuses to install
 beside it: either let SHSUCDX drive the real drive too (`SHSUCDX
 /D:MSCD001` in AUTOEXEC.BAT instead of MSCDEX, giving the image its
 letter after that) or add `/I` through a `cdmount=` line.
+
+### Updating WAVE86 from the server
+
+`U` in the network view fetches a fresh `WAVE86.EXE`, `WAVEGET.EXE` and
+`DRVOFF.EXE` from the machine that builds them and starts the new
+launcher: the test loop on real hardware is `make`, then `N`, `U`.
+`WAVEGET UPDATE 192.168.1.10:8086 C:\WAVE86` does the same from the
+prompt. Each file is written beside its target and renamed only once it
+has arrived whole, so a dropped connection cannot leave half a program
+behind - including WAVEGET, which overwrites itself.
+
+The server sends what `make` put in `build/`. `--update DIR` adds
+everything in DIR, and anything there with the same name wins:
+
+    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --update ~/wave86-push
+
+That is the way to push a `WAVE86.INI`, a driver, whatever else. Three
+files are deliberately not in the default set: `WAVE.BAT`, because
+COMMAND.COM is reading it line by line while the update runs, `MTCP.CFG`,
+because DHCP keeps the lease in it, and `WAVE86.INI`, because it is the
+machine's own settings and the launcher writes to it.
 
 ## Testing without a DOS machine
 

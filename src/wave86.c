@@ -80,17 +80,77 @@ static void put_template(FILE *f, const char *t, const char *iso)
     fputc('\n', f);
 }
 
-/* what the game batches need to know about discs, from the INI: where the
-   images are (cdrom=), how to mount them (imgmount=SOFTWARE|PICOMEM), the
-   PicoMem's letter and its mount/unmount commands */
+/* cdrom= without a trailing backslash, so that the batches' %WAVECDROM%\NAME
+   never comes out as W:\\NAME. NULL when the INI does not say. */
+static const char *cd_root(void)
+{
+    static char buf[PATH_LEN];
+    const char *v = ini_global("cdrom");
+    int n;
+    if (!v || !v[0])
+        return NULL;
+    strncpy(buf, v, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = 0;
+    n = strlen(buf);
+    if (n > 1 && buf[n - 1] == '\\')
+        buf[n - 1] = 0;
+    return buf;
+}
+
+/* the card commands are prefixes - the image is appended - but $ISO at the
+   end is how cdmount= is written, so accept it there too and drop it */
+static void put_cmd(FILE *f, const char *var, const char *cmd)
+{
+    char buf[96];
+    int n;
+    strncpy(buf, cmd, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = 0;
+    n = strlen(buf);
+    if (n >= 4 && stricmp(buf + n - 4, "$ISO") == 0)
+        n -= 4;
+    while (n && (buf[n - 1] == ' ' || buf[n - 1] == '\t'))
+        n--;
+    buf[n] = 0;
+    if (n)
+        fprintf(f, "set %s=%s\n", var, buf);
+}
+
+/* What the game batches need to know about discs, from the INI: where the
+   images are (cdrom=), how to mount them (imgmount=SOFTWARE, or a card with
+   its own CD-ROM emulation: PICOGUS, PICOMEM), the card's command
+   (cdmount_<mode>=, the image appended) and the letter its disc appears on
+   (cdletter=). cdname=1 passes the image's name alone, not its path. */
 static void emit_cd_env(FILE *f)
 {
     const char *v;
-    if ((v = ini_global("cdrom")) && v[0])            fprintf(f, "set WAVECDROM=%s\n", v);
-    if ((v = ini_global("imgmount")) && v[0])         fprintf(f, "set IMGMOUNT=%s\n", v);
-    if ((v = ini_global("cdletter")) && v[0])         fprintf(f, "set WAVECDL=%c\n", toupper((unsigned char)v[0]));
-    if ((v = ini_global("cdmount_picomem")) && v[0])  fprintf(f, "set WAVEPMCD=%s\n", v);
-    if ((v = ini_global("cdunmount_picomem")) && v[0]) fprintf(f, "set WAVEPMCDU=%s\n", v);
+    char mode[16], key[24];
+    int i;
+
+    if ((v = cd_root()) != NULL)
+        fprintf(f, "set WAVECDROM=%s\n", v);
+    v = ini_global("imgmount");
+    if (v && v[0]) {
+        for (i = 0; i < (int)sizeof(mode) - 1 && v[i]; i++)
+            mode[i] = (char)toupper((unsigned char)v[i]);
+        mode[i] = 0;
+        fprintf(f, "set IMGMOUNT=%s\n", mode);
+        if (stricmp(mode, "SOFTWARE") != 0) {
+            sprintf(key, "cdmount_%s", mode);
+            v = ini_global(key);
+            if (v && v[0])
+                put_cmd(f, "WAVECDCMD", v);
+            else if (stricmp(mode, "PICOGUS") == 0)
+                fprintf(f, "set WAVECDCMD=PGUSINIT.EXE /cdload\n");
+            sprintf(key, "cdunmount_%s", mode);
+            v = ini_global(key);
+            if (v && v[0])
+                put_cmd(f, "WAVECDCMDU", v);
+        }
+    }
+    if ((v = ini_global("cdletter")) && v[0])
+        fprintf(f, "set WAVECDL=%c\n", toupper((unsigned char)v[0]));
+    if ((v = ini_global("cdname")) && v[0] == '1')
+        fprintf(f, "set WAVECDN=1\n");
 }
 
 /* DOSBox: its Z: drive carries the shell's programs. Returns IMGMOUNT's
@@ -358,6 +418,24 @@ static void net_fetch_list(void)
     net_load();                     /* bare mode: we are back already */
 }
 
+/* A fresh WAVE86.EXE (and WAVEGET, DRVOFF) from the machine that builds
+   them, into this folder: the short way round the floppy shuffle when
+   testing on real hardware. Under WAVE.BAT we never come back here - the
+   batch loop starts the new EXE - and started bare we leave rather than
+   carry on running the version that has just been replaced. */
+static void net_update(void)
+{
+    char cmd[PATH_LEN * 2 + 64], exe[PATH_LEN + 16];
+    if (!cfg_server[0]) {
+        ui_status("PUT server=A.B.C.D:8086 IN WAVE86.INI FIRST.");
+        return;
+    }
+    waveget_path(exe);
+    sprintf(cmd, "%s UPDATE %s %s", exe, cfg_server, home_dir);
+    run_command(cmd, "WAVE86: Fetching a fresh WAVE86 from the server ...");
+    quit();
+}
+
 /* download the selected game; comes back with it selected in the games view */
 static void net_download(int nsel)
 {
@@ -374,7 +452,7 @@ static void net_download(int nsel)
         strcat(key, netcd ? "?cd=net" : "?cd=local");
     sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, net_size(g), key);
     {
-        const char *cdrom = ini_global("cdrom");
+        const char *cdrom = cd_root();
         if (cdrom && cdrom[0] && strlen(cmd) + strlen(cdrom) + 2 < sizeof(cmd)) {
             strcat(cmd, " ");
             strcat(cmd, cdrom);
@@ -669,6 +747,10 @@ int main(int argc, char **argv)
                 continue;
             case 'c': case 'C':             /* CDs: on the server, or downloaded */
                 net_cdmode = !net_cdmode;
+                net_redraw(nsel, ntop);
+                continue;
+            case 'u': case 'U':             /* WAVE86 itself, from the server */
+                net_update();
                 net_redraw(nsel, ntop);
                 continue;
             case 0x0D:                      /* play it off the server */
