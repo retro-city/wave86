@@ -39,6 +39,7 @@ void ui_net_keybar(void);
 
 static char launcher_dir[PATH_LEN];     /* cwd at start: where to return */
 char home_dir[PATH_LEN];                /* EXE directory: INI and MUSIC\ */
+static int opt_debug = 0;       /* /debug, or debug=1 in the INI */
 static int opt_dump = 0;
 static int opt_dumpnet = 0;
 static int view = 0;                 /* 0 = games, 1 = the eXoDOS list */
@@ -174,6 +175,27 @@ static const char *under_dosbox(void)
  * SHSUCDHD (image as a CD device) + SHSUCDX (drive letter) from the
  * launcher's folder, in their 8086 builds on anything below a 386.
  */
+/* Only a disc that stays on the server needs the NetDrive lines; telling
+   a local one where the server is just eats environment space, which is
+   in short supply on a machine with the default 256 bytes. */
+static int bat_uses_netdrive(const Game *g)
+{
+    char path[PATH_LEN + 24];
+    char buf[160];
+    FILE *f;
+    int found = 0;
+
+    sprintf(path, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
+    f = fopen(path, "r");
+    if (!f)
+        return 0;
+    while (!found && fgets(buf, sizeof(buf), f))
+        if (strstr(buf, "NETDRIVE") != NULL)
+            found = 1;
+    fclose(f);
+    return found;
+}
+
 static void emit_cd(FILE *f, const Game *g, int after)
 {
     char iso[PATH_LEN + 32];
@@ -190,16 +212,18 @@ static void emit_cd(FILE *f, const Game *g, int after)
             char host[32];
             char *colon;
             const char *v;
-            strncpy(host, cfg_server, sizeof(host) - 1);
-            host[sizeof(host) - 1] = 0;
-            colon = strchr(host, ':');
-            if (colon) *colon = 0;
-            v = ini_global("netdrive_port");
-            if (host[0])
-                fprintf(f, "set WAVENDSRV=%s:%s\n", host, v && v[0] ? v : "2002");
-            v = ini_global("netdrive");
-            if (v && v[0])
-                fprintf(f, "set WAVEND=%c\n", toupper((unsigned char)v[0]));
+            if (bat_uses_netdrive(g)) {
+                strncpy(host, cfg_server, sizeof(host) - 1);
+                host[sizeof(host) - 1] = 0;
+                colon = strchr(host, ':');
+                if (colon) *colon = 0;
+                v = ini_global("netdrive_port");
+                if (host[0])
+                    fprintf(f, "set WAVENDSRV=%s:%s\n", host, v && v[0] ? v : "2002");
+                v = ini_global("netdrive");
+                if (v && v[0])
+                    fprintf(f, "set WAVEND=%c\n", toupper((unsigned char)v[0]));
+            }
             emit_cd_env(f);
         }
         return;
@@ -240,26 +264,107 @@ static void emit_cd(FILE *f, const Game *g, int after)
     }
 }
 
+/*
+ * How much room the shell has left for SET. The batches a game needs set
+ * a handful of variables (where the disc is, how to mount it, which
+ * letter it landed on), and when the block is full the shell says so -
+ * "Out of environment space", or 4DOS's "Out of environment/alias space"
+ * - and the SET quietly does nothing, which leaves %CD% empty and the
+ * game looking for its disc on drive ":".
+ *
+ * The block that matters is the shell's own, not the copy we were handed:
+ * ours is cut to fit at load time and always looks full. The parent PSP
+ * (ours + 16h) is COMMAND.COM or 4DOS, its environment segment is at
+ * +2Ch, and the MCB in front of that says how big it is.
+ */
+static void env_space(unsigned *used, unsigned *size)
+{
+    unsigned seg = *(unsigned __far *)MK_FP(_psp, 0x16);   /* parent PSP */
+    unsigned char __far *p;
+    unsigned n = 0;
+
+    seg = seg ? *(unsigned __far *)MK_FP(seg, 0x2C) : 0;
+    if (!seg)                                   /* no parent block: ours */
+        seg = *(unsigned __far *)MK_FP(_psp, 0x2C);
+    if (!seg) { *used = *size = 0; return; }
+    p = (unsigned char __far *)MK_FP(seg, 0);
+    *size = *(unsigned __far *)MK_FP(seg - 1, 3) * 16;   /* MCB: paragraphs */
+    if (*size > 32768U) { *used = *size = 0; return; }   /* not a sane block */
+    while (n < *size && p[n]) {
+        while (n < *size && p[n]) n++;                   /* one string */
+        n++;                                             /* its NUL */
+    }
+    *used = n + 1;                                       /* the empty one */
+    if (*used > *size) *used = *size;
+}
+
+/* debug=1 in the INI, or WAVE /debug: the batch that runs a game stops at
+   each step and leaves its lines on the screen, which is the only way to
+   watch a CD being mounted - the game's own batch calls IMGMOUNT.BAT, and
+   with echo on its lines and the drivers' answers show up too. */
+static int debug_mode(void)
+{
+    const char *v;
+    if (opt_debug)
+        return 1;
+    v = ini_global("debug");
+    return v && v[0] == '1';
+}
+
 static void write_bat(const Game *g, int use_setup)
 {
     FILE *f = fopen("RUNGAME.BAT", "w");
     const char *prog = use_setup ? g->setup : g->exe;
     const char *dot = strrchr(prog, '.');
     int is_bat = dot && stricmp(dot + 1, "BAT") == 0;
+    int dbg = debug_mode();
 
     if (!f)
         return;
-    fprintf(f, "@echo off\n");
+    if (dbg) {
+        fprintf(f, "@echo off\ncopy RUNGAME.BAT RUNLAST.BAT > NUL\n");
+        fprintf(f, "echo [WAVE86] %s, debug=1. Ctrl-C stops here.\n", g->dir);
+        fprintf(f, "@echo on\n");
+    } else {
+        fprintf(f, "@echo off\n");
+    }
     fprintf(f, "%c:\n", gamedir[0]);
     fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
     ini_emit_extras(f, g->dir, 0);     /* sound mode, env, pre */
     emit_cd(f, g, 0);
+    if (dbg) {
+        fprintf(f, "@echo off\necho [WAVE86] the environment the game will see:\n");
+        fprintf(f, "set\npause\n@echo on\n");
+    }
+    if (dbg && (g->flags & GF_CDBAT)) {
+        /* The game's own batch calls IMGMOUNT.BAT, which starts with echo
+           off and gives its drivers /Q, so the mount goes past in silence.
+           Run it here on its own first, look at what it produced, and take
+           it down again before the game does the same thing for real. */
+        fprintf(f, "@echo off\necho [WAVE86] mounting the disc on its own first:\n@echo on\n");
+        fprintf(f, "call IMGMOUNT.BAT\n");
+        fprintf(f, "@echo off\necho [WAVE86] IMGMOUNT.BAT is done and says CD=%%CD%%\n");
+        fprintf(f, "if \"%%CD%%\"==\"\" echo [WAVE86] it set no letter at all\n");
+        fprintf(f, "dir %%CD%%:\\\n");
+        fprintf(f, "pause\n");
+        fprintf(f, "call IMGMOUNT.BAT /U\n");
+        fprintf(f, "echo [WAVE86] taken down again; now the game mounts it itself\n");
+        fprintf(f, "pause\n@echo on\n");
+    }
     fprintf(f, "%s%s", is_bat ? "call " : "", prog);
     if (!use_setup && g->args[0])
         fprintf(f, " %s", g->args);
     fprintf(f, "\n");
+    if (dbg) {                         /* the disc as it stands, before it goes */
+        fprintf(f, "@echo off\npause\n");
+        fprintf(f, "echo [WAVE86] the game has finished. CD=%%CD%%\n");
+        fprintf(f, "dir %%CD%%:\\\n");
+        fprintf(f, "pause\n@echo on\n");
+    }
     emit_cd(f, g, 1);
     ini_emit_extras(f, g->dir, 1);     /* post */
+    if (dbg)
+        fprintf(f, "pause\n@echo off\n");
     fprintf(f, "%c:\n", launcher_dir[0]);
     fprintf(f, "cd %s\n", launcher_dir);
     fclose(f);
@@ -498,14 +603,14 @@ static void net_download(int nsel)
             k++;
             net_mark_pending(g);
             net_get_cmd(cmd, sizeof(cmd), g, exe);
-            fprintf(f, "set WAVEQ=%d/%d\n%s\n", k, n, cmd);
+            fprintf(f, "%s /q:%d/%d\n", cmd, k, n);
             /* 3 = the server had nothing for that one, try the next
                anyway; 2 = Esc, and then the whole queue stops */
             fprintf(f, "if errorlevel 3 goto q%d\n", k);
             fprintf(f, "if errorlevel 2 goto qstop\n");
             fprintf(f, ":q%d\n", k);
         }
-        fprintf(f, ":qstop\nset WAVEQ=\n");
+        fprintf(f, ":qstop\n");
         sprintf(msg, "WAVE86: Installing %d games from the server ...", n);
     }
     fprintf(f, "%c:\ncd %s\n", launcher_dir[0], launcher_dir);
@@ -633,6 +738,8 @@ int main(int argc, char **argv)
             opt_name = i;               /* /name DIR New Name Words */
         if (stricmp(argv[i], "/diag") == 0)
             opt_diag = 1;
+        if (stricmp(argv[i], "/debug") == 0)
+            opt_debug = 1;
     }
 
     remove("RUNGAME.BAT");
@@ -711,6 +818,16 @@ int main(int argc, char **argv)
                getenv("WAVE86") ? "by WAVE.BAT" : "bare (will run games in place)",
                launcher_dir);
         printf("Games  : %d under %s\n", game_count, gamedir);
+        {
+            unsigned used, size;
+            env_space(&used, &size);
+            if (!size)
+                printf("Environ: could not find the shell's block\n");
+            else
+                printf("Environ: %u of %u bytes used in the shell's block, %u free%s\n",
+                       used, size, size - used,
+                       size - used < 96 ? "  <- too little, see README" : "");
+        }
         mus_init();
         mus_diag();
         mus_shutdown();
@@ -783,6 +900,12 @@ int main(int argc, char **argv)
     vid_set_palette();
     if (view) net_redraw(nsel0, nsel0 > 13 ? nsel0 - 13 : 0); else redraw(sel, top);
     if (i == -2) net_arrived_notice();
+    {   /* the SETs a game batch makes have to fit somewhere */
+        unsigned used, size;
+        env_space(&used, &size);
+        if (size && size - used < 96)
+            ui_status("THE SHELL'S ENVIRONMENT IS ALMOST FULL: GAMES THAT NEED A DISC WILL NOT MOUNT IT");
+    }
 
     if (opt_dump) {
         scr_dump("SCREEN.BIN", "FONT.BIN", "PAL.BIN");

@@ -73,6 +73,21 @@ rate, the files as they land - and plays the soundtrack from MUSIC\ on
 the AdLib. M, +, -, < and > work there as they do in the menu, Esc
 stops the download. netmusic=0 in WAVE86.INI keeps it quiet.
 
+When a game will not start
+--------------------------
+debug=1 in WAVE86.INI (or WAVE /debug) makes the batch that runs a game
+show every line and stop at each step: the environment it hands the
+game, the disc mounted on its own with a listing of the letter it landed
+on, then the game itself. It leaves the batch behind as RUNLAST.BAT.
+
+"Out of environment space" (4DOS: "Out of environment/alias space") from
+any of those SET lines is the usual cause of a disc that will not mount:
+the settings never reach the game's batch, so it looks for the image in
+the wrong place. Give the shell more room in CONFIG.SYS -
+    SHELL=C:\COMMAND.COM C:\ /E:1024 /P
+(4DOS: /E:2048 on its SHELL line, or EnvironmentSize in 4DOS.INI) - and
+WAVE86 /diag will tell you how much of it is left.
+
 Updating over the network
 -------------------------
 U in the network view fetches a fresh WAVE86.EXE, WAVEGET.EXE and

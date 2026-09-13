@@ -81,9 +81,11 @@ extern "C" {
   void cpu_identify(void);
 }
 static int musicWanted = 1;         /* netmusic=0 in WAVE86.INI turns it off */
+static int crcWanted = 1;           /* netcrc=0, or a server that sends none */
 
 static void msg(const char *m);     /* on the transfer screen, or plain */
 static uint16_t localPort = 4096;   /* a fresh one per run: see connectTo */
+static char queueLabel[12] = "";    /* "2/7" from /q:, when a queue is running */
 static char serverText[32] = "";
 
 static int userWantsOut(void) {
@@ -339,12 +341,9 @@ static void uiOpen(const char *title, const char *host) {
     scrCell(BOX_X + BOX_W - 1, y, (char)179, A(5, 0));
   }
   scrPuts(BOX_X + 3, BOX_Y + 1, title, A(15, 0));
-  {                                 /* WAVEQ=3/7: the launcher's queue */
-    const char *q = getenv("WAVEQ");
-    if (q && *q) {
-      sprintf(line, "%s of the queue", q);
-      scrPuts(BOX_X + 5 + strlen(title), BOX_Y + 1, line, A(14, 0));
-    }
+  if (queueLabel[0]) {              /* /q:3/7: where we are in the queue */
+    sprintf(line, "%s of the queue", queueLabel);
+    scrPuts(BOX_X + 5 + strlen(title), BOX_Y + 1, line, A(14, 0));
   }
   sprintf(line, "from %s", host);
   scrPuts(BOX_X + BOX_W - 3 - strlen(line), BOX_Y + 1, line, A(8, 0));
@@ -490,8 +489,9 @@ static void uiProgress(const char *file, unsigned long done, unsigned long total
   uiDump();
 }
 
-/* MUSIC\ sits next to WAVEGET.EXE; netmusic=0 in WAVE86.INI says no, and
-   adlib= is honoured the way the launcher honours it */
+/* MUSIC\ sits next to WAVEGET.EXE; netmusic=0 in WAVE86.INI says no,
+   netcrc=0 turns the checksums off, and adlib= is honoured the way the
+   launcher honours it */
 static void musicStart(const char *exePath) {
   char path[120];
   FILE *f;
@@ -509,6 +509,7 @@ static void musicStart(const char *exePath) {
     while (fgets(buf, sizeof(buf), f)) {
       if (buf[0] == '[') break;                 /* per-game sections */
       if (strnicmp(buf, "netmusic=", 9) == 0) musicWanted = atoi(buf + 9);
+      else if (strnicmp(buf, "netcrc=", 7) == 0) crcWanted = atoi(buf + 7);
       else if (strnicmp(buf, "adlib=", 6) == 0) cfg_adlib = atoi(buf + 6);
     }
     fclose(f);
@@ -707,7 +708,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         uint16_t chunk = n - pos;
         if ((unsigned long)chunk > remain) chunk = (uint16_t)remain;
         if (fwrite(inBuf + pos, 1, chunk, cur) != chunk) { msg("WAVEGET: disk write failed (is it full?)"); fclose(cur); return 1; }
-        crc = crcAdd(crc, inBuf + pos, chunk);
+        if (crcWanted) crc = crcAdd(crc, inBuf + pos, chunk);
         pos += chunk; remain -= chunk; done += chunk;
         if (remain == 0) {
           fclose(cur); cur = NULL; files++; doneFiles = files;
@@ -722,6 +723,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         if (line[0] == 'E') { finished = 1; break; }
         if (line[0] == 'C') {           /* the file's checksum, from the server */
           unsigned long want = strtoul(line + 2, NULL, 10);
+          if (!crcWanted) continue;
           if (want != lastCrc) {
             char m[120];
             sprintf(m, "WAVEGET: %.40s came through damaged - fetch it again", curName);
@@ -743,6 +745,8 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
           continue;
         }
         if (line[0] != 'F') { char m[100]; sprintf(m, "WAVEGET: bad stream: %.60s", line); msg(m); return 1; }
+        if (files && !checked)          /* no C line after the first file */
+          crcWanted = 0;
         unsigned long size = strtoul(line + 2, NULL, 10);
         const char *rel = strchr(line + 2, ' ');
         if (!rel) return 1;
@@ -823,7 +827,8 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
   sprintf(path, "/pack/%s", k);
   if (from)
     sprintf(path + strlen(path), "%cfrom=%d", strchr(path, '?') ? '&' : '?', from);
-  sprintf(path + strlen(path), "%ccrc=1", strchr(path, '?') ? '&' : '?');
+  if (crcWanted)
+    sprintf(path + strlen(path), "%ccrc=1", strchr(path, '?') ? '&' : '?');
   uiOpen(dir, serverText);
   int rc = doStream(addr, port, path, dir, kbTotal, 0);
   uiClose();
@@ -868,6 +873,20 @@ static void usage(void) {
 
 int main(int argc, char **argv) {
   IpAddr_t addr; uint16_t port;
+  /* /q:K/N says which of a queue this is. An argument and not an
+     environment variable: a DOS environment that is full cannot take
+     another SET, and that is exactly the machine this runs on. */
+  {
+    int i, j;
+    for (i = 1; i < argc; i++)
+      if (strnicmp(argv[i], "/q:", 3) == 0) {
+        strncpy(queueLabel, argv[i] + 3, sizeof(queueLabel) - 1);
+        queueLabel[sizeof(queueLabel) - 1] = 0;
+        for (j = i; j + 1 < argc; j++) argv[j] = argv[j + 1];
+        argc--;
+        i--;
+      }
+  }
   if (argc < 3 || (argc < 4 && stricmp(argv[1], "UPDATE") != 0)) usage();
   if (parseHostPort(argv[2], addr, &port)) { puts("WAVEGET: server must be a.b.c.d:port (set server= in WAVE86.INI)"); return 1; }
 
@@ -909,8 +928,7 @@ int main(int argc, char **argv) {
     usage();
   }
   if (rc == 1 || rc == 3) {
-    const char *queued = getenv("WAVEQ");
-    if (queued && *queued) {        /* a queue is running: say so and move on */
+    if (queueLabel[0]) {            /* a queue is running: say so and move on */
       clockTicks_t t0 = TIMER_GET_CURRENT();
       printf("That one failed. The queue carries on in 5 s (or press a key).\n");
       while (!biosIsKeyReady() && Timer_diff(t0, TIMER_GET_CURRENT()) < TIMER_MS_TO_TICKS(5000)) { }

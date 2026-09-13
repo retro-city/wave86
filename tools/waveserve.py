@@ -445,6 +445,14 @@ def short_name(title, full, used):
     return cand
 
 
+def disc_last(files):
+    """The disc image goes at the end of a pack. It dwarfs the rest, so a
+    transfer that stops part way then leaves a complete game folder and
+    only the disc to fetch again, and the batches that mount it are on
+    disk before there is anything to mount."""
+    return sorted(files, key=lambda e: 1 if e[0].upper().startswith("CD\\") else 0)
+
+
 def index_tdc(root, max_mb):
     """Total DOS Collection: <year>/<Title (Year)(Publisher) [Genre]>/files"""
     games, used = [], {}
@@ -485,6 +493,7 @@ def index_tdc(root, max_mb):
             if not files or total == 0 or total > max_mb * 1024 * 1024:
                 continue                # nothing downloaded yet
             files.sort()
+            files = disc_last(files)
             d = short_name(clean, fn, used)
             if not year.isdigit():
                 year = ydir if ydir.isdigit() else ""
@@ -622,6 +631,9 @@ def index(root, max_mb, include_cd):
                 mount = imgmount_bat(isos[0].split("\\")[-1], cd_letter, net)
                 files_net = [("IMGMOUNT.BAT", None, len(mount), mount) if e[0] == "IMGMOUNT.BAT" else e
                              for e in files if e[0] not in isos]
+            files = disc_last(files)            # the disc after everything else
+            if files_net:
+                files_net = disc_last(files_net)
             md = meta.get(top.lower(), {})
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
