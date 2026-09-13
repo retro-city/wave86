@@ -425,6 +425,45 @@ static void emit_cd(FILE *f, const Game *g, int after, int bat)
 }
 
 /*
+ * Free XMS, through the driver itself: INT 2Fh AX=4300 says whether one is
+ * loaded, AX=4310 hands back its entry point, and function 08h returns the
+ * largest free block and the total free, both in KB. Games that want XMS
+ * say "out of XMS memory" without saying how much they wanted or what took
+ * it, and a disk cache can quietly be holding most of it.
+ */
+static void (__far *xms_entry)(void) = NULL;
+
+static int xms_free(unsigned *largest, unsigned *total)
+{
+    union REGS r;
+    struct SREGS sr;
+    unsigned a = 0, d = 0;
+
+    r.x.ax = 0x4300;
+    int86(0x2F, &r, &r);
+    if (r.h.al != 0x80)
+        return 0;
+    segread(&sr);
+    r.x.ax = 0x4310;
+    int86x(0x2F, &r, &r, &sr);
+    xms_entry = (void (__far *)(void))MK_FP(sr.es, r.x.bx);
+    _asm {
+        push bx
+        push cx
+        mov  ah, 8
+        xor  bl, bl
+        call dword ptr [xms_entry]
+        mov  a, ax
+        mov  d, dx
+        pop  cx
+        pop  bx
+    }
+    *largest = a;
+    *total = d;
+    return 1;
+}
+
+/*
  * How much room the shell has left for SET. The batches a game needs set
  * a handful of variables (where the disc is, how to mount it, which
  * letter it landed on), and when the block is full the shell says so -
@@ -1037,6 +1076,13 @@ int main(int argc, char **argv)
                getenv("WAVE86") ? "by WAVE.BAT" : "bare (will run games in place)",
                launcher_dir);
         printf("Games  : %d under %s\n", game_count, gamedir);
+        {
+            unsigned big, tot;
+            if (xms_free(&big, &tot))
+                printf("XMS    : %uK free, largest block %uK\n", tot, big);
+            else
+                printf("XMS    : no driver (HIMEM.SYS or JEMMEX)\n");
+        }
         {
             unsigned used, size;
             env_space(&used, &size);
