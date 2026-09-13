@@ -354,8 +354,10 @@ void ui_details(int sel)
         if (g->flags & GF_DOS4GW)  pill(&x, 14, "386+", 12);
         if (g->flags & GF_EXODOS)  pill(&x, 14, "eXoDOS", 11);
         if (g->flags & GF_TDC)     pill(&x, 14, "TDC", 11);
-        if (g->cdimg[0])           pill(&x, 14, "CD", 10);
-        else if (g->flags & GF_CDBAT) pill(&x, 14, "NET CD", 10);
+        if (g->cdimg[0] || ((g->flags & GF_CDBAT) && !(g->flags & GF_NETCD)))
+            pill(&x, 14, "CD", 10);     /* the disc is on this machine */
+        else if (g->flags & GF_CDBAT)
+            pill(&x, 14, "NET CD", 10); /* it comes off the server as it plays */
     }
 
     if (!ui_thumb(g)) {

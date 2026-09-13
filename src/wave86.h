@@ -31,6 +31,7 @@ typedef struct {
 #define GF_EXODOS  0x08     /* source=exodos: came from the eXoDOS server */
 #define GF_TDC     0x10     /* source=tdc: from the Total DOS Collection */
 #define GF_CDBAT   0x20     /* has IMGMOUNT.BAT: its start batch mounts the CD itself */
+#define GF_NETCD   0x40     /* ... and that batch fetches the disc from the server */
 
 /* --- the looks (theme.c) --- */
 typedef struct {

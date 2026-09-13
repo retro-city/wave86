@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <io.h>
+#include <fcntl.h>
 #include "wave86.h"
 
 Game games[MAX_GAMES];
@@ -156,10 +158,29 @@ static void scan_one(Game *g)
     sprintf(pat, "%s\\%s\\CD\\*.ISO", gamedir, g->dir);
     if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0)
         sprintf(g->cdimg, "CD\\%s", ft.name);
-    /* or a start batch that mounts it itself (waveserve's IMGMOUNT.BAT) */
+    /* or a start batch that mounts it itself (IMGMOUNT.BAT). Whether that
+       disc is on this machine or still on the server is the difference
+       between the CD and NET CD tags, and the batch is what knows. */
     sprintf(pat, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
-    if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0)
+    if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0) {
+        char buf[160];
+        int h, n, keep = 0;
         g->flags |= GF_CDBAT;
+        sprintf(pat, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
+        if ((h = open(pat, O_RDONLY | O_BINARY)) >= 0) {
+            while ((n = read(h, buf + keep, 128)) > 0) {
+                n += keep;
+                buf[n] = 0;
+                if (strstr(buf, "NETDRIVE")) {
+                    g->flags |= GF_NETCD;
+                    break;
+                }
+                keep = n < 12 ? n : 12;
+                memmove(buf, buf + n - keep, keep);
+            }
+            close(h);
+        }
+    }
 }
 
 static int cmp_games(const void *a, const void *b)
