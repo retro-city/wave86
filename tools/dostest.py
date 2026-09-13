@@ -102,11 +102,12 @@ def fill_hd(img, off, build, games_dir, games, ini_extra, test, run=False):
         src = os.path.join(ROOT, "dos", f)
         if os.path.exists(src):
             shutil.copy(src, w)
-    if run:                                 # the real thing: shipped INI, music, pictures
+    if os.path.isdir(os.path.join(build, "MUSIC")):   # WAVEGET plays it too
+        shutil.copytree(os.path.join(build, "MUSIC"), os.path.join(w, "MUSIC"))
+    if run:                                 # the real thing: shipped INI, pictures
         shutil.copy(os.path.join(build, "WAVE86.INI"), w)
-        for d in ("MUSIC", "THUMBS"):
-            if os.path.isdir(os.path.join(build, d)):
-                shutil.copytree(os.path.join(build, d), os.path.join(w, d))
+        if os.path.isdir(os.path.join(build, "THUMBS")):
+            shutil.copytree(os.path.join(build, "THUMBS"), os.path.join(w, "THUMBS"))
     else:
         ini = ["gamedir=C:\\GAMES", "music=0", "netdrive=E"] + ini_extra
         for name in games:

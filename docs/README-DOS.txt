@@ -54,6 +54,11 @@ The image is appended to that command; cdrom_name=1 appends its bare
 file name instead of the whole path. PGUSINIT.EXE /cdload is the default, so
 cdmount_picogus= is only needed to give PGUSINIT's path.
 
+While a game comes in, WAVEGET shows a progress screen - the bar, the
+rate, the files as they land - and plays the soundtrack from MUSIC\ on
+the AdLib. M, +, -, < and > work there as they do in the menu, Esc
+stops the download. netmusic=0 in WAVE86.INI keeps it quiet.
+
 Updating over the network
 -------------------------
 U in the network view fetches a fresh WAVE86.EXE, WAVEGET.EXE and

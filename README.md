@@ -400,6 +400,24 @@ beside it: either let SHSUCDX drive the real drive too (`SHSUCDX
 /D:MSCD001` in AUTOEXEC.BAT instead of MSCDEX, giving the image its
 letter after that) or add `/I` through a `cdmount=` line.
 
+### The transfer screen
+
+A game takes minutes to arrive on a 486, so `WAVEGET` takes the screen
+while it works: the launcher's colours in a band across the top, a
+progress bar in the same gradient, KB done and left, the rate, the time
+remaining and the files as they land. It plays the soundtrack too - the
+launcher's music engine (`src/music.c`) built again in large model and
+linked into WAVEGET, reading the same `MUSIC\` folder. `M`, `+`, `-`,
+`<` and `>` do what they do in the menu; `Esc` stops the download.
+
+Only the FM tracks play: `cfg_modrate` is nailed to 0 in WAVEGET, which
+keeps the MOD mixer and its DMA away from the packet driver, so the cost
+is a handful of OPL register writes on each timer tick. `netmusic=0` in
+`WAVE86.INI` turns it off altogether, and `adlib=` is honoured there as
+it is in the launcher. Set `WAVEDUMP=C:\SCREEN.BIN` and WAVEGET writes
+its text screen there once a second, which is how the harness gets to
+look at it.
+
 ### Updating WAVE86 from the server
 
 `U` in the network view fetches a fresh `WAVE86.EXE`, `WAVEGET.EXE` and

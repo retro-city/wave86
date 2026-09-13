@@ -98,14 +98,15 @@ build/MTCP.CFG: net/MTCP.CFG
 	@mkdir -p build
 	cp $< $@
 
-# $(1) = program (lower case), $(2) = directory holding its .CPP and .CFG.
+# $(1) = program (lower case), $(2) = directory holding its .CPP and .CFG,
+# $(3) = extra objects already built in build/net/$(1), comma separated.
 # The sources carry upper-case names, which matters on Linux.
 define MTCP_BUILD
 	@mkdir -p build/net/$(1)
 	cd build/net/$(1) && for o in $(MTCP_OBJS); do wpp $(MTCP_DIR)/TCPLIB/$$o.CPP $(MTCP_OPTS) -DCFG_H=\"$(shell echo $(1) | tr a-z A-Z).CFG\" -i=$(abspath $(2)) -fo=$$o.obj || exit 1; done
 	cd build/net/$(1) && wasm -0 -ml $(MTCP_DIR)/TCPLIB/IPASM.ASM -fo=ipasm.obj -q
 	cd build/net/$(1) && wpp $(abspath $(2))/$(shell echo $(1) | tr a-z A-Z).CPP $(MTCP_OPTS) -DCFG_H=\"$(shell echo $(1) | tr a-z A-Z).CFG\" -i=$(abspath $(2)) -fo=$(1).obj
-	cd build/net/$(1) && wlink system dos option quiet option eliminate option stack=8192 name ../../$(1).exe file $$(echo $(MTCP_OBJS) | sed 's/ /.obj,/g').obj,ipasm.obj,$(1).obj
+	cd build/net/$(1) && wlink system dos option quiet option eliminate option stack=8192 name ../../$(1).exe file $$(echo $(MTCP_OBJS) | sed 's/ /.obj,/g').obj,ipasm.obj,$(1).obj$(if $(3),$(COMMA)$(3))
 	@mv build/$(1).exe build/$(shell echo $(1) | tr a-z A-Z).EXE 2>/dev/null || true
 	@ls -la build/$(shell echo $(1) | tr a-z A-Z).EXE
 endef
@@ -114,8 +115,16 @@ endef
 build/mtcp-inc/.stamp: $(wildcard net/mtcp/*/*.H net/mtcp/*/*.h net/*.H net/dhcp/*.H)
 	python3 tools/mtcp_inc.py build/mtcp-inc
 
-build/WAVEGET.EXE: net/WAVEGET.CPP net/WAVEGET.CFG $(MTCP_SRC) build/mtcp-inc/.stamp
-	$(call MTCP_BUILD,waveget,net)
+# WAVEGET plays the soundtrack while a game comes in, so the launcher's
+# music engine and CPU probe are built again in large model and linked in.
+COMMA := ,
+WAVEGET_EXTRA := music.obj,mod.obj,cpu.obj
+
+build/WAVEGET.EXE: net/WAVEGET.CPP net/WAVEGET.CFG $(MTCP_SRC) build/mtcp-inc/.stamp \
+                   src/music.c src/mod.c src/cpu.c src/wave86.h
+	@mkdir -p build/net/waveget
+	cd build/net/waveget && for f in music mod cpu; do wcc -0 -ml -os -wx -q $(abspath src)/$$f.c -fo=$$f.obj || exit 1; done
+	$(call MTCP_BUILD,waveget,net,$(WAVEGET_EXTRA))
 
 build/DHCP.EXE: net/dhcp/DHCP.CPP net/dhcp/DHCP.CFG $(MTCP_SRC) build/mtcp-inc/.stamp
 	$(call MTCP_BUILD,dhcp,net/dhcp)
