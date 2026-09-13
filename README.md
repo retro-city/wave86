@@ -46,7 +46,7 @@ rough edges there.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
-| N | the games on the server (Enter plays it off the server, I installs it, L refreshes, C: disc with the game or on the server, U updates WAVE86 itself) |
+| N | the games on the server (Enter plays it off the server, I installs it, Space queues it, L refreshes, C: disc with the game or on the server, U updates WAVE86 itself) |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
@@ -399,6 +399,32 @@ CD-ROM already owns D: with MSCDEX loaded, SHSUCDX refuses to install
 beside it: either let SHSUCDX drive the real drive too (`SHSUCDX
 /D:MSCD001` in AUTOEXEC.BAT instead of MSCDEX, giving the image its
 letter after that) or add `/I` through a `cdmount=` line.
+
+### A queue, and picking up where it stopped
+
+DOS runs one program at a time, and the launcher hands WAVEGET the whole
+machine while it fetches, so nothing downloads in the background. What it
+does instead is work through a list unattended: `Space` puts the game
+under the cursor in the install queue (a mark in the list, the total in
+the details pane), and `I` then fetches the lot, one after another, with
+each transfer showing its place in the queue. Sixteen games fit.
+
+A download that stops part way is not lost. WAVEGET leaves a note,
+`WAVE86.RSM`, in the game's folder saying how many of its files are
+already there and which request they came from; the next attempt asks the
+server to start after them (`/pack/KEY?from=N`, and the server opens the
+stream with `S <files> <bytes>` so the client knows what it skipped). The
+file that was half written when the line went down is sent again from the
+start. The note goes when the game is complete.
+
+The queue survives the same way. `NETGAME.TXT` is the list of games on
+their way in, and anything that did not arrive - a folder that never
+appeared, or one with a resume note in it - goes straight back into the
+queue when the launcher comes up again. So a queue interrupted by `Esc`,
+a dropped line or the power switch is still there afterwards: press `I`
+and it carries on. Inside the batch, `Esc` (exit code 2) stops the rest
+of the queue, while a game the server cannot provide (3) is skipped and
+the next one starts.
 
 ### The transfer screen
 

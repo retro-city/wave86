@@ -326,7 +326,11 @@ static void net_redraw(int sel, int top)
     ui_net_list(sel, top);
     ui_net_details(sel);
     ui_net_keybar();
-    sprintf(msg, "%d GAMES ON %s", net_count, cfg_server[0] ? cfg_server : "?");
+    if (net_qcount)
+        sprintf(msg, "%d QUEUED OF %d GAMES ON %s", net_qcount, net_count,
+                cfg_server[0] ? cfg_server : "?");
+    else
+        sprintf(msg, "%d GAMES ON %s", net_count, cfg_server[0] ? cfg_server : "?");
     ui_status(msg);
 }
 
@@ -436,32 +440,77 @@ static void net_update(void)
     quit();
 }
 
-/* download the selected game; comes back with it selected in the games view */
-static void net_download(int nsel)
+/* one WAVEGET GET line: the server key is DIR for eXoDOS, src:DIR for
+   other collections, and for a CD game the mode decides whether the disc
+   comes along */
+static void net_get_cmd(char *cmd, unsigned size, const NetGame *g, const char *exe)
 {
-    char cmd[PATH_LEN * 2 + 96], exe[PATH_LEN + 16], msg[80], key[32];
-    const NetGame *g = net_get(nsel);
-    int netcd = g->cd && g->netcd && net_cdmode;
-    waveget_path(exe);
-    net_mark_pending(g);
-    /* the server key: DIR for eXoDOS, src:DIR for other collections; for
-       a CD game the mode decides whether the disc comes along */
+    char key[32];
     if (stricmp(g->src, "exodos") == 0) strcpy(key, g->dir);
     else sprintf(key, "%s:%s", g->src, g->dir);
     if (g->cd && g->netcd)
-        strcat(key, netcd ? "?cd=net" : "?cd=local");
+        strcat(key, g->netcd && net_cdmode ? "?cd=net" : "?cd=local");
     sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, net_size(g), key);
     {
         const char *cdrom = cd_root();
-        if (cdrom && cdrom[0] && strlen(cmd) + strlen(cdrom) + 2 < sizeof(cmd)) {
+        if (cdrom && cdrom[0] && strlen(cmd) + strlen(cdrom) + 2 < size) {
             strcat(cmd, " ");
             strcat(cmd, cdrom);
         }
     }
-    sprintf(msg, "WAVE86: Installing %s from the %s%s ...", g->title,
-            stricmp(g->src, "tdc") == 0 ? "Total DOS Collection" : "eXoDOS server",
-            !g->cd ? "" : netcd ? " (CD over network)" : " (CD on disk)");
-    run_command(cmd, msg);
+}
+
+/*
+ * Download the selected game, or the whole queue one after another, and
+ * come back with the first of them selected in the games view. DOS runs
+ * one program at a time and the launcher hands WAVEGET the machine while
+ * it fetches, so nothing can come in behind your back; a queue is the
+ * next best thing - mark a few games, walk away, find them installed.
+ */
+static void net_download(int nsel)
+{
+    char cmd[PATH_LEN * 2 + 96], exe[PATH_LEN + 16], msg[80];
+    int n = net_qcount, k;
+    FILE *f;
+
+    waveget_path(exe);
+    net_pending_reset();
+    f = fopen("RUNGAME.BAT", "w");
+    if (!f)
+        return;
+    fprintf(f, "@echo off\n");
+    if (!n) {
+        const NetGame *g = net_get(nsel);
+        int netcd = g->cd && g->netcd && net_cdmode;
+        net_mark_pending(g);
+        net_get_cmd(cmd, sizeof(cmd), g, exe);
+        sprintf(msg, "WAVE86: Installing %s from the %s%s ...", g->title,
+                stricmp(g->src, "tdc") == 0 ? "Total DOS Collection" : "eXoDOS server",
+                !g->cd ? "" : netcd ? " (CD over network)" : " (CD on disk)");
+        fprintf(f, "%s\n", cmd);
+    } else {
+        int j;
+        k = 0;
+        for (j = 0; j < net_count && k < n; j++) {      /* one pass, list order */
+            const NetGame *g = net_get(j);
+            if (!net_queued(g->dir))
+                continue;
+            k++;
+            net_mark_pending(g);
+            net_get_cmd(cmd, sizeof(cmd), g, exe);
+            fprintf(f, "set WAVEQ=%d/%d\n%s\n", k, n, cmd);
+            /* 3 = the server had nothing for that one, try the next
+               anyway; 2 = Esc, and then the whole queue stops */
+            fprintf(f, "if errorlevel 3 goto q%d\n", k);
+            fprintf(f, "if errorlevel 2 goto qstop\n");
+            fprintf(f, ":q%d\n", k);
+        }
+        fprintf(f, ":qstop\nset WAVEQ=\n");
+        sprintf(msg, "WAVE86: Installing %d games from the server ...", n);
+    }
+    fprintf(f, "%c:\ncd %s\n", launcher_dir[0], launcher_dir);
+    fclose(f);
+    hand_off(msg);
 }
 
 /* the lines that find NetDrive's letter: WAVEND if that is one, else the
@@ -749,6 +798,15 @@ int main(int argc, char **argv)
                 net_cdmode = !net_cdmode;
                 net_redraw(nsel, ntop);
                 continue;
+            case ' ':                       /* into the install queue, or out */
+                if (net_count) {
+                    const NetGame *g = net_get(nsel);
+                    if (net_queue_toggle(g->dir, net_size(g)) < 0)
+                        ui_status("THE QUEUE IS FULL.");
+                    else
+                        net_redraw(nsel, ntop);
+                }
+                continue;
             case 'u': case 'U':             /* WAVE86 itself, from the server */
                 net_update();
                 net_redraw(nsel, ntop);
@@ -759,7 +817,7 @@ int main(int argc, char **argv)
                     net_redraw(nsel, ntop);     /* bare mode: back here */
                 }
                 continue;
-            case 'i': case 'I':             /* install: download into the games folder */
+            case 'i': case 'I':             /* install: the queue, or this one */
                 if (net_count) {
                     net_download(nsel);
                     /* bare mode only: back here with the game on disk */

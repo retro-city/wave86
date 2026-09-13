@@ -30,6 +30,17 @@ char cfg_server[32] = "";
 char net_pending_dir[9] = "";
 int net_cdmode = 0;             /* LOCAL CD until netcd=1 says otherwise */
 
+/*
+ * The install queue. DOS runs one program at a time and the launcher
+ * leaves memory to WAVEGET while it fetches, so nothing can download in
+ * the background; what it can do is line the games up and fetch them one
+ * after another, unattended. Indices into the list, which is why L and
+ * leaving the view empty it again.
+ */
+#define QUEUE_MAX 16
+static struct { char dir[9]; unsigned long kb; } queue[QUEUE_MAX];
+int net_qcount = 0;
+
 static unsigned long __far *offs[OFF_BLOCKS];
 static int letter_first[27];       /* first index per initial A..Z, [26] = none */
 static FILE *listf = NULL;
@@ -80,6 +91,59 @@ static void parse_line(char *line, NetGame *g)
     g->netcd = (atoi(cd) & 4) != 0;
     g->netplay = (atoi(cd) & 8) != 0;
     strncpy(g->src, src[0] ? src : "exodos", 7);
+}
+
+/* folder names, not list positions: the queue then survives a new list,
+   the hand-off to WAVEGET and the machine being switched off half way */
+int net_queued(const char *dir)
+{
+    int k;
+    for (k = 0; k < net_qcount; k++)
+        if (stricmp(queue[k].dir, dir) == 0)
+            return 1;
+    return 0;
+}
+
+int net_queue_add(const char *dir, unsigned long kb)
+{
+    if (net_queued(dir))
+        return 1;
+    if (net_qcount >= QUEUE_MAX)
+        return -1;
+    strncpy(queue[net_qcount].dir, dir, 8);
+    queue[net_qcount].dir[8] = 0;
+    queue[net_qcount].kb = kb;
+    net_qcount++;
+    return 1;
+}
+
+/* 1 = queued now, 0 = taken out again, -1 = no room */
+int net_queue_toggle(const char *dir, unsigned long kb)
+{
+    int k;
+    for (k = 0; k < net_qcount; k++)
+        if (stricmp(queue[k].dir, dir) == 0) {
+            for (; k + 1 < net_qcount; k++)
+                queue[k] = queue[k + 1];
+            net_qcount--;
+            return 0;
+        }
+    return net_queue_add(dir, kb);
+}
+
+void net_queue_clear(void)
+{
+    net_qcount = 0;
+}
+
+/* what the whole queue comes to, as it was when each game was put in */
+unsigned long net_queue_kb(void)
+{
+    unsigned long kb = 0;
+    int k;
+    for (k = 0; k < net_qcount; k++)
+        kb += queue[k].kb;
+    return kb;
 }
 
 void net_free(void)
@@ -165,14 +229,24 @@ int net_letter_first(char c)
     return letter_first[c - 'A'];
 }
 
+void net_pending_reset(void)
+{
+    char path[PATH_LEN + 16];
+    net_path(path, "NETGAME.TXT");
+    remove(path);
+}
+
+/* One line per game on the way in - the install queue, really, which is
+   why it holds the size too and why net_apply_pending puts back whatever
+   did not make it. */
 void net_mark_pending(const NetGame *g)
 {
     char path[PATH_LEN + 16];
     FILE *f;
     net_path(path, "NETGAME.TXT");
-    f = fopen(path, "w");
+    f = fopen(path, "a");
     if (!f) return;
-    fprintf(f, "%s|%s|%s|%s\n", g->dir, g->title, g->exe, g->src);
+    fprintf(f, "%s|%s|%s|%s|%lu\n", g->dir, g->title, g->exe, g->src, net_size(g));
     fclose(f);
 }
 
@@ -198,47 +272,79 @@ int net_view_pending(void)
 }
 
 /*
- * After a scan: if a download was started, give the new folder its
- * proper name, exe and source in the INI. Returns its index; -1 if
- * nothing arrived, -2 if the folder is there but the scan found nothing
- * to run in it (the server had only part of the game).
+ * After a scan: every game that was on its way in gets its proper name,
+ * exe and source in the INI - one line each, a whole queue's worth.
+ * Returns the index of the first that arrived; -1 if none did, -2 if a
+ * folder is there but the scan found nothing to run in it (the server
+ * had only part of the game).
  */
 int net_apply_pending(void)
 {
-    char path[PATH_LEN + 16];
-    char line[96];
-    FILE *f;
-    char *p, *dir, *title, *exe, *src;
-    int i;
+    char path[PATH_LEN + 16], keep[PATH_LEN + 16];
+    char line[112], copy[112], firstdir[9] = "";
+    FILE *f, *rest;
+    int empty = 0, left = 0;
 
     net_path(path, "NETGAME.TXT");
     f = fopen(path, "r");
     if (!f)
         return -1;
-    if (!fgets(line, sizeof(line), f)) { fclose(f); return -1; }
+    net_path(keep, "NETGAME.$$$");      /* what is still wanted */
+    rest = fopen(keep, "w");
+    while (fgets(line, sizeof(line), f)) {      /* one line per game */
+        char *p = line, *dir, *title, *exe, *src, *kb;
+        int i, unfinished;
+        chomp(p);
+        strcpy(copy, line);
+        dir = field(&p); title = field(&p); exe = field(&p); src = field(&p);
+        kb = field(&p);
+        if (!dir[0])
+            continue;
+        if (!src[0]) src = "exodos";
+        strncpy(net_pending_dir, dir, 8);
+        net_pending_dir[8] = 0;
+        /* WAVEGET leaves its resume note behind when a download stops
+           part way; such a game goes back into the queue, and so does one
+           whose folder never appeared */
+        sprintf(path, "%s\\%s\\WAVE86.RSM", gamedir, dir);
+        unfinished = access(path, 0) == 0;
+        i = unfinished ? -1 : find_game(dir);
+        if (i < 0) {
+            if (rest) { fputs(copy, rest); fputc('\n', rest); left++; }
+            net_queue_add(dir, kb[0] ? strtoul(kb, NULL, 10) : 0);
+            if (!unfinished) {          /* nothing runnable in the folder? */
+                sprintf(path, "%s\\%s", gamedir, dir);
+                if (access(path, 0) == 0)
+                    empty = 1;
+            }
+            continue;
+        }
+        if (title[0]) {
+            strncpy(games[i].name, title, NAME_LEN - 1);
+            ini_write_name(dir, title);
+        }
+        if (exe[0]) {
+            strncpy(games[i].exe, exe, FN_LEN - 1);
+            ini_write_key(dir, "exe", exe);
+        }
+        games[i].flags |= stricmp(src, "tdc") == 0 ? GF_TDC : GF_EXODOS;
+        ini_write_key(dir, "source", src);
+        sort_games();                   /* indices move: hold on to the name */
+        if (!firstdir[0]) {
+            strncpy(firstdir, dir, 8);
+            firstdir[8] = 0;
+        }
+    }
     fclose(f);
+    if (rest) fclose(rest);
+    net_path(path, "NETGAME.TXT");
     remove(path);
-    chomp(line);
-    p = line;
-    dir = field(&p); title = field(&p); exe = field(&p); src = field(&p);
-    if (!src[0]) src = "exodos";
-    strncpy(net_pending_dir, dir, 8);
-    net_pending_dir[8] = 0;
-    i = find_game(dir);
-    if (i < 0) {
-        sprintf(path, "%s\\%s", gamedir, dir);
-        return access(path, 0) == 0 ? -2 : -1;
-    }
-    if (title[0]) {
-        strncpy(games[i].name, title, NAME_LEN - 1);
-        ini_write_name(dir, title);
-    }
-    if (exe[0]) {
-        strncpy(games[i].exe, exe, FN_LEN - 1);
-        ini_write_key(dir, "exe", exe);
-    }
-    games[i].flags |= stricmp(src, "tdc") == 0 ? GF_TDC : GF_EXODOS;
-    ini_write_key(dir, "source", src);
-    sort_games();
-    return find_game(dir);
+    if (left)                           /* the rest of the queue, for next time */
+        rename(keep, path);
+    else
+        remove(keep);
+    if (!firstdir[0])
+        return empty ? -2 : -1;
+    strcpy(net_pending_dir, firstdir);  /* the one to land on in the list */
+    return find_game(net_pending_dir);
 }

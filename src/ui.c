@@ -492,6 +492,8 @@ void ui_net_list(int sel, int top)
                 scr_fill(LIST_X + 1, y, LIST_W - 2, 1, ' ', at);
                 scr_put(LIST_X + 1, y, CH_ARROW, A(14, 3));
             }
+            if (net_queued(g->dir))      /* waiting its turn to be fetched */
+                scr_put(LIST_X + 2, y, 254, is_sel ? A(14, 3) : A(14, 0));
             strncpy(nm, g->title, 26);
             nm[26] = 0;
             scr_puts(LIST_X + 3, y, nm, at);
@@ -548,11 +550,20 @@ void ui_net_details(int sel)
         scr_puts(PANE_X + 2, 19, "CD ON DISK, C: OVER NETWORK.", A(8, 0));
     else if (g->cd)
         scr_puts(PANE_X + 2, 19, "ITS CD IMAGE COMES ALONG.", A(8, 0));
-    if (g->netplay) {
+    if (net_queued(g->dir))
+        scr_puts(PANE_X + PANE_W - 2 - 10, 15, "\xAE QUEUED \xAF", A(14, 0));
+    if (net_qcount) {
+        char q[34];
+        fmt_kb(sz, net_queue_kb());
+        sprintf(q, "I INSTALLS THE QUEUE: %d, %s", net_qcount, sz);
+        scr_puts(PANE_X + 2, 20, q, A(14, 0));
+        scr_puts(PANE_X + 2, 21, "SPACE PUTS ONE IN OR TAKES IT OUT.", A(8, 0));
+    } else if (g->netplay) {
         scr_puts(PANE_X + 2, 20, "ENTER PLAYS IT OFF THE SERVER,", A(8, 0));
-        scr_puts(PANE_X + 2, 21, "I INSTALLS IT INTO YOUR GAMES.", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "I INSTALLS IT, SPACE QUEUES IT.", A(8, 0));
     } else {
-        scr_puts(PANE_X + 2, 20, "I INSTALLS IT INTO YOUR GAMES.", A(8, 0));
+        scr_puts(PANE_X + 2, 20, "I INSTALLS IT INTO YOUR GAMES,", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "SPACE QUEUES IT FOR LATER.", A(8, 0));
     }
 }
 
@@ -562,9 +573,9 @@ void ui_net_keybar(void)
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
     keychip(&x, "ENTER", "PLAY", net_count == 0 || !net_get(0)->netplay);
     keychip(&x, "I", "INSTALL", net_count == 0);
+    keychip(&x, "SPACE", "QUEUE", net_count == 0);
     keychip(&x, "L", "LIST", 0);
     keychip(&x, "C", net_cdmode ? "NET CD" : "LOCAL CD", 0);
-    keychip(&x, "U", "UPDATE", 0);      /* +- still works, the row is full */
-    keychip(&x, "M", "MUSIC", !mus_present || !mus_ntracks);
+    keychip(&x, "U", "UPDATE", 0);      /* M and +- still work, the row is full */
     keychip(&x, "ESC", "GAMES", 0);
 }

@@ -117,7 +117,14 @@ int net_load(void);             /* offsets into NETLIST.TXT; count */
 const NetGame *net_get(int i);  /* reads that line; valid until the next call */
 int net_letter_first(char c);   /* first title starting with c, or -1 */
 void net_free(void);
-void net_mark_pending(const NetGame *g);
+void net_mark_pending(const NetGame *g);    /* appends to NETGAME.TXT */
+void net_pending_reset(void);   /* forget what was on its way in */
+extern int net_qcount;          /* games in the install queue */
+int net_queued(const char *dir);               /* is that folder queued? */
+int net_queue_toggle(const char *dir, unsigned long kb);  /* 1 in, 0 out, -1 full */
+int net_queue_add(const char *dir, unsigned long kb);
+void net_queue_clear(void);
+unsigned long net_queue_kb(void);
 void net_mark_view(void);
 int net_view_pending(void);
 int net_apply_pending(void);    /* index, -1 nothing arrived, -2 arrived but nothing runs */

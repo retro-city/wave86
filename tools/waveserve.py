@@ -736,10 +736,23 @@ class H(BaseHTTPRequestHandler):
             self._head("text/plain", len(body))
             self.wfile.write(body)
             return
-        self._head("application/octet-stream")
+        # ?cd=net|local picks the pack, ?from=N resumes one that stopped
+        # part way: the first N files are already on the DOS disk, so they
+        # are left out and the client is told what it missed.
+        args = dict((kv.split("=", 1) + [""])[:2] for kv in query.split("&") if kv)
         entries = g["files"]
-        if g.get("files_net") and query != "cd=local":
+        if g.get("files_net") and args.get("cd") != "local":
             entries = g["files_net"]
+        skip = 0
+        try:
+            skip = max(0, min(int(args.get("from", 0)), len(entries)))
+        except ValueError:
+            skip = 0
+        self._head("application/octet-stream")
+        if skip:
+            done = sum(e[2] for e in entries[:skip])
+            entries = entries[skip:]
+            self.wfile.write(f"S {skip} {done}\n".encode())
         if g["zip"]:
             with zipfile.ZipFile(g["zip"]) as z:
                 for entry in entries:
@@ -761,7 +774,7 @@ class H(BaseHTTPRequestHandler):
                     with z.open(name) as f:
                         shutil.copyfileobj(f, self.wfile, 65536)
         else:                           # plain files on disk (TDC)
-            for rel, fp, size in g["files"]:
+            for rel, fp, size in entries:
                 self.wfile.write(f"F {size} {rel}\n".encode())
                 with open(fp, "rb") as f:
                     shutil.copyfileobj(f, self.wfile, 65536)

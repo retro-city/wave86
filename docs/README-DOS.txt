@@ -54,6 +54,14 @@ The image is appended to that command; cdrom_name=1 appends its bare
 file name instead of the whole path. PGUSINIT.EXE /cdload is the default, so
 cdmount_picogus= is only needed to give PGUSINIT's path.
 
+Space marks a game for the install queue and I then fetches every
+marked game, one after another - the launcher cannot download in the
+background (DOS runs one program at a time), but it can work through a
+list while you are elsewhere. A download that stops half way leaves a
+note in the game's folder and carries on from there next time, and
+whatever the queue did not get to is still queued when WAVE86 comes
+back up.
+
 While a game comes in, WAVEGET shows a progress screen - the bar, the
 rate, the files as they land - and plays the soundtrack from MUSIC\ on
 the AdLib. M, +, -, < and > work there as they do in the menu, Esc

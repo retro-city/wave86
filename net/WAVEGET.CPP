@@ -83,6 +83,7 @@ extern "C" {
 static int musicWanted = 1;         /* netmusic=0 in WAVE86.INI turns it off */
 
 static void msg(const char *m);     /* on the transfer screen, or plain */
+static uint16_t localPort = 4096;   /* a fresh one per run: see connectTo */
 static char serverText[32] = "";
 
 static int userWantsOut(void) {
@@ -132,7 +133,11 @@ static int parseHostPort(const char *s, IpAddr_t addr, uint16_t *port) {
 static int connectTo(IpAddr_t addr, uint16_t port) {
   sock = TcpSocketMgr::getSocket();
   if (!sock || sock->setRecvBuffer(TCP_RECV_BUFFER)) { msg("WAVEGET: no socket"); return -1; }
-  if (sock->connectNonBlocking(2048 + rand(), addr, port)) { msg("WAVEGET: connect failed"); return -1; }
+  /* A fresh local port every time. With a fixed one, two downloads in a
+     row reuse the same four-tuple while the server's side is still in
+     TIME_WAIT and the SYN is quietly dropped - which is precisely what a
+     queue does. Seeded from the BIOS tick in main(). */
+  if (sock->connectNonBlocking(localPort, addr, port)) { msg("WAVEGET: connect failed"); return -1; }
   clockTicks_t t0 = TIMER_GET_CURRENT();
   while (1) {
     if (userWantsOut()) return -2;
@@ -334,6 +339,13 @@ static void uiOpen(const char *title, const char *host) {
     scrCell(BOX_X + BOX_W - 1, y, (char)179, A(5, 0));
   }
   scrPuts(BOX_X + 3, BOX_Y + 1, title, A(15, 0));
+  {                                 /* WAVEQ=3/7: the launcher's queue */
+    const char *q = getenv("WAVEQ");
+    if (q && *q) {
+      sprintf(line, "%s of the queue", q);
+      scrPuts(BOX_X + 5 + strlen(title), BOX_Y + 1, line, A(14, 0));
+    }
+  }
   sprintf(line, "from %s", host);
   scrPuts(BOX_X + BOX_W - 3 - strlen(line), BOX_Y + 1, line, A(8, 0));
   scrPuts(2, 24, "ESC", A(0, 3));
@@ -354,6 +366,7 @@ static void uiClose(void) {
     puts(lastMsg);
     lastMsg[0] = 0;
   }
+  fflush(stdout);                   /* redirected output, should we hang */
 }
 
 /* the tune and its level, at the bottom of the box */
@@ -571,6 +584,47 @@ static void ensureDirs(const char *rel) {
 
 static const char *cdromDir = NULL;      /* where the discs go, if not the game folder */
 
+/* ------------------------------------------------ resuming a download */
+/*
+ * A game can be 300 MB and a 486 is not quick, so a download that stops
+ * half way - Esc, a dropped line, someone tripping over the cable - must
+ * not have to start again. WAVE86.RSM in the game's folder says how many
+ * of its files are already there and which request they belong to; the
+ * next attempt asks the server to start after them (?from=N) and the
+ * server says what it left out. The note is written whenever a transfer
+ * ends early and removed when one finishes.
+ */
+static char rsmPath[140] = "";
+static const char *rsmKey = NULL;       /* NULL: not that kind of transfer */
+static int doneFiles = 0;               /* files on the disk, this game */
+
+static int resumeRead(void) {
+  FILE *f;
+  char line[96], *bar, *e;
+  int n;
+  if (!rsmKey) return 0;
+  f = fopen(rsmPath, "r");
+  if (!f) return 0;
+  if (!fgets(line, sizeof(line), f)) { fclose(f); return 0; }
+  fclose(f);
+  n = atoi(line);
+  bar = strchr(line, '|');
+  if (!bar || n <= 0) return 0;
+  bar++;
+  e = bar + strlen(bar);
+  while (e > bar && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
+  return stricmp(bar, rsmKey) == 0 ? n : 0;    /* same request, or start over */
+}
+
+static void resumeWrite(int files) {
+  FILE *f;
+  if (!rsmKey || files <= 0) return;
+  f = fopen(rsmPath, "w");
+  if (!f) return;
+  fprintf(f, "%d|%s\n", files, rsmKey);
+  fclose(f);
+}
+
 /* an update writes each file beside its target first: NAME.W86 */
 static void tempName(char *dst, const char *full) {
   char *dot, *bs;
@@ -587,8 +641,8 @@ static void tempName(char *dst, const char *full) {
    and renamed once its last byte is in, so a connection that drops halfway
    leaves the program already on the disk intact - including WAVEGET.EXE,
    which is busy overwriting itself. */
-static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *what,
-                    unsigned long kbTotal, int safe) {
+static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char *what,
+                      unsigned long kbTotal, int safe) {
   int16_t n; uint16_t pos;
   int rc;
   uiStatus("asking the server ...");
@@ -611,7 +665,7 @@ static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *
         if (fwrite(inBuf + pos, 1, chunk, cur) != chunk) { msg("WAVEGET: disk write failed (is it full?)"); fclose(cur); return 1; }
         pos += chunk; remain -= chunk; done += chunk;
         if (remain == 0) {
-          fclose(cur); cur = NULL; files++;
+          fclose(cur); cur = NULL; files++; doneFiles = files;
           if (renaming) { remove(full); rename(tmp, full); }
           uiLog(curName);
         }
@@ -620,6 +674,16 @@ static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *
         if (c != '\n') { if (lineLen < sizeof(line) - 1) line[lineLen++] = c; continue; }
         line[lineLen] = 0; lineLen = 0;
         if (line[0] == 'E') { finished = 1; break; }
+        if (line[0] == 'S') {           /* resumed: what the server left out */
+          char m[60];
+          const char *sp = strchr(line + 2, ' ');
+          files = atoi(line + 2);
+          done = sp ? strtoul(sp + 1, NULL, 10) : 0;
+          doneFiles = files;
+          sprintf(m, "carrying on after %d files already here", files);
+          uiStatus(m);
+          continue;
+        }
         if (line[0] != 'F') { char m[100]; sprintf(m, "WAVEGET: bad stream: %.60s", line); msg(m); return 1; }
         unsigned long size = strtoul(line + 2, NULL, 10);
         const char *rel = strchr(line + 2, ' ');
@@ -639,7 +703,7 @@ static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *
         if (!cur) { char m[120]; sprintf(m, "WAVEGET: cannot create %.90s", renaming ? tmp : full); msg(m); return 1; }
         remain = size;
         if (size == 0) {
-          fclose(cur); cur = NULL; files++;
+          fclose(cur); cur = NULL; files++; doneFiles = files;
           if (renaming) { remove(full); rename(tmp, full); }
           uiLog(curName);
         }
@@ -666,17 +730,39 @@ static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *
   unsigned long secs = Timer_diff(tStart, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;
   char done_line[120];
   sprintf(done_line, "WAVEGET: %s ready: %d files, %luK in %lu s", what, files, done / 1024, secs);
+  (void)0;
   if (screenOn) { uiProgress(curName, done, kbTotal, secs ? (done / 1024) / secs : 0, secs); msg(done_line); }
   else printf("\r%-70s\n", done_line);
   return 0;
 }
 
+/* the stream, with the resume note kept up to date around it */
+static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *what,
+                    unsigned long kbTotal, int safe) {
+  int rc;
+  doneFiles = 0;
+  rc = streamBody(addr, port, path, what, kbTotal, safe);
+  if (rc == 0) {
+    if (rsmKey) remove(rsmPath);        /* it is all here now */
+  } else {
+    resumeWrite(doneFiles);             /* pick it up here next time */
+  }
+  return rc;
+}
+
 static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal, const char *key) {
-  char path[64];
-  sprintf(path, "/pack/%s", key ? key : dir);
+  char path[96];
+  const char *k = key ? key : dir;
+  int from;
   sprintf(gameRoot, "%s\\%s", gamesdir, dir);
   mkdir(gamesdir);
   mkdir(gameRoot);
+  sprintf(rsmPath, "%s\\WAVE86.RSM", gameRoot);
+  rsmKey = k;
+  from = resumeRead();
+  sprintf(path, "/pack/%s", k);
+  if (from)
+    sprintf(path + strlen(path), "%cfrom=%d", strchr(path, '?') ? '&' : '?', from);
   uiOpen(dir, serverText);
   int rc = doStream(addr, port, path, dir, kbTotal, 0);
   uiClose();
@@ -692,6 +778,7 @@ static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
   gameRoot[sizeof(gameRoot) - 1] = 0;
   int len = strlen(gameRoot);       /* C:\WAVE86\ -> C:\WAVE86 */
   if (len > 1 && gameRoot[len - 1] == '\\' && gameRoot[len - 2] != ':') gameRoot[len - 1] = 0;
+  rsmKey = NULL;
   uiOpen("WAVE86 ITSELF", serverText);
   if (!screenOn) printf("WAVEGET: updating WAVE86 in %s\n", gameRoot);
   int rc = doStream(addr, port, "/update", "update", 0, 1);
@@ -720,6 +807,13 @@ int main(int argc, char **argv) {
     puts("WAVEGET: TCP/IP would not start (packet driver loaded? DHCP done?)");
     return 1;
   }
+  {   /* mTCP's own tick counter starts at 0 in every run, so seed from the
+         BIOS one: the same local port twice running lands on the server's
+         TIME_WAIT socket and the SYN goes nowhere. */
+    unsigned long __far *biosTicks = (unsigned long __far *)MK_FP(0x40, 0x6C);
+    srand((unsigned)*biosTicks);
+  }
+  localPort = (uint16_t)(2048 + (rand() % 16384));
 
   strncpy(serverText, argv[2], sizeof(serverText) - 1);
   serverText[sizeof(serverText) - 1] = 0;
@@ -741,9 +835,16 @@ int main(int argc, char **argv) {
     usage();
   }
   if (rc == 1 || rc == 3) {
-    puts("Press a key.");
-    while (!biosIsKeyReady()) { }
-    biosKeyRead();
+    const char *queued = getenv("WAVEQ");
+    if (queued && *queued) {        /* a queue is running: say so and move on */
+      clockTicks_t t0 = TIMER_GET_CURRENT();
+      printf("That one failed. The queue carries on in 5 s (or press a key).\n");
+      while (!biosIsKeyReady() && Timer_diff(t0, TIMER_GET_CURRENT()) < TIMER_MS_TO_TICKS(5000)) { }
+    } else {
+      puts("Press a key.");
+      while (!biosIsKeyReady()) { }
+    }
+    if (biosIsKeyReady()) biosKeyRead();
   }
   netShutdown(rc);
   return rc;
