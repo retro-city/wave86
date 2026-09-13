@@ -465,6 +465,28 @@ void mus_diag(void)
                sb_rate ? "on" : "off", sb_rate);
     printf("\n");
     printf("CPU    : %s\n", cpu_desc);
+    /*
+     * How long this machine takes over one OPL register write. It is not
+     * the CPU that decides: every write is an ISA bus cycle plus the delay
+     * loop the chip needs, and a card that emulates the OPL in firmware
+     * can be slower again. The IMF player writes a few of these on every
+     * timer tick at 560 Hz, so the number below is what the soundtrack
+     * costs a download - netmusic=0 in the INI turns it off for WAVEGET.
+     */
+    if (opl_present) {
+        unsigned long __far *ticks = (unsigned long __far *)MK_FP(0x40, 0x6C);
+        unsigned long t0, us;
+        int i;
+        t0 = *ticks;
+        while (*ticks == t0)            /* line up with a tick */
+            t0 = *ticks - 0;
+        t0 = *ticks;
+        for (i = 0; i < 2000; i++)
+            opl_out(0x01, 0x20);        /* waveform select enable: harmless */
+        us = (*ticks - t0) * 54925UL / 2000;
+        printf("OPL    : %lu us per register write, so the player costs about %lu%% of the CPU\n",
+               us, us * 560 * 3 / 10000);
+    }
     printf("Tracks : %d in MUSIC\\ (IMF/WLF need FM, MOD needs a DSP)\n",
            mus_ntracks);
 }
