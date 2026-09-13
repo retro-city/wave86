@@ -599,6 +599,34 @@ static void ensureDirs(const char *rel) {
 
 static const char *cdromDir = NULL;      /* where the discs go, if not the game folder */
 
+/* ------------------------------------------------------------- CRC32 */
+/*
+ * The stream is only as trustworthy as TCP's 16-bit checksum, which is
+ * not much over a few hundred megabytes on tired ISA hardware. Ask for
+ * ?crc=1 and the server follows each file with "C <crc32>"; the same
+ * number is worked out here as the bytes are written, so a file that
+ * arrived damaged is caught there and then rather than when the game
+ * fails to start. Same polynomial as zlib.
+ */
+static unsigned long crcTable[256];
+
+static void crcInit(void) {
+  unsigned long c;
+  int i, k;
+  for (i = 0; i < 256; i++) {
+    c = (unsigned long)i;
+    for (k = 0; k < 8; k++)
+      c = (c & 1) ? 0xEDB88320UL ^ (c >> 1) : (c >> 1);
+    crcTable[i] = c;
+  }
+}
+
+static unsigned long crcAdd(unsigned long crc, const uint8_t *p, uint16_t n) {
+  while (n--)
+    crc = crcTable[(int)((crc ^ *p++) & 0xFF)] ^ (crc >> 8);
+  return crc;
+}
+
 /* ------------------------------------------------ resuming a download */
 /*
  * A game can be 300 MB and a 486 is not quick, so a download that stops
@@ -668,7 +696,8 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   char line[200]; uint16_t lineLen = 0;
   FILE *cur = NULL; unsigned long remain = 0, done = 0; int files = 0;
   char curName[80] = "", full[160], tmp[160];
-  int renaming = 0;
+  int renaming = 0, checked = 0;
+  unsigned long crc = 0xFFFFFFFFUL, lastCrc = 0;
   clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0;
   int finished = 0;
 
@@ -678,9 +707,11 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         uint16_t chunk = n - pos;
         if ((unsigned long)chunk > remain) chunk = (uint16_t)remain;
         if (fwrite(inBuf + pos, 1, chunk, cur) != chunk) { msg("WAVEGET: disk write failed (is it full?)"); fclose(cur); return 1; }
+        crc = crcAdd(crc, inBuf + pos, chunk);
         pos += chunk; remain -= chunk; done += chunk;
         if (remain == 0) {
           fclose(cur); cur = NULL; files++; doneFiles = files;
+          lastCrc = crc ^ 0xFFFFFFFFUL;
           if (renaming) { remove(full); rename(tmp, full); }
           uiLog(curName);
         }
@@ -689,6 +720,18 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         if (c != '\n') { if (lineLen < sizeof(line) - 1) line[lineLen++] = c; continue; }
         line[lineLen] = 0; lineLen = 0;
         if (line[0] == 'E') { finished = 1; break; }
+        if (line[0] == 'C') {           /* the file's checksum, from the server */
+          unsigned long want = strtoul(line + 2, NULL, 10);
+          if (want != lastCrc) {
+            char m[120];
+            sprintf(m, "WAVEGET: %.40s came through damaged - fetch it again", curName);
+            files--; doneFiles = files;   /* so the next run starts at it */
+            msg(m);
+            return 1;
+          }
+          checked++;
+          continue;
+        }
         if (line[0] == 'S') {           /* resumed: what the server left out */
           char m[60];
           const char *sp = strchr(line + 2, ' ');
@@ -717,8 +760,10 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         cur = fopen(renaming ? tmp : full, "wb");
         if (!cur) { char m[120]; sprintf(m, "WAVEGET: cannot create %.90s", renaming ? tmp : full); msg(m); return 1; }
         remain = size;
+        crc = 0xFFFFFFFFUL;
         if (size == 0) {
           fclose(cur); cur = NULL; files++; doneFiles = files;
+          lastCrc = crc ^ 0xFFFFFFFFUL;     /* nothing in it: CRC 0 */
           if (renaming) { remove(full); rename(tmp, full); }
           uiLog(curName);
         }
@@ -744,8 +789,8 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   }
   unsigned long secs = Timer_diff(tStart, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;
   char done_line[120];
-  sprintf(done_line, "WAVEGET: %s ready: %d files, %luK in %lu s", what, files, done / 1024, secs);
-  (void)0;
+  sprintf(done_line, "WAVEGET: %s ready: %d files, %luK in %lu s%s", what, files, done / 1024, secs,
+          checked && checked >= files ? ", checksums good" : "");
   if (screenOn) { uiProgress(curName, done, kbTotal, secs ? (done / 1024) / secs : 0, secs); msg(done_line); }
   else printf("\r%-70s\n", done_line);
   return 0;
@@ -778,6 +823,7 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
   sprintf(path, "/pack/%s", k);
   if (from)
     sprintf(path + strlen(path), "%cfrom=%d", strchr(path, '?') ? '&' : '?', from);
+  sprintf(path + strlen(path), "%ccrc=1", strchr(path, '?') ? '&' : '?');
   uiOpen(dir, serverText);
   int rc = doStream(addr, port, path, dir, kbTotal, 0);
   uiClose();
@@ -796,7 +842,7 @@ static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
   rsmKey = NULL;
   uiOpen("WAVE86 ITSELF", serverText);
   if (!screenOn) printf("WAVEGET: updating WAVE86 in %s\n", gameRoot);
-  int rc = doStream(addr, port, "/update", "update", 0, 1);
+  int rc = doStream(addr, port, "/update?crc=1", "update", 0, 1);
   if (rc == 0 && screenOn) {        /* it takes a second: hold it long
                                        enough to be read (a key skips) */
     clockTicks_t t0 = TIMER_GET_CURRENT(), tv = t0;
@@ -841,6 +887,7 @@ int main(int argc, char **argv) {
     srand((unsigned)*biosTicks);
   }
   localPort = (uint16_t)(2048 + (rand() % 16384));
+  crcInit();
 
   strncpy(serverText, argv[2], sizeof(serverText) - 1);
   serverText[sizeof(serverText) - 1] = 0;

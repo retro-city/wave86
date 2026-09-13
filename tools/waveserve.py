@@ -661,6 +661,19 @@ def update_set():
     return sorted(out.items())
 
 
+class CrcWriter:
+    """Passes bytes through to the socket and keeps their CRC32, so each
+    file in a pack can be followed by the number the client should have
+    arrived at. Same polynomial as zlib and as WAVEGET's table."""
+
+    def __init__(self, w):
+        self.w, self.crc = w, 0
+
+    def write(self, b):
+        self.crc = zlib.crc32(b, self.crc)
+        return self.w.write(b)
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
@@ -676,14 +689,18 @@ class H(BaseHTTPRequestHandler):
         with LOCK:
             games = GAMES
         p = self.path
-        if p == "/update":          # WAVEGET UPDATE: the programs themselves
+        if p.startswith("/update"):  # WAVEGET UPDATE: the programs themselves
             files = update_set()
+            crc = p.endswith("crc=1")
             print("waveserve: update ->", ", ".join(n for n, _ in files), file=sys.stderr)
             self._head("application/octet-stream")
             for name, fp in files:
                 self.wfile.write(f"F {os.path.getsize(fp)} {name}\n".encode())
+                cw = CrcWriter(self.wfile)
                 with open(fp, "rb") as f:
-                    shutil.copyfileobj(f, self.wfile, 65536)
+                    shutil.copyfileobj(f, cw, 65536)
+                if crc:
+                    self.wfile.write(f"C {cw.crc & 0xFFFFFFFF}\n".encode())
             self.wfile.write(b"E\n")
             return
         if p == "/list":
@@ -753,31 +770,46 @@ class H(BaseHTTPRequestHandler):
             done = sum(e[2] for e in entries[:skip])
             entries = entries[skip:]
             self.wfile.write(f"S {skip} {done}\n".encode())
+        # ?crc=1: every file is followed by "C <crc32>", which the client
+        # checks against what it wrote. A client that does not ask gets the
+        # stream it has always got.
+        want_crc = args.get("crc") == "1"
+
+        def end_file(cw):
+            if want_crc:
+                self.wfile.write(f"C {cw.crc & 0xFFFFFFFF}\n".encode())
+
         if g["zip"]:
             with zipfile.ZipFile(g["zip"]) as z:
                 for entry in entries:
                     rel, name, size = entry[:3]
+                    cw = CrcWriter(self.wfile)
                     if len(entry) == 4 and isinstance(entry[3], bytes):
                         body = entry[3]
                         if b"%NDSRV%" in body:      # the address this client reached us on
                             body = body.replace(b"%NDSRV%", f"{self.my_address()}:{NETDRIVE_PORT}".encode())
                         self.wfile.write(f"F {len(body)} {rel}\n".encode())
-                        self.wfile.write(body)
+                        cw.write(body)
+                        end_file(cw)
                         continue
                     self.wfile.write(f"F {size} {rel}\n".encode())
                     if len(entry) == 4:
                         if isinstance(entry[3], bytes):
-                            self.wfile.write(entry[3])
+                            cw.write(entry[3])
                         else:
-                            self.send_iso(z, entry[3])
+                            self.send_iso(z, entry[3], cw)
+                        end_file(cw)
                         continue
                     with z.open(name) as f:
-                        shutil.copyfileobj(f, self.wfile, 65536)
+                        shutil.copyfileobj(f, cw, 65536)
+                    end_file(cw)
         else:                           # plain files on disk (TDC)
             for rel, fp, size in entries:
+                cw = CrcWriter(self.wfile)
                 self.wfile.write(f"F {size} {rel}\n".encode())
                 with open(fp, "rb") as f:
-                    shutil.copyfileobj(f, self.wfile, 65536)
+                    shutil.copyfileobj(f, cw, 65536)
+                end_file(cw)
         self.wfile.write(b"E\n")
 
     def my_address(self):
@@ -801,9 +833,10 @@ class H(BaseHTTPRequestHandler):
             pass
         return local
 
-    def send_iso(self, z, spec):
+    def send_iso(self, z, spec, out=None):
         """stream the 2048-byte payload of each sector of a data track"""
         member, skip, ssize, start, count = spec
+        out = out or self.wfile
         buf = bytearray()
         with z.open(member) as f:
             left = start * ssize             # zip streams cannot seek
@@ -819,10 +852,10 @@ class H(BaseHTTPRequestHandler):
                     break
                 buf += s[skip:skip + 2048]
                 if len(buf) >= 65536:
-                    self.wfile.write(buf)
+                    out.write(buf)
                     buf = bytearray()
         if buf:
-            self.wfile.write(buf)
+            out.write(buf)
 
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.client_address[0], fmt % args))

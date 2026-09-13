@@ -62,6 +62,12 @@ note in the game's folder and carries on from there next time, and
 whatever the queue did not get to is still queued when WAVE86 comes
 back up.
 
+Every file is checked against a CRC32 from the server as it is written,
+so a transfer that says "checksums good" arrived intact; a file that did
+not is named and fetched again next time. That guards against a bad
+cable or a tired card, not against anything on the network pretending to
+be your server - the protocol is plain HTTP with no authentication.
+
 While a game comes in, WAVEGET shows a progress screen - the bar, the
 rate, the files as they land - and plays the soundtrack from MUSIC\ on
 the AdLib. M, +, -, < and > work there as they do in the menu, Esc

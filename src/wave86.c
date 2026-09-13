@@ -575,6 +575,25 @@ static void net_play(int nsel)
     hand_off(msg);
 }
 
+/* M: when nothing happens, say why - no card, or no tracks and the
+   folder they were looked for in */
+static void music_key(void)
+{
+    char msg[80];
+    if (!mus_present) {
+        ui_status("NO ADLIB OR SOUND BLASTER FOUND (adlib=1 IN WAVE86.INI FORCES IT).");
+        return;
+    }
+    if (!mus_ntracks) {
+        sprintf(msg, "NO TRACKS IN %s%sMUSIC", home_dir,
+                home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
+        ui_status(msg);
+        return;
+    }
+    mus_toggle();
+    ui_status(NULL);
+}
+
 /* a download landed, but the scan found nothing to run in the folder */
 static void net_arrived_notice(void)
 {
@@ -830,7 +849,7 @@ int main(int argc, char **argv)
                     if (i == -2) net_arrived_notice();
                 }
                 continue;
-            case 'm': case 'M': mus_toggle(); ui_status(NULL); continue;
+            case 'm': case 'M': music_key(); continue;
             case '+': case '=': mus_volume(1); ui_music_volshow(); continue;
             case '-': case '_': mus_volume(-1); ui_music_volshow(); continue;
             case '.': case '>': mus_skip(1); ui_status(NULL); continue;
@@ -906,8 +925,7 @@ int main(int argc, char **argv)
             net_redraw(0, 0);
             break;
         case 'm': case 'M':
-            mus_toggle();
-            ui_status(NULL);
+            music_key();
             break;
         case '+': case '=':
             mus_volume(1);

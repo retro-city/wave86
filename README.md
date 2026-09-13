@@ -426,6 +426,23 @@ and it carries on. Inside the batch, `Esc` (exit code 2) stops the rest
 of the queue, while a game the server cannot provide (3) is skipped and
 the next one starts.
 
+### Is what arrived what was sent?
+
+TCP's 16-bit checksum is thin cover for a few hundred megabytes over a
+tired ISA card, so WAVEGET asks for `?crc=1` and the server follows every
+file with `C <crc32>`. The number is worked out on the DOS side as the
+bytes are written - no second pass over the disk - and a file that does
+not match stops the transfer there and then, naming the file. It is not
+counted as done, so the resume note points at it and the next attempt
+fetches it again. A run where every file matched says so: *checksums
+good*. Files skipped by a resume were checked when they were written.
+
+That is corruption, not security. The protocol is plain HTTP on your own
+network with no authentication and no encryption: anything on the LAN
+could answer instead of your server, and the CRC would then be the
+attacker's CRC. It is meant for a machine you own on a network you
+trust.
+
 ### The transfer screen
 
 A game takes minutes to arrive on a 486, so `WAVEGET` takes the screen
