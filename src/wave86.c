@@ -581,6 +581,7 @@ static void write_bat(const Game *g, int use_setup)
     if (dbg) {                         /* the disc as it stands, before it goes */
         fprintf(f, "@echo off\npause\n");
         fprintf(f, "echo [WAVE86] the game has finished. CD=%%CD%%\n");
+        fprintf(f, "if not \"%%CD%%\"==\"\" dir /w %%CD%%:\\\n");
         fprintf(f, "pause\n@echo on\n");
     }
     emit_cd(f, g, 1, bat);
