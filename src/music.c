@@ -75,13 +75,54 @@ static const signed char op_2nd[0x16] = {
     0, 0, 0, 1, 1, 1
 };
 
+/*
+ * A YM3812 needs 3.3 us to itself after an index write and 23 us after a
+ * data write, and the way everyone waits is to read its status port,
+ * each read being one ISA bus cycle. Six and thirty-five reads is right
+ * for a real chip on a real bus, about a microsecond each. A card that
+ * emulates the OPL in firmware answers far more slowly - the bus waits
+ * for it - so those same reads can take ten times as long and the
+ * soundtrack starts costing a third of the machine, which a download
+ * notices. opl_calibrate() times one read and keeps the delays to what
+ * the chip is actually owed; it can only shorten them, never stretch.
+ */
+static int opl_d1 = 6, opl_d2 = 35;
+
 static void opl_out(unsigned char reg, unsigned char val)
 {
     int i;
     outp(OPL_INDEX, reg);
-    for (i = 0; i < 6; i++) inp(OPL_INDEX);
+    for (i = 0; i < opl_d1; i++) inp(OPL_INDEX);
     outp(OPL_DATA, val);
-    for (i = 0; i < 35; i++) inp(OPL_INDEX);
+    for (i = 0; i < opl_d2; i++) inp(OPL_INDEX);
+}
+
+/* tenths of a microsecond per status read, as measured */
+static unsigned opl_read_ns = 0;
+
+static void opl_calibrate(void)
+{
+    unsigned long __far *ticks = (unsigned long __far *)MK_FP(0x40, 0x6C);
+    unsigned long t0, per10;
+    int i;
+
+    t0 = *ticks;
+    while (*ticks == t0)                /* line up with a tick */
+        t0 = *ticks - 0;
+    t0 = *ticks;
+    for (i = 0; i < 1000; i++)
+        inp(OPL_INDEX);
+    /* tenths of a microsecond for one read: ticks are 54925 us */
+    per10 = (*ticks - t0) * 549250UL / 1000;
+    if (!per10)
+        per10 = 5;                      /* faster than we can measure */
+    opl_read_ns = (unsigned)per10;
+    opl_d1 = (int)((33 + per10 - 1) / per10);        /* 3.3 us */
+    opl_d2 = (int)((230 + per10 - 1) / per10);       /* 23 us */
+    if (opl_d1 < 1) opl_d1 = 1;
+    if (opl_d2 < 1) opl_d2 = 1;
+    if (opl_d1 > 6) opl_d1 = 6;
+    if (opl_d2 > 35) opl_d2 = 35;
 }
 
 static void opl_reset(void)
@@ -423,8 +464,10 @@ void mus_init(void)
         if (!opl_present && sb_present)
             opl_present = 1;
     }
-    if (opl_present)
+    if (opl_present) {
+        opl_calibrate();                /* how slow is this card's bus? */
         opl_reset();
+    }
     mus_present = opl_present || sb_usable;
     if (!mus_present)
         return;
@@ -484,8 +527,9 @@ void mus_diag(void)
         for (i = 0; i < 2000; i++)
             opl_out(0x01, 0x20);        /* waveform select enable: harmless */
         us = (*ticks - t0) * 54925UL / 2000;
-        printf("OPL    : %lu us per register write, so the player costs about %lu%% of the CPU\n",
-               us, us * 560 * 3 / 10000);
+        printf("OPL    : %lu us per register write (%u.%u us per status read, %d+%d of them),\n",
+               us, opl_read_ns / 10, opl_read_ns % 10, opl_d1, opl_d2);
+        printf("         so the player costs about %lu%% of the CPU\n", us * 560 * 3 / 10000);
     }
     printf("Tracks : %d in MUSIC\\ (IMF/WLF need FM, MOD needs a DSP)\n",
            mus_ntracks);

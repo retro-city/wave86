@@ -8,6 +8,7 @@
  */
 #include <stdio.h>
 #include <io.h>
+#include <fcntl.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -175,28 +176,55 @@ static const char *under_dosbox(void)
  * SHSUCDHD (image as a CD device) + SHSUCDX (drive letter) from the
  * launcher's folder, in their 8086 builds on anything below a 386.
  */
-/* Only a disc that stays on the server needs the NetDrive lines; telling
-   a local one where the server is just eats environment space, which is
-   in short supply on a machine with the default 256 bytes. */
-static int bat_uses_netdrive(const Game *g)
-{
-    char path[PATH_LEN + 24];
-    char buf[160];
-    FILE *f;
-    int found = 0;
+/*
+ * What a game's IMGMOUNT.BAT says about itself: bit 1 if it fetches its
+ * disc over NetDrive (only then is the server address worth setting -
+ * two variables saved on every local disc), bit 2 if it names an image,
+ * which debug mode then shows the mount command for.
+ *
+ * Read through the DOS calls rather than stdio, and before RUNGAME.BAT is
+ * opened. The launcher's data segment is a hair under its 64K: there is
+ * room for one open stream and its buffer, not two, and the second one
+ * fails with "not enough memory to allocate file structures".
+ */
+#define BAT_NETDRIVE 1
+#define BAT_ISO      2
 
+static int bat_scan(const Game *g, char *iso)
+{
+    char path[PATH_LEN + 24], buf[152];
+    int h, flags = 0, keep = 0, n;
+
+    iso[0] = 0;
     sprintf(path, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
-    f = fopen(path, "r");
-    if (!f)
+    h = open(path, O_RDONLY | O_BINARY);
+    if (h < 0)
         return 0;
-    while (!found && fgets(buf, sizeof(buf), f))
-        if (strstr(buf, "NETDRIVE") != NULL)
-            found = 1;
-    fclose(f);
-    return found;
+    while ((n = read(h, buf + keep, 128)) > 0) {
+        char *dot;
+        n += keep;
+        buf[n] = 0;
+        if (strstr(buf, "NETDRIVE"))
+            flags |= BAT_NETDRIVE;
+        for (dot = iso[0] ? NULL : strstr(buf, ".ISO"); dot; dot = strstr(dot + 1, ".ISO")) {
+            char *s = dot;
+            while (s > buf && s[-1] != '\\' && s[-1] != ' ' && s[-1] != ':')
+                s--;
+            if (dot > s && dot - s <= 8) {
+                memcpy(iso, s, (unsigned)(dot - s) + 4);
+                iso[(dot - s) + 4] = 0;
+                flags |= BAT_ISO;
+                break;
+            }
+        }
+        keep = n < 12 ? n : 12;         /* a name split across two reads */
+        memmove(buf, buf + n - keep, keep);
+    }
+    close(h);
+    return flags;
 }
 
-static void emit_cd(FILE *f, const Game *g, int after)
+static void emit_cd(FILE *f, const Game *g, int after, int bat)
 {
     char iso[PATH_LEN + 32];
     const char *t, *sep, *hd, *cdx;
@@ -212,7 +240,7 @@ static void emit_cd(FILE *f, const Game *g, int after)
             char host[32];
             char *colon;
             const char *v;
-            if (bat_uses_netdrive(g)) {
+            if (bat & BAT_NETDRIVE) {
                 strncpy(host, cfg_server, sizeof(host) - 1);
                 host[sizeof(host) - 1] = 0;
                 colon = strchr(host, ':');
@@ -313,11 +341,13 @@ static int debug_mode(void)
 
 static void write_bat(const Game *g, int use_setup)
 {
-    FILE *f = fopen("RUNGAME.BAT", "w");
     const char *prog = use_setup ? g->setup : g->exe;
     const char *dot = strrchr(prog, '.');
     int is_bat = dot && stricmp(dot + 1, "BAT") == 0;
     int dbg = debug_mode();
+    char iso[16];
+    int bat = (g->flags & GF_CDBAT) ? bat_scan(g, iso) : 0;   /* before the open */
+    FILE *f = fopen("RUNGAME.BAT", "w");
 
     if (!f)
         return;
@@ -331,7 +361,7 @@ static void write_bat(const Game *g, int use_setup)
     fprintf(f, "%c:\n", gamedir[0]);
     fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
     ini_emit_extras(f, g->dir, 0);     /* sound mode, env, pre */
-    emit_cd(f, g, 0);
+    emit_cd(f, g, 0, bat);
     if (dbg) {
         fprintf(f, "@echo off\necho [WAVE86] the environment the game will see:\n");
         fprintf(f, "set\npause\n@echo on\n");
@@ -339,9 +369,23 @@ static void write_bat(const Game *g, int use_setup)
     if (dbg && (g->flags & GF_CDBAT)) {
         /* The game's own batch calls IMGMOUNT.BAT, which starts with echo
            off and gives its drivers /Q, so the mount goes past in silence.
-           Run it here on its own first, look at what it produced, and take
-           it down again before the game does the same thing for real. */
-        fprintf(f, "@echo off\necho [WAVE86] mounting the disc on its own first:\n@echo on\n");
+           Say what it is about to do - the shell expands the variables in
+           an echo, so empty ones show up as gaps - check the image is
+           where the batch will look for it, then run it here on its own,
+           look at what it produced, and take it down again before the game
+           does the same thing for real. */
+        const char *byname = ini_global("cdrom_name");
+        fprintf(f, "@echo off\n");
+        if (bat & BAT_ISO) {
+            if (byname && byname[0] == '1')
+                fprintf(f, "echo [WAVE86] the card will be told: %%WAVECDCMD%% %s\n", iso);
+            else
+                fprintf(f, "echo [WAVE86] the card will be told: %%WAVECDCMD%% %%WAVECDROM%%\\%s\n", iso);
+            fprintf(f, "echo [WAVE86] and the image should be here:\n");
+            fprintf(f, "dir %%WAVECDROM%%\\%s\n", iso);
+            fprintf(f, "pause\n");
+        }
+        fprintf(f, "echo [WAVE86] mounting the disc on its own first:\n@echo on\n");
         fprintf(f, "call IMGMOUNT.BAT\n");
         fprintf(f, "@echo off\necho [WAVE86] IMGMOUNT.BAT is done and says CD=%%CD%%\n");
         fprintf(f, "if \"%%CD%%\"==\"\" echo [WAVE86] it set no letter at all\n");
@@ -361,7 +405,7 @@ static void write_bat(const Game *g, int use_setup)
         fprintf(f, "dir %%CD%%:\\\n");
         fprintf(f, "pause\n@echo on\n");
     }
-    emit_cd(f, g, 1);
+    emit_cd(f, g, 1, bat);
     ini_emit_extras(f, g->dir, 1);     /* post */
     if (dbg)
         fprintf(f, "pause\n@echo off\n");

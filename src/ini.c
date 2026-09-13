@@ -21,8 +21,13 @@
 #include <ctype.h>
 #include "wave86.h"
 
-#define MAX_LINES 256
-#define LINE_LEN  96
+/* The INI is held in memory for reading (ini_global, ini_apply); writing
+   streams the file through a .TMP instead, so a file with more lines than
+   fit is never rewritten short. What does not fit is simply not seen, so
+   these are sized for a big collection while leaving the 64K data segment
+   room for a stack and a heap - two open streams need about 1.2K of it. */
+#define MAX_LINES 220
+#define LINE_LEN  80
 
 static char lines[MAX_LINES][LINE_LEN];
 static int nlines = 0;
