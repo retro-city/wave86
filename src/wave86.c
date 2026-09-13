@@ -80,12 +80,12 @@ static void put_template(FILE *f, const char *t, const char *iso)
     fputc('\n', f);
 }
 
-/* cdrom= without a trailing backslash, so that the batches' %WAVECDROM%\NAME
-   never comes out as W:\\NAME. NULL when the INI does not say. */
+/* cdrom_storage= without a trailing backslash, so the batches'
+   %WAVECDROM%\NAME never comes out as W:\\NAME. NULL when the INI is silent. */
 static const char *cd_root(void)
 {
     static char buf[PATH_LEN];
-    const char *v = ini_global("cdrom");
+    const char *v = ini_global("cdrom_storage");
     int n;
     if (!v || !v[0])
         return NULL;
@@ -116,10 +116,10 @@ static void put_cmd(FILE *f, const char *var, const char *cmd)
 }
 
 /* What the game batches need to know about discs, from the INI: where the
-   images are (cdrom=), how to mount them (imgmount=SOFTWARE, or a card with
-   its own CD-ROM emulation: PICOGUS, PICOMEM), the card's command
+   images are (cdrom_storage=), how to mount them (imgmount=SOFTWARE, or a
+   card with its own CD-ROM emulation: PICOGUS, PICOMEM), the card's command
    (cdmount_<mode>=, the image appended) and the letter its disc appears on
-   (cdletter=). cdname=1 passes the image's name alone, not its path. */
+   (cdrom_letter=). cdrom_name=1 passes the image's name alone, not its path. */
 static void emit_cd_env(FILE *f)
 {
     const char *v;
@@ -147,9 +147,9 @@ static void emit_cd_env(FILE *f)
                 put_cmd(f, "WAVECDCMDU", v);
         }
     }
-    if ((v = ini_global("cdletter")) && v[0])
+    if ((v = ini_global("cdrom_letter")) && v[0])
         fprintf(f, "set WAVECDL=%c\n", toupper((unsigned char)v[0]));
-    if ((v = ini_global("cdname")) && v[0] == '1')
+    if ((v = ini_global("cdrom_name")) && v[0] == '1')
         fprintf(f, "set WAVECDN=1\n");
 }
 

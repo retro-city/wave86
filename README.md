@@ -308,26 +308,26 @@ A CD game from the server comes with its own `IMGMOUNT.BAT`, and its
 start batch calls it first, so the game also runs from a plain prompt
 with the WAVE86 folder on the PATH. The batch reads two things from the
 environment, which the launcher sets from the INI: `WAVECDROM`, the
-folder holding the discs (`cdrom=`; without it a game keeps its disc in
+folder holding the discs (`cdrom_storage=`; without it a game keeps its disc in
 its own `CD\` folder, with it every disc goes there, named after the
 game, `SETTLR2G.ISO`), and `IMGMOUNT`, how to mount them: `SOFTWARE`
 (SHSUCDHD and SHSUCDX, the default) or the name of a card that emulates
 a CD-ROM drive itself - `PICOGUS`, `PICOMEM` - which DOS sees as a real
-drive with its letter fixed at boot (`cdletter=`), the image loaded by
-the card's own command, `cdmount_<mode>=` (and `cdunmount_<mode>=`).
+drive with its letter fixed at boot (`cdrom_letter=`), the image loaded
+by the card's own command, `cdmount_<mode>=` (and `cdunmount_<mode>=`).
 The image is appended to that command, as its full path or, with
-`cdname=1`, as its bare file name.
+`cdrom_name=1`, as its bare file name.
 
 A PicoGUS with CD-ROM support reads its images from a drive, so put
 them there and let PGUSINIT load them:
 
-    cdrom=W:
+    cdrom_storage=W:
     imgmount=PICOGUS
-    cdletter=D
+    cdrom_letter=D
     cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdload
 
 `PGUSINIT.EXE /cdload` is what PICOGUS runs when `cdmount_picogus=` is
-not given. A PicoMem 2 would be `cdrom=S:\CDROM`, `imgmount=PICOMEM`,
+not given. A PicoMem 2 would be `cdrom_storage=S:\CDROM`, `imgmount=PICOMEM`,
 once its firmware has a command to load an image; until then keep it on
 `SOFTWARE` and the discs still collect on its SD card. Under DOSBox the
 batch uses IMGMOUNT whatever the mode says; playing off the server

@@ -46,12 +46,12 @@ image in its own CD\ folder, and SHSUCDHD + SHSUCDX put it on D: while
 the game runs. WAVE86.INI can name one folder for every disc instead,
 and hand the mounting to a card that emulates a CD-ROM drive itself -
 a PicoGUS, and a PicoMem 2 once its firmware can load an image:
-    cdrom=W:                  (where the images go; W: here is the PicoGUS's)
+    cdrom_storage=W:          (where the images go; W: here is the PicoGUS's)
     imgmount=PICOGUS          (SOFTWARE, the default, uses SHSUCDHD+SHSUCDX)
-    cdletter=D                (the letter MSCDEX gave the card's drive)
+    cdrom_letter=D            (the letter MSCDEX gave the card's drive)
     cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdload
-The image is appended to that command; cdname=1 appends its bare file
-name instead of the whole path. PGUSINIT.EXE /cdload is the default, so
+The image is appended to that command; cdrom_name=1 appends its bare
+file name instead of the whole path. PGUSINIT.EXE /cdload is the default, so
 cdmount_picogus= is only needed to give PGUSINIT's path.
 
 Updating over the network
