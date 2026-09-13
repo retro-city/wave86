@@ -84,8 +84,14 @@ When a game will not start
 --------------------------
 debug=1 in WAVE86.INI (or WAVE /debug) makes the batch that runs a game
 show every line and stop at each step: the environment it hands the
-game, the disc mounted on its own with a listing of the letter it landed
-on, then the game itself. It leaves the batch behind as RUNLAST.BAT.
+game, the mount command as it will run, whether the image is where it
+should be, the disc mounted on its own, then the game itself. It leaves
+the batch behind as WAVELAST.BAT.
+
+That batch is WAVERUN.BAT (it was RUNGAME.BAT; it runs WAVEGET as often
+as it runs a game). WAVE.BAT cannot be replaced over the network, since
+the shell is reading it at the time, so until you copy the new one the
+launcher also leaves a one-line RUNGAME.BAT that calls it.
 
 "Out of environment space" (4DOS: "Out of environment/alias space") from
 any of those SET lines is the usual cause of a disc that will not mount:

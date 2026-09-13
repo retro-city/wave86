@@ -276,7 +276,7 @@ int ini_write_name(const char *dir, const char *name)
 }
 
 /*
- * Extra lines for RUNGAME.BAT from a game's section:
+ * Extra lines for WAVERUN.BAT from a game's section:
  *   before the game: the soundcmd_<mode> for its sound= (or the global
  *   default), then env=VAR=value as SET, then pre=command
  *   after the game: post=command

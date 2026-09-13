@@ -40,6 +40,17 @@ void ui_net_keybar(void);
 
 static char launcher_dir[PATH_LEN];     /* cwd at start: where to return */
 char home_dir[PATH_LEN];                /* EXE directory: INI and MUSIC\ */
+/*
+ * The batch the launcher hands work to. It was RUNGAME.BAT, but it runs
+ * WAVEGET as often as it runs a game. WAVE.BAT cannot be updated over the
+ * network - COMMAND.COM is reading it line by line while the update runs
+ * - so a copy from before the rename only knows the old name; while that
+ * is the one in use, a one-line RUNGAME.BAT calling this one keeps
+ * everything working.
+ */
+#define RUNBAT  "WAVERUN.BAT"
+#define OLDBAT  "RUNGAME.BAT"
+
 static int opt_debug = 0;       /* /debug, or debug=1 in the INI */
 static int opt_dump = 0;
 static int opt_dumpnet = 0;
@@ -478,11 +489,11 @@ static void write_bat(const Game *g, int use_setup)
         if ((bat & BAT_GEN) && !(bat & BAT_NETDRIVE) && write_imgmount(g, img, iso))
             bat |= BAT_OWN;
     }
-    f = fopen("RUNGAME.BAT", "w");
+    f = fopen(RUNBAT, "w");
     if (!f)
         return;
     if (dbg) {
-        fprintf(f, "@echo off\ncopy RUNGAME.BAT RUNLAST.BAT > NUL\n");
+        fprintf(f, "@echo off\ncopy %s WAVELAST.BAT > NUL\n", RUNBAT);
         fprintf(f, "echo [WAVE86] %s, debug=1. Ctrl-C stops here.\n", g->dir);
         fprintf(f, "@echo on\n");
     } else {
@@ -633,10 +644,43 @@ static void quit(void)
  */
 static void hand_off(const char *msg);
 
+/* A WAVE.BAT from before the rename drives RUNGAME.BAT and would find
+   nothing to do; leave it a one-liner that calls ours. */
+static void shim_old_wave_bat(void)
+{
+    char path[PATH_LEN + 16], buf[160];
+    int h, n, keep = 0, old = 1;
+    FILE *f;
+
+    sprintf(path, "%s%sWAVE.BAT", launcher_dir,
+            launcher_dir[strlen(launcher_dir) - 1] == '\\' ? "" : "\\");
+    h = open(path, O_RDONLY | O_BINARY);
+    if (h < 0)
+        return;                         /* started bare: no wrapper to help */
+    while ((n = read(h, buf + keep, 128)) > 0) {
+        n += keep;
+        buf[n] = 0;
+        if (strstr(buf, "WAVERUN")) {
+            old = 0;
+            break;
+        }
+        keep = n < 12 ? n : 12;
+        memmove(buf, buf + n - keep, keep);
+    }
+    close(h);
+    if (!old)
+        return;
+    f = fopen(OLDBAT, "w");
+    if (!f)
+        return;
+    fprintf(f, "@echo off\ncall %s\n", RUNBAT);
+    fclose(f);
+}
+
 /* run a command line (WAVEGET) through the same batch loop as a game */
 static void run_command(const char *cmd, const char *what)
 {
-    FILE *f = fopen("RUNGAME.BAT", "w");
+    FILE *f = fopen(RUNBAT, "w");
     if (!f)
         return;
     fprintf(f, "@echo off\n%s\n%c:\ncd %s\n", cmd, launcher_dir[0], launcher_dir);
@@ -659,6 +703,7 @@ static void launch(const Game *g, int use_setup)
 static void hand_off(const char *msg)
 {
     if (getenv("WAVE86")) {
+        shim_old_wave_bat();
         mus_shutdown();
         text_mode_plain();
         printf("%s\n", msg);
@@ -669,8 +714,9 @@ static void hand_off(const char *msg)
     text_mode_plain();
     printf("%s\n", msg);
     printf("(type WAVE instead to give games all memory)\n");
-    system("RUNGAME.BAT");
-    remove("RUNGAME.BAT");
+    system(RUNBAT);
+    remove(RUNBAT);
+    remove(OLDBAT);
 
     vid_text_mode();
     vid_set_palette();
@@ -752,7 +798,7 @@ static void net_download(int nsel)
 
     waveget_path(exe);
     net_pending_reset();
-    f = fopen("RUNGAME.BAT", "w");
+    f = fopen(RUNBAT, "w");
     if (!f)
         return;
     fprintf(f, "@echo off\n");
@@ -830,7 +876,7 @@ static void net_play(int nsel)
     if (stricmp(g->src, "exodos") == 0) strcpy(key, g->dir);
     else sprintf(key, "%s:%s", g->src, g->dir);
     net_mark_view();
-    f = fopen("RUNGAME.BAT", "w");
+    f = fopen(RUNBAT, "w");
     if (!f)
         return;
     fprintf(f, "@echo off\nset WAVENDSRV=%s:%s\n", host, v && v[0] ? v : "2002");
@@ -914,7 +960,8 @@ int main(int argc, char **argv)
             opt_debug = 1;
     }
 
-    remove("RUNGAME.BAT");
+    remove(RUNBAT);
+    remove(OLDBAT);
     getcwd(launcher_dir, PATH_LEN);
 
     /* DOS hands us our full path in argv[0]: resources live beside it,

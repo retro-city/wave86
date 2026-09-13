@@ -149,8 +149,8 @@ def smoke_test(games_dir, games, build):
               "C:\\WAVE86\\SHCDHD86.EXE /U /Q > NUL",
               "set WAVE86=LAUNCH",
               f"WAVE86 /launch {name} > C:\\RESULTS\\LAUNCH.TXT",
-              "copy RUNGAME.BAT C:\\RESULTS\\RUNGAME.TXT > NUL",
-              "del RUNGAME.BAT"]
+              "copy WAVERUN.BAT C:\\RESULTS\\RUNGAME.TXT > NUL",
+              "del WAVERUN.BAT"]
     return bat(t), cd
 
 

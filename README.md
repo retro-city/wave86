@@ -554,7 +554,7 @@ list fetch from a waveserve here, the chain the 486 uses. Needs mtools
 
 ## Layout
 
-    src/wave86.c   main loop, RUNGAME.BAT, command line flags
+    src/wave86.c   main loop, WAVERUN.BAT, command line flags
     src/ui.c       the screen: direct video memory, CP437, VU meter
     src/vga.c      card detection, palette, screen dump
     src/scan.c     finding games and their executables
