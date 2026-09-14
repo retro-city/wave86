@@ -328,7 +328,9 @@ them there and let PGUSINIT load them:
 
 `PGUSINIT.EXE /cdloadname` is what PICOGUS runs when `cdmount_picogus=`
 is not given - `/cdload` takes the number of an image, `/cdloadname` its
-name.
+name. The card needs a moment before a disc it has just been handed can
+be read, and a game that looks at once finds the drive empty, so the
+batch waits for a key after loading the image (`cdrom_pause=0` skips it).
 
 The launcher writes a game's `IMGMOUNT.BAT` itself from these settings,
 every time it starts that game, with the image path, the command and the

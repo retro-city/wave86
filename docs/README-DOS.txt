@@ -52,7 +52,9 @@ a PicoGUS, and a PicoMem 2 once its firmware can load an image:
     cdmount_picogus=C:\PICOGUS\PGUSINIT.EXE /cdloadname
 The image is appended to that command - /cdloadname takes a name, while
 /cdload takes the number of an image - and cdrom_name=1 appends the bare
-file name instead of the whole path.
+file name instead of the whole path. The card needs a moment before the
+disc it has been handed can be read, so the batch waits for a key after
+loading it; cdrom_pause=0 in the INI skips the wait.
 
 WAVE86 writes each game's IMGMOUNT.BAT itself, from these settings, every
 time it starts that game: the paths, the command and the letter go into

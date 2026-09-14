@@ -275,7 +275,7 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
     char path[PATH_LEN + 24], mode[16], cmd[80], cmdu[80];
     const char *v, *sep;
     char letter = 'D';
-    int byname = 0, card, i;
+    int byname = 0, card, i, settle = 1;
     FILE *f;
 
     mode[0] = cmd[0] = cmdu[0] = 0;
@@ -302,6 +302,11 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
         letter = (char)toupper((unsigned char)v[0]);
     if ((v = ini_global("cdrom_name")) != NULL && v[0] == '1')
         byname = 1;
+    /* A card takes a moment to present a disc it has just been handed, and
+       a game that looks straight away finds an empty drive: wait for a key
+       unless cdrom_pause=0 says the card is quick enough. */
+    if ((v = ini_global("cdrom_pause")) != NULL && v[0] == '0')
+        settle = 0;
 
     sprintf(path, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
     f = fopen(path, "w");
@@ -317,6 +322,8 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
     if (card) {
         sprintf(dbg_mount, "%s %s", cmd, byname ? iso : img);
         fprintf(f, "%s\n", dbg_mount);
+        if (settle)
+            fprintf(f, "echo The card is loading %s. Press a key once it is ready.\npause > NUL\n", iso);
         fprintf(f, "set CD=%c\n", letter);
         fprintf(f, "goto done\n");
     } else {
