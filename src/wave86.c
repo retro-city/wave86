@@ -684,33 +684,17 @@ static void quit(void)
  */
 static void hand_off(const char *msg);
 
-/* A WAVE.BAT from before the rename drives RUNGAME.BAT and would find
-   nothing to do; leave it a one-liner that calls ours. */
+/*
+ * A WAVE.BAT from before the rename drives RUNGAME.BAT and would find
+ * nothing to do, so every hand-off also leaves a one-liner by that name
+ * calling ours. There is no telling which wrapper is in charge - WAVE runs
+ * off the PATH, so its folder is not the one we are in - and there is no
+ * need to: an old loop runs the one-liner, and a new one runs WAVERUN.BAT
+ * and deletes both.
+ */
 static void shim_old_wave_bat(void)
 {
-    char path[PATH_LEN + 16], buf[160];
-    int h, n, keep = 0, old = 1;
-    FILE *f;
-
-    sprintf(path, "%s%sWAVE.BAT", launcher_dir,
-            launcher_dir[strlen(launcher_dir) - 1] == '\\' ? "" : "\\");
-    h = open(path, O_RDONLY | O_BINARY);
-    if (h < 0)
-        return;                         /* started bare: no wrapper to help */
-    while ((n = read(h, buf + keep, 128)) > 0) {
-        n += keep;
-        buf[n] = 0;
-        if (strstr(buf, "WAVERUN")) {
-            old = 0;
-            break;
-        }
-        keep = n < 12 ? n : 12;
-        memmove(buf, buf + n - keep, keep);
-    }
-    close(h);
-    if (!old)
-        return;
-    f = fopen(OLDBAT, "w");
+    FILE *f = fopen(OLDBAT, "w");
     if (!f)
         return;
     fprintf(f, "@echo off\ncall %s\n", RUNBAT);
