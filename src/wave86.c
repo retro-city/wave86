@@ -334,7 +334,18 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
                 fprintf(f, "cd %.*s\n", (int)(last - img - 2), img + 2);
         }
         sprintf(dbg_mount, "%s %s", cmd, byname ? iso : img);
+        /* A card that is still busy - pgusinit /mode reloads the PicoGUS
+           firmware, and the game's sound= command ran just before this -
+           refuses the image. Ask again rather than start a game with an
+           empty drive. */
+        fprintf(f, ":cdtry\n");
         fprintf(f, "%s\n", dbg_mount);
+        fprintf(f, "if not errorlevel 1 goto cdok\n");
+        fprintf(f, "echo The card did not take %s. It may still be switching mode.\n", iso);
+        fprintf(f, "echo Press a key to try again, or Ctrl-C to give up.\n");
+        fprintf(f, "pause > NUL\n");
+        fprintf(f, "goto cdtry\n");
+        fprintf(f, ":cdok\n");
         if (settle)
             fprintf(f, "echo The card is loading %s. Press a key once it is ready.\npause > NUL\n", iso);
         if (img[1] == ':' && last) {

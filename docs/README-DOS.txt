@@ -56,6 +56,11 @@ file name instead of the whole path. The card needs a moment before the
 disc it has been handed can be read, so the batch waits for a key after
 loading it; cdrom_pause=0 in the INI skips the wait.
 
+A game with sound= switches the PicoGUS's mode first, and pgusinit /mode
+reloads the card's firmware: an image handed over in the next breath is
+refused. If the load command fails, the batch says so and asks for a key
+to try again.
+
 WAVE86 writes each game's IMGMOUNT.BAT itself, from these settings, every
 time it starts that game: the paths, the command and the letter go into
 the batch as they are, so nothing depends on the environment having room

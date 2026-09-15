@@ -331,6 +331,10 @@ is not given - `/cdload` takes the number of an image, `/cdloadname` its
 name. The card needs a moment before a disc it has just been handed can
 be read, and a game that looks at once finds the drive empty, so the
 batch waits for a key after loading the image (`cdrom_pause=0` skips it).
+A game with `sound=` switches the card's mode just before, and `pgusinit
+/mode` reloads its firmware, so an image handed over straight after is
+refused; when the load command returns an error the batch says so and
+waits for a key to try again.
 
 The launcher writes a game's `IMGMOUNT.BAT` itself from these settings,
 every time it starts that game, with the image path, the command and the
