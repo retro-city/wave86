@@ -618,7 +618,7 @@ static const char *cdromDir = NULL;      /* where the discs go, if not the game 
  * arrived damaged is caught there and then rather than when the game
  * fails to start. Same polynomial as zlib.
  */
-static unsigned long crcTable[256];
+static uint16_t crcLo[256], crcHi[256];   /* the table, in 16-bit halves */
 
 static void crcInit(void) {
   unsigned long c;
@@ -627,14 +627,54 @@ static void crcInit(void) {
     c = (unsigned long)i;
     for (k = 0; k < 8; k++)
       c = (c & 1) ? 0xEDB88320UL ^ (c >> 1) : (c >> 1);
-    crcTable[i] = c;
+    crcLo[i] = (uint16_t)c;
+    crcHi[i] = (uint16_t)(c >> 16);
   }
 }
 
+/*
+ * One byte at a time, by hand. An 8086 has no 32-bit register, so the
+ * compiled "crc = table[(crc ^ b) & 0xFF] ^ (crc >> 8)" juggles two words
+ * for every operation; with the CRC held in DX:BX the shift by eight is
+ * three byte moves. About 13 instructions a byte against 24, which on a
+ * 486 fetching at 160 KB/s is the difference between the checksum being
+ * noticed and not. 8086 opcodes only: shifts by one, LODSB, LOOP.
+ */
 static unsigned long crcAdd(unsigned long crc, const uint8_t *p, uint16_t n) {
-  while (n--)
-    crc = crcTable[(int)((crc ^ *p++) & 0xFF)] ^ (crc >> 8);
-  return crc;
+  uint16_t lo = (uint16_t)crc, hi = (uint16_t)(crc >> 16);
+  if (!n) return crc;
+  _asm {
+    push ds
+    push si
+    push di
+    push es
+    mov  bx, lo
+    mov  dx, hi
+    mov  cx, n
+    mov  ax, seg crcLo
+    mov  es, ax
+    lds  si, p
+  next:
+    lodsb
+    xor  al, bl
+    xor  ah, ah
+    shl  ax, 1
+    mov  di, ax
+    mov  bl, bh
+    mov  bh, dl
+    mov  dl, dh
+    xor  dh, dh
+    xor  bx, es:crcLo[di]
+    xor  dx, es:crcHi[di]
+    loop next
+    pop  es
+    pop  di
+    pop  si
+    pop  ds
+    mov  lo, bx
+    mov  hi, dx
+  }
+  return ((unsigned long)hi << 16) | lo;
 }
 
 /* ------------------------------------------------ resuming a download */
