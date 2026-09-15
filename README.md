@@ -7,8 +7,9 @@ its own and its own soundtrack.
 It is a plain 16-bit real-mode program, so it runs on anything from an
 XT to a 486 and beyond. I build it on a Mac with Open Watcom and try it
 in dosbox-x, and on a real DOS booted in dosbox-x, before it goes onto
-the real machine, a 486 with a PicoGUS. Version 0.2: the network side
-has now been through real hardware, but it is still young.
+the real machine, a 486 with a PicoGUS. Version 0.3: the network side
+has been through real hardware, and a large download now survives being
+interrupted.
 
 ![WAVE86 running in dosbox-x](docs/screenshot.png)
 
