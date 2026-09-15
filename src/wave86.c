@@ -320,10 +320,27 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
     fprintf(f, "if exist Z:\\IMGMOUNT.COM goto dosbox\n");
     fprintf(f, "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx\n");
     if (card) {
+        /* Stand in the image's folder while the card loads it, the way you
+           would at the prompt: a bare name (cdrom_name=1) is looked up in
+           the current directory, and the game batch that calls this one is
+           standing in the game's folder. Back there afterwards - by name,
+           since the image may be on the same drive. */
+        const char *last = strrchr(img, '\\');
+        if (img[1] == ':' && last) {
+            fprintf(f, "%c:\n", img[0]);
+            if (last - img <= 2)
+                fprintf(f, "cd \\\n");
+            else
+                fprintf(f, "cd %.*s\n", (int)(last - img - 2), img + 2);
+        }
         sprintf(dbg_mount, "%s %s", cmd, byname ? iso : img);
         fprintf(f, "%s\n", dbg_mount);
         if (settle)
             fprintf(f, "echo The card is loading %s. Press a key once it is ready.\npause > NUL\n", iso);
+        if (img[1] == ':' && last) {
+            fprintf(f, "%c:\n", gamedir[0]);
+            fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
+        }
         fprintf(f, "set CD=%c\n", letter);
         fprintf(f, "goto done\n");
     } else {
