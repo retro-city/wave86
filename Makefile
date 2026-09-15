@@ -52,7 +52,8 @@ music-files: $(MUSIC)
 # official build) into build/netdrive, so waveserve can keep CD images
 # on this side of the wire. Only needed for waveserve --netdrive.
 ND_VER = 2025-01-10
-ND_BIN = $(shell case "$$(uname -s)-$$(uname -m)" in Darwin-arm64) echo netdrive_darwin_arm64;; Linux-x86_64) echo netdrive_linux_amd64;; Linux-aarch64) echo netdrive_linux_arm64;; *) echo unknown;; esac)
+# (pattern) with both parentheses: a bare pattern) would close the $(shell
+ND_BIN = $(shell case "$$(uname -s)-$$(uname -m)" in (Darwin-arm64) echo netdrive_darwin_arm64;; (Linux-x86_64) echo netdrive_linux_amd64;; (Linux-aarch64) echo netdrive_linux_arm64;; (*) echo unknown;; esac)
 netdrive:
 	@mkdir -p build
 	curl -sL -o build/netdrive-server.zip https://www.brutman.com/mTCP/download/mTCP_NetDrive_server-bin_$(ND_VER).zip
