@@ -437,13 +437,24 @@ under the cursor in the install queue (a mark in the list, the total in
 the details pane), and `I` then fetches the lot, one after another, with
 each transfer showing its place in the queue. Sixteen games fit.
 
-A download that stops part way is not lost. WAVEGET leaves a note,
-`WAVE86.RSM`, in the game's folder saying how many of its files are
-already there and which request they came from; the next attempt asks the
-server to start after them (`/pack/KEY?from=N`, and the server opens the
-stream with `S <files> <bytes>` so the client knows what it skipped). The
-file that was half written when the line went down is sent again from the
-start. The note goes when the game is complete.
+A download that stops part way is not lost, and neither is the file it
+stopped in - which matters when that file is a 600 MB disc image. WAVEGET
+leaves a note, `WAVE86.RSM`, in the game's folder: how many whole files
+are already there, how many bytes of the next one, the CRC of those bytes
+so far, and which request they came from. The next attempt asks for
+`/pack/KEY?from=N&at=B`; the server opens with `S <files> <bytes>` for what
+it left out, sends the half-finished file as `P <size> <B> <name>` with only
+its remaining bytes, and follows it with the CRC of the whole file - it
+checksums the bytes it skips too - so the check at the end still covers
+every byte, however many sessions it took. WAVEGET opens that file where
+it stopped instead of creating it again; if the file on disk is shorter
+than the note says, that one file is fetched afresh next time.
+
+The note is written whenever a transfer ends early - `Esc`, a dropped
+line, a timeout, a failed write - and also every 4 MB into a file, after
+committing the file to disk (DOS 3.3's commit, so the directory entry and
+FAT hold the length too), which is what makes a power cut resumable. It
+goes when the game is complete.
 
 The queue survives the same way. `NETGAME.TXT` is the list of games on
 their way in, and anything that did not arrive - a folder that never

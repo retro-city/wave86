@@ -609,6 +609,16 @@ static void ensureDirs(const char *rel) {
 
 static const char *cdromDir = NULL;      /* where the discs go, if not the game folder */
 
+static void destPath(char *full, const char *rel) {
+  if (cdromDir && strnicmp(rel, "CD\\", 3) == 0) {   /* the disc goes to the CD folder */
+    mkdir(cdromDir);
+    sprintf(full, "%s\\%s", cdromDir, rel + 3);
+  } else {
+    ensureDirs(rel);
+    sprintf(full, "%s\\%s", gameRoot, rel);
+  }
+}
+
 /* ------------------------------------------------------------- CRC32 */
 /*
  * The stream is only as trustworthy as TCP's 16-bit checksum, which is
@@ -689,33 +699,68 @@ static unsigned long crcAdd(unsigned long crc, const uint8_t *p, uint16_t n) {
  */
 static char rsmPath[140] = "";
 static const char *rsmKey = NULL;       /* NULL: not that kind of transfer */
-static int doneFiles = 0;               /* files on the disk, this game */
+static int doneFiles = 0;               /* whole files on the disk, this game */
+static unsigned long partBytes = 0;     /* ... and this much of the next one */
+static unsigned long partCrc = 0xFFFFFFFFUL;    /* its CRC so far, unfinished */
+static int partCrcKnown = 1;            /* 0 when netcrc=0 kept no CRC */
+static unsigned long resumeAt = 0;      /* read back from the note */
+static unsigned long resumeCrc = 0xFFFFFFFFUL;
+static int resumeCrcKnown = 0;
 
+#define CHECKPOINT (4UL * 1024 * 1024)  /* commit and note every 4 MB of a file */
+
+/* The note: files|bytes|crc|request. A note from before bytes were kept
+   is files|request, and means the same with none of the next file. */
 static int resumeRead(void) {
   FILE *f;
-  char line[96], *bar, *e;
-  int n;
+  char line[128], *field[4], *e;
+  int n = 0, nf = 0;
+  resumeAt = 0;
+  resumeCrcKnown = 0;
   if (!rsmKey) return 0;
   f = fopen(rsmPath, "r");
   if (!f) return 0;
   if (!fgets(line, sizeof(line), f)) { fclose(f); return 0; }
   fclose(f);
-  n = atoi(line);
-  bar = strchr(line, '|');
-  if (!bar || n <= 0) return 0;
-  bar++;
-  e = bar + strlen(bar);
-  while (e > bar && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
-  return stricmp(bar, rsmKey) == 0 ? n : 0;    /* same request, or start over */
+  e = line + strlen(line);
+  while (e > line && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
+  for (field[nf++] = line, e = line; *e && nf < 4; e++)
+    if (*e == '|') { *e = 0; field[nf++] = e + 1; }
+  if (nf == 4) {
+    if (stricmp(field[3], rsmKey) != 0) return 0;  /* another request: start over */
+    n = atoi(field[0]);
+    resumeAt = strtoul(field[1], NULL, 10);
+    if (field[2][0] != '-') {
+      resumeCrc = strtoul(field[2], NULL, 16);
+      resumeCrcKnown = 1;
+    }
+  } else if (nf == 2) {
+    if (stricmp(field[1], rsmKey) != 0) return 0;
+    n = atoi(field[0]);
+  }
+  return n < 0 ? 0 : n;
 }
 
-static void resumeWrite(int files) {
+static void resumeWrite(int files, unsigned long bytes, unsigned long crc, int crcKnown) {
   FILE *f;
-  if (!rsmKey || files <= 0) return;
+  if (!rsmKey || (files <= 0 && bytes == 0)) return;
   f = fopen(rsmPath, "w");
   if (!f) return;
-  fprintf(f, "%d|%s\n", files, rsmKey);
+  if (crcKnown)
+    fprintf(f, "%d|%lu|%lX|%s\n", files, bytes, crc, rsmKey);
+  else
+    fprintf(f, "%d|%lu|-|%s\n", files, bytes, rsmKey);
   fclose(f);
+}
+
+/* what has been written so far really on the disk, FAT and all, so a note
+   written now still holds after the power goes: DOS 3.3's commit */
+static void commitFile(FILE *fp) {
+  union REGS r;
+  fflush(fp);
+  r.h.ah = 0x68;
+  r.x.bx = (unsigned)fileno(fp);
+  intdos(&r, &r);
 }
 
 /*
@@ -777,8 +822,8 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   FILE *cur = NULL; unsigned long remain = 0, done = 0; int files = 0;
   char curName[80] = "", full[160], tmp[160];
   unsigned long curSize = 0;
-  int renaming = 0, checked = 0;
-  unsigned long crc = 0xFFFFFFFFUL, lastCrc = 0;
+  int renaming = 0, checked = 0, unverified = 0, skipped = 0;
+  unsigned long crc = 0xFFFFFFFFUL, lastCrc = 0, lastCheckpoint = 0;
   clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0;
   int finished = 0;
 
@@ -796,8 +841,17 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         }
         if (crcWanted) crc = crcAdd(crc, inBuf + pos, chunk);
         pos += chunk; remain -= chunk; done += chunk;
+        partBytes = curSize - remain;    /* safely written: resume from here */
+        partCrc = crc;
+        partCrcKnown = crcWanted && !unverified;
+        if (!safe && remain && partBytes - lastCheckpoint >= CHECKPOINT) {
+          commitFile(cur);               /* so the note survives a power cut */
+          resumeWrite(doneFiles, partBytes, partCrc, partCrcKnown);
+          lastCheckpoint = partBytes;
+        }
         if (remain == 0) {
           fclose(cur); cur = NULL; files++; doneFiles = files;
+          partBytes = 0;
           lastCrc = crc ^ 0xFFFFFFFFUL;
           if (renaming) { remove(full); rename(tmp, full); }
           uiLog(curName);
@@ -809,11 +863,12 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         if (line[0] == 'E') { finished = 1; break; }
         if (line[0] == 'C') {           /* the file's checksum, from the server */
           unsigned long want = strtoul(line + 2, NULL, 10);
-          if (!crcWanted) continue;
+          if (!crcWanted || unverified) { unverified = 0; continue; }
           if (want != lastCrc) {
             char m[120];
             sprintf(m, "WAVEGET: %.40s came through damaged - fetch it again", curName);
             files--; doneFiles = files;   /* so the next run starts at it */
+            partBytes = 0;                /* ... from its first byte */
             msg(m);
             return 1;
           }
@@ -824,10 +879,47 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
           char m[60];
           const char *sp = strchr(line + 2, ' ');
           files = atoi(line + 2);
+          skipped = files;              /* checked in an earlier session */
           done = sp ? strtoul(sp + 1, NULL, 10) : 0;
           doneFiles = files;
           sprintf(m, "carrying on after %d files already here", files);
           uiStatus(m);
+          continue;
+        }
+        if (line[0] == 'P') {           /* a file we have the start of */
+          char *after, m[100];
+          unsigned long size = strtoul(line + 2, &after, 10);
+          unsigned long at = strtoul(after, &after, 10);
+          const char *rel = after;
+          long have = -1;
+          while (*rel == ' ') rel++;
+          destPath(full, rel);
+          strncpy(curName, rel, sizeof(curName) - 1);
+          cur = fopen(full, "r+b");
+          if (cur) { fseek(cur, 0L, SEEK_END); have = ftell(cur); }
+          if (!cur || have < (long)at) {
+            /* not what the note said: that file from scratch, next time */
+            if (cur) fclose(cur);
+            cur = NULL;
+            partBytes = 0;
+            sprintf(m, "WAVEGET: %.40s is shorter than the note says; run it again", rel);
+            msg(m);
+            return 1;
+          }
+          fseek(cur, (long)at, SEEK_SET);
+          renaming = 0;
+          curSize = size; remain = size - at; done += at;
+          crc = resumeCrcKnown ? resumeCrc : 0xFFFFFFFFUL;
+          unverified = !resumeCrcKnown;  /* the start was never checksummed */
+          partBytes = at; partCrc = crc; lastCheckpoint = at;
+          sprintf(m, "carrying on %luK into %.40s", at / 1024, rel);
+          uiStatus(m);
+          if (remain == 0) {
+            fclose(cur); cur = NULL; files++; doneFiles = files;
+            partBytes = 0;
+            lastCrc = crc ^ 0xFFFFFFFFUL;
+            uiLog(curName);
+          }
           continue;
         }
         if (line[0] != 'F') { char m[100]; sprintf(m, "WAVEGET: bad stream: %.60s", line); msg(m); return 1; }
@@ -838,13 +930,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         const char *rel = strchr(line + 2, ' ');
         if (!rel) return 1;
         rel++;
-        if (cdromDir && strnicmp(rel, "CD\\", 3) == 0) {   /* the disc goes to the CD folder */
-          mkdir(cdromDir);
-          sprintf(full, "%s\\%s", cdromDir, rel + 3);
-        } else {
-          ensureDirs(rel);
-          sprintf(full, "%s\\%s", gameRoot, rel);
-        }
+        destPath(full, rel);
         renaming = 0;
         if (safe) { tempName(tmp, full); renaming = strcmp(tmp, full) != 0; }
         strncpy(curName, rel, sizeof(curName) - 1);
@@ -852,6 +938,8 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         if (!cur) { char m[120]; sprintf(m, "WAVEGET: cannot create %.90s", renaming ? tmp : full); msg(m); return 1; }
         remain = size;
         crc = 0xFFFFFFFFUL;
+        unverified = 0;
+        partBytes = 0; lastCheckpoint = 0;
         if (size == 0) {
           fclose(cur); cur = NULL; files++; doneFiles = files;
           lastCrc = crc ^ 0xFFFFFFFFUL;     /* nothing in it: CRC 0 */
@@ -881,7 +969,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   unsigned long secs = Timer_diff(tStart, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;
   char done_line[120];
   sprintf(done_line, "WAVEGET: %s ready: %d files, %luK in %lu s%s", what, files, done / 1024, secs,
-          checked && checked >= files ? ", checksums good" : "");
+          checked && checked >= files - skipped ? ", checksums good" : "");
   if (screenOn) { uiProgress(curName, done, kbTotal, secs ? (done / 1024) / secs : 0, secs); msg(done_line); }
   else printf("\r%-70s\n", done_line);
   return 0;
@@ -892,11 +980,12 @@ static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *
                     unsigned long kbTotal, int safe) {
   int rc;
   doneFiles = 0;
+  partBytes = 0;
   rc = streamBody(addr, port, path, what, kbTotal, safe);
   if (rc == 0) {
     if (rsmKey) remove(rsmPath);        /* it is all here now */
   } else {
-    resumeWrite(doneFiles);             /* pick it up here next time */
+    resumeWrite(doneFiles, partBytes, partCrc, partCrcKnown);   /* from here next time */
   }
   return rc;
 }
@@ -912,8 +1001,10 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
   rsmKey = k;
   from = resumeRead();
   sprintf(path, "/pack/%s", k);
-  if (from)
+  if (from || resumeAt)
     sprintf(path + strlen(path), "%cfrom=%d", strchr(path, '?') ? '&' : '?', from);
+  if (resumeAt)
+    sprintf(path + strlen(path), "&at=%lu", resumeAt);
   if (crcWanted)
     sprintf(path + strlen(path), "%ccrc=1", strchr(path, '?') ? '&' : '?');
   uiOpen(dir, serverText);

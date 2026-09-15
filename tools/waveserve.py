@@ -747,6 +747,25 @@ class CrcWriter:
         return self.w.write(b)
 
 
+class SkipWriter(CrcWriter):
+    """The same, for a file the client already has the start of: every byte
+    goes into the CRC, so the one sent at the end covers the whole file, but
+    only the bytes past the first `skip` go down the wire."""
+
+    def __init__(self, w, skip):
+        super().__init__(w)
+        self.skip = skip
+
+    def write(self, b):
+        self.crc = zlib.crc32(b, self.crc)
+        if self.skip:
+            if len(b) <= self.skip:
+                self.skip -= len(b)
+                return len(b)
+            b, self.skip = b[self.skip:], 0
+        return self.w.write(b)
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
@@ -835,11 +854,12 @@ class H(BaseHTTPRequestHandler):
             entries = g["files_raw"]             # the discs untouched, audio and all
         elif g.get("files_net") and args.get("cd") not in ("local", "raw"):
             entries = g["files_net"]
-        skip = 0
+        skip = at = 0
         try:
             skip = max(0, min(int(args.get("from", 0)), len(entries)))
+            at = max(0, int(args.get("at", 0)))     # ... and B bytes of the next one
         except ValueError:
-            skip = 0
+            skip = at = 0
         self._head("application/octet-stream")
         if skip:
             done = sum(e[2] for e in entries[:skip])
@@ -854,20 +874,33 @@ class H(BaseHTTPRequestHandler):
             if want_crc:
                 self.wfile.write(f"C {cw.crc & 0xFFFFFFFF}\n".encode())
 
+        # ?at=B: the first file sent is one the client has B bytes of. Its
+        # header is "P <size> <B> <name>" instead of "F <size> <name>" and only
+        # the rest of it follows; the CRC after it is still the whole file's.
+        first = [at > 0]
+
+        def head(size, rel):
+            if first[0]:
+                first[0] = False
+                b = min(at, size)
+                self.wfile.write(f"P {size} {b} {rel}\n".encode())
+                return SkipWriter(self.wfile, b)
+            self.wfile.write(f"F {size} {rel}\n".encode())
+            return CrcWriter(self.wfile)
+
         if g["zip"]:
             with zipfile.ZipFile(g["zip"]) as z:
                 for entry in entries:
                     rel, name, size = entry[:3]
-                    cw = CrcWriter(self.wfile)
                     if len(entry) == 4 and isinstance(entry[3], bytes):
                         body = entry[3]
                         if b"%NDSRV%" in body:      # the address this client reached us on
                             body = body.replace(b"%NDSRV%", f"{self.my_address()}:{NETDRIVE_PORT}".encode())
-                        self.wfile.write(f"F {len(body)} {rel}\n".encode())
+                        cw = head(len(body), rel)
                         cw.write(body)
                         end_file(cw)
                         continue
-                    self.wfile.write(f"F {size} {rel}\n".encode())
+                    cw = head(size, rel)
                     if len(entry) == 4:
                         if isinstance(entry[3], bytes):
                             cw.write(entry[3])
@@ -880,8 +913,7 @@ class H(BaseHTTPRequestHandler):
                     end_file(cw)
         else:                           # plain files on disk (TDC)
             for rel, fp, size in entries:
-                cw = CrcWriter(self.wfile)
-                self.wfile.write(f"F {size} {rel}\n".encode())
+                cw = head(size, rel)
                 with open(fp, "rb") as f:
                     shutil.copyfileobj(f, cw, 65536)
                 end_file(cw)
