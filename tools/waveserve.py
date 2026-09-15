@@ -26,8 +26,13 @@ with an eXoDOS folder of the same name.
                        from build/ plus anything in --update DIR, so a DOS
                        machine can fetch a fresh build (WAVEGET UPDATE, or
                        U in the network view) instead of a floppy.
+
+Started from a terminal it shows what it is doing - the transfers under
+way with a bar and the rate, the log, the game list on g - and q stops it.
+With no terminal (a log file, a service, the test harness) or --headless
+it logs to stderr as before; --log FILE keeps the log either way.
 """
-import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil, struct
+import os, re, sys, zipfile, argparse, unicodedata, threading, time, zlib, shutil, struct, collections
 import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fat16, tempfile
@@ -362,7 +367,7 @@ def netdrive_image(path, zippath, spec, iso_name):
     with zipfile.ZipFile(zippath) as z, fat16.Volume(tmp) as v:
         v.add_file(iso_name, size, iso_chunks(z, spec))
     os.replace(tmp, path)
-    print(f"waveserve: NetDrive image {os.path.basename(path)} ({size // 1048576} MB)", file=sys.stderr)
+    MON.log(f"NetDrive image {os.path.basename(path)} ({size // 1048576} MB)")
 
 
 def game_disk(g):
@@ -402,7 +407,7 @@ def game_disk(g):
             finally:
                 if os.path.exists(tmp):
                     os.remove(tmp)
-        print(f"waveserve: game disk {name} ({mb} MB)", file=sys.stderr)
+        MON.log(f"game disk {name} ({mb} MB)")
     open(path + ".session_scoped", "a").close()
     return name
 
@@ -635,7 +640,7 @@ def index(root, max_mb, include_cd):
                     netdrive_image(os.path.join(NETDRIVE_DIR, img), path, spec, isos[0].split("\\")[-1])
                     net = ("%NDSRV%", img)
                 except Exception as e:          # one bad disc must not take the server down
-                    print(f"waveserve: no NetDrive image for {top}: {e}", file=sys.stderr)
+                    MON.log(f"no NetDrive image for {top}: {e}")
             # where the start program really is: the conf's cd chain, else the
             # first place a file of that name turns up
             exe_rel = ""
@@ -734,6 +739,102 @@ def update_set():
     return sorted(out.items())
 
 
+class Monitor:
+    """What the console shows and the log keeps: the transfers under way,
+    the last few hundred lines of what happened, when we started. The
+    request threads report in here; the console reads a snapshot four
+    times a second. Headless, every line goes to stderr as it always did."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.lines = collections.deque(maxlen=500)
+        self.transfers = {}
+        self.seq = 0
+        self.started = time.time()
+        self.headless = True
+        self.logfile = None
+
+    def log(self, text):
+        line = time.strftime("%H:%M:%S") + "  " + text
+        with self.lock:
+            self.lines.append(line)
+        if self.logfile:
+            try:
+                self.logfile.write(line + "\n")
+                self.logfile.flush()
+            except OSError:
+                pass
+        if self.headless:
+            print(line, file=sys.stderr, flush=True)
+
+    def begin(self, client, what, total=0, note=""):
+        rec = dict(client=client, what=what, total=total, bytes=0, file="", note=note,
+                   started=time.time(), ended=None, status="")
+        with self.lock:
+            self.seq += 1
+            rec["id"] = self.seq
+            self.transfers[rec["id"]] = rec
+        return rec
+
+    def end(self, rec, status):
+        if rec is None or rec["ended"]:
+            return
+        rec["ended"] = time.time()
+        rec["status"] = status
+        with self.lock:                 # keep a few finished ones on screen
+            done = sorted((r for r in self.transfers.values() if r["ended"]), key=lambda r: r["ended"])
+            for r in done[:-6]:
+                del self.transfers[r["id"]]
+
+    def snapshot(self):
+        with self.lock:
+            return ([dict(r) for r in sorted(self.transfers.values(), key=lambda r: r["id"])],
+                    list(self.lines))
+
+
+MON = Monitor()
+
+
+class Meter:
+    """The socket writer, counting for the console."""
+
+    def __init__(self, w, rec):
+        self.w, self.rec = w, rec
+
+    def write(self, b):
+        n = self.w.write(b)
+        self.rec["bytes"] += len(b)
+        return n
+
+    def flush(self):
+        self.w.flush()
+
+    def __getattr__(self, name):        # closed, close: the writer's own
+        return getattr(self.w, name)
+
+
+def lan_address():
+    """The address we would use to reach the outside: what to tell people."""
+    import socket
+    try:
+        so = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        so.connect(("10.255.255.255", 1))     # no packet is sent
+        addr = so.getsockname()[0]
+        so.close()
+        return addr
+    except OSError:
+        return "127.0.0.1"
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        """A client that hung up mid-stream is not a traceback."""
+        e = sys.exc_info()[1]
+        MON.log(f"{client_address[0]}  {type(e).__name__}: {e}")
+
+
 class CrcWriter:
     """Passes bytes through to the socket and keeps their CRC32, so each
     file in a pack can be followed by the number the client should have
@@ -778,15 +879,32 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        self.rec = None
+        try:
+            self.get()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError) as e:
+            MON.end(self.rec, "dropped")
+            MON.log(f"{self.client_address[0]}  went away ({type(e).__name__})")
+        except OSError as e:
+            MON.end(self.rec, f"failed: {e}")
+            MON.log(f"{self.client_address[0]}  failed: {e}")
+        else:
+            MON.end(self.rec, "done")
+
+    def get(self):
         with LOCK:
             games = GAMES
         p = self.path
+        client = self.client_address[0]
         if p.startswith("/update"):  # WAVEGET UPDATE: the programs themselves
             files = update_set()
             crc = p.endswith("crc=1")
-            print("waveserve: update ->", ", ".join(n for n, _ in files), file=sys.stderr)
+            MON.log(f"update -> {', '.join(n for n, _ in files)}")
             self._head("application/octet-stream")
+            self.rec = MON.begin(client, "update", sum(os.path.getsize(fp) for _, fp in files))
+            self.wfile = Meter(self.wfile, self.rec)
             for name, fp in files:
+                self.rec["file"] = name
                 self.wfile.write(f"F {os.path.getsize(fp)} {name}\n".encode())
                 cw = CrcWriter(self.wfile)
                 with open(fp, "rb") as f:
@@ -838,7 +956,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 name = game_disk(g)
             except Exception as e:
-                print(f"waveserve: game disk for {g['dir']}: {e}", file=sys.stderr)
+                MON.log(f"game disk for {g['dir']}: {e}")
                 self.send_error(500, str(e))
                 return
             body = f"OK {name}\r\n".encode()
@@ -865,6 +983,15 @@ class H(BaseHTTPRequestHandler):
             done = sum(e[2] for e in entries[:skip])
             entries = entries[skip:]
             self.wfile.write(f"S {skip} {done}\n".encode())
+        total = sum(e[2] for e in entries)
+        if at and entries:
+            total -= min(at, entries[0][2])
+        note = ""
+        if skip or at:
+            note = f"resumed: {skip} files" + (f", {at // 1048576} MB in" if at else "")
+        mode = args.get("cd", "")
+        self.rec = MON.begin(client, g["dir"] + (f" cd={mode}" if mode else ""), total, note)
+        self.wfile = Meter(self.wfile, self.rec)
         # ?crc=1: every file is followed by "C <crc32>", which the client
         # checks against what it wrote. A client that does not ask gets the
         # stream it has always got.
@@ -880,6 +1007,7 @@ class H(BaseHTTPRequestHandler):
         first = [at > 0]
 
         def head(size, rel):
+            self.rec["file"] = rel
             if first[0]:
                 first[0] = False
                 b = min(at, size)
@@ -930,15 +1058,7 @@ class H(BaseHTTPRequestHandler):
         local = self.connection.getsockname()[0]
         if not local.startswith("127."):
             return local
-        try:
-            import socket
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("10.255.255.255", 1))     # no packet is sent
-            local = s.getsockname()[0]
-            s.close()
-        except OSError:
-            pass
-        return local
+        return lan_address()
 
     def send_iso(self, z, spec, out=None):
         """stream the 2048-byte payload of each sector of a data track"""
@@ -965,7 +1085,7 @@ class H(BaseHTTPRequestHandler):
             out.write(buf)
 
     def log_message(self, fmt, *args):
-        sys.stderr.write("%s %s\n" % (self.client_address[0], fmt % args))
+        MON.log("%s  %s" % (self.client_address[0], fmt % args))
 
 
 def main():
@@ -982,7 +1102,12 @@ def main():
     ap.add_argument("--rescan", type=int, default=300, help="seconds between re-indexing")
     ap.add_argument("--update", metavar="DIR", help="extra files for WAVEGET UPDATE (a WAVE86.INI, drivers...); "
                                                     "the built programs go out anyway")
+    ap.add_argument("--headless", action="store_true", help="no console, log to stderr (automatic without a terminal)")
+    ap.add_argument("--log", metavar="FILE", help="append the log to FILE as well")
     a = ap.parse_args()
+    MON.headless = a.headless or not sys.stdout.isatty()
+    if a.log:
+        MON.logfile = open(a.log, "a")
     global UPDATE_DIR
     if a.update:
         UPDATE_DIR = os.path.abspath(a.update)
@@ -1001,9 +1126,9 @@ def main():
                                    "-session_scoped_writes_dir", sessions],
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             atexit.register(nd.kill)
-            print(f"waveserve: NetDrive server on UDP {NETDRIVE_PORT}, images in {NETDRIVE_DIR}", file=sys.stderr)
+            MON.log(f"NetDrive server on UDP {NETDRIVE_PORT}, images in {NETDRIVE_DIR}")
         else:
-            print("waveserve: no NetDrive server binary (make netdrive); run one yourself on port", NETDRIVE_PORT, file=sys.stderr)
+            MON.log(f"no NetDrive server binary (make netdrive); run one yourself on port {NETDRIVE_PORT}")
 
     if not a.root and not a.tdc:
         ap.error("give an eXoDOS folder and/or --tdc DIR")
@@ -1016,8 +1141,8 @@ def main():
             changed = [g["title"] for g in games] != [g["title"] for g in GAMES]
             GAMES = games
         if first or changed:
-            print(f"waveserve: {len(games)} games ({sum(1 for g in games if g['src']=='exodos')} eXoDOS, "
-                  f"{sum(1 for g in games if g['src']=='tdc')} TDC), port {a.port}", flush=True)
+            MON.log(f"{len(games)} games ({sum(1 for g in games if g['src']=='exodos')} eXoDOS, "
+                    f"{sum(1 for g in games if g['src']=='tdc')} TDC), port {a.port}")
 
     reindex(first=True)
 
@@ -1027,9 +1152,42 @@ def main():
             try:
                 reindex()
             except Exception as e:      # keep serving on a bad scan
-                print("waveserve: rescan failed:", e, flush=True)
+                MON.log(f"rescan failed: {e}")
     threading.Thread(target=loop, daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", a.port), H).serve_forever()
+    server = Server(("0.0.0.0", a.port), H)
+    if not MON.headless:
+        try:
+            import waveconsole
+        except ImportError as e:            # no curses on this Python
+            MON.headless = True
+            MON.log(f"no console ({e}), logging here instead")
+    if MON.headless:
+        server.serve_forever()
+        return
+
+    def title():
+        with LOCK:
+            n, ex = len(GAMES), sum(1 for g in GAMES if g["src"] == "exodos")
+        nd = f"   NetDrive UDP {NETDRIVE_PORT}" if NETDRIVE_DIR else ""
+        up = int(time.time() - MON.started)
+        return (f"waveserve  {lan_address()}:{a.port}   {n} games ({ex} eXoDOS, {n - ex} TDC){nd}"
+                f"   up {up // 3600}:{up % 3600 // 60:02d}:{up % 60:02d}")
+
+    def games():
+        with LOCK:
+            return GAMES
+
+    def rescan():
+        MON.log("re-indexing ...")
+        threading.Thread(target=reindex, daemon=True).start()
+
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    MON.log("q quits, r re-indexes, g shows the games")
+    try:
+        waveconsole.run(MON, title, games, dict(rescan=rescan))
+    except KeyboardInterrupt:
+        pass
+    server.shutdown()
 
 
 if __name__ == "__main__":

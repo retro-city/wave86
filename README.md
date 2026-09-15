@@ -506,6 +506,32 @@ it is in the launcher. Set `WAVEDUMP=C:\SCREEN.BIN` and WAVEGET writes
 its text screen there once a second, which is how the harness gets to
 look at it.
 
+### Watching the server
+
+Started from a terminal, `waveserve.py` shows what it is doing rather
+than scrolling request lines past:
+
+    waveserve  192.168.1.109:8086   27 games (27 eXoDOS, 0 TDC)   NetDrive UDP 2002   up 0:12:40
+    TRANSFERS
+     192.168.1.131   update             done  181 KB in 0:02
+     192.168.1.131   SETTLR2G cd=raw    ██████░░░░  43%  259 MB/602 MB  148 KB/s  38:12 left  CD\SETTLR2G.BIN
+    LOG
+     23:41:14  192.168.1.131  "GET /pack/SETTLR2G?cd=raw&crc=1 HTTP/1.0" 200 -
+
+Each transfer has a bar, the rate over the last few seconds (so a stall
+shows as one), the time left and the file being sent; one that was
+resumed says where from, and one whose client hung up stays on screen
+for a while saying so. Below it is the log, or the game list on `g` -
+directory, title, year, size, and the disc as an ISO and as it came.
+`r` re-indexes the collection now, `q` stops the server, the arrow keys
+scroll and `End` goes back to following the log.
+
+Without a terminal - under the test harness, as a service, with output
+sent to a file - or with `--headless`, it logs to stderr as it always
+did, and `--log FILE` appends every line to a file either way. The
+layout is `tools/waveconsole.py`, a pure function from the server's
+state to rows of text, so it is tested without a terminal.
+
 ### Updating WAVE86 from the server
 
 `U` in the network view fetches a fresh `WAVE86.EXE`, `WAVEGET.EXE` and
