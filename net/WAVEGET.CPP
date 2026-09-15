@@ -26,6 +26,7 @@
 #include <string.h>
 #include <direct.h>
 #include <dos.h>
+#include <ctype.h>
 
 #include "types.h"
 #include "utils.h"
@@ -82,6 +83,7 @@ extern "C" {
 }
 static int musicWanted = 1;         /* netmusic=0 in WAVE86.INI turns it off */
 static int crcWanted = 1;           /* netcrc=0, or a server that sends none */
+static uint16_t writeMax = 0;       /* netwrite=N: at most N bytes per write */
 
 static void msg(const char *m);     /* on the transfer screen, or plain */
 static uint16_t localPort = 4096;   /* a fresh one per run: see connectTo */
@@ -302,8 +304,11 @@ static void fmtTime(char *dst, unsigned long secs) {
 }
 
 static void uiStatus(const char *text) {
+  char cut[BOX_W - 5];
+  strncpy(cut, text, sizeof(cut) - 1);          /* inside the box, not over it */
+  cut[sizeof(cut) - 1] = 0;
   scrFill(BOX_X + 3, BOX_Y + BOX_H - 2, BOX_W - 6, ' ', A(7, 0));
-  scrPuts(BOX_X + 3, BOX_Y + BOX_H - 2, text, A(7, 0));
+  scrPuts(BOX_X + 3, BOX_Y + BOX_H - 2, cut, A(7, 0));
 }
 
 /* what WAVEGET has to say, wherever it can be read */
@@ -510,6 +515,7 @@ static void musicStart(const char *exePath) {
       if (buf[0] == '[') break;                 /* per-game sections */
       if (strnicmp(buf, "netmusic=", 9) == 0) musicWanted = atoi(buf + 9);
       else if (strnicmp(buf, "netcrc=", 7) == 0) crcWanted = atoi(buf + 7);
+      else if (strnicmp(buf, "netwrite=", 9) == 0) writeMax = (uint16_t)atoi(buf + 9);
       else if (strnicmp(buf, "adlib=", 6) == 0) cfg_adlib = atoi(buf + 6);
     }
     fclose(f);
@@ -669,6 +675,36 @@ static void resumeWrite(int files) {
   fclose(f);
 }
 
+/*
+ * DOS took fewer bytes than it was given. That is a full disk often enough
+ * for "is it full?" to be the usual guess, but it is also a drive that went
+ * away, a redirector with a file size limit, or a cluster count the driver
+ * got wrong - so say which file, how far into it, what DOS called the error
+ * and how much room that drive says it has.
+ */
+static void writeFailed(const char *path, unsigned long at) {
+  char m[140];
+  struct diskfree_t df;
+  unsigned drive = (path[1] == ':') ? (unsigned)(toupper((unsigned char)path[0]) - 'A' + 1) : 0;
+  unsigned long freeKb = 0;
+  int known = _dos_getdiskfree(drive, &df) == 0;
+  if (known) {
+    unsigned long cluster = (unsigned long)df.sectors_per_cluster * df.bytes_per_sector;
+    freeKb = (unsigned long)df.avail_clusters * (cluster / 512) / 2;
+  }
+  char why[24];
+  if (_doserrno)                    /* a driver that said what went wrong */
+    sprintf(why, "DOS error %d", _doserrno);
+  else                              /* fewer bytes taken, nothing said */
+    strcpy(why, "short write");
+  if (known)
+    sprintf(m, "WAVEGET: write failed %luK into %.40s (%s, %luK free there)",
+            at / 1024, path, why, freeKb);
+  else
+    sprintf(m, "WAVEGET: write failed %luK into %.40s (%s)", at / 1024, path, why);
+  msg(m);
+}
+
 /* an update writes each file beside its target first: NAME.W86 */
 static void tempName(char *dst, const char *full) {
   char *dot, *bs;
@@ -697,6 +733,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   char line[200]; uint16_t lineLen = 0;
   FILE *cur = NULL; unsigned long remain = 0, done = 0; int files = 0;
   char curName[80] = "", full[160], tmp[160];
+  unsigned long curSize = 0;
   int renaming = 0, checked = 0;
   unsigned long crc = 0xFFFFFFFFUL, lastCrc = 0;
   clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0;
@@ -707,7 +744,13 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
       if (cur) {                                   /* file data */
         uint16_t chunk = n - pos;
         if ((unsigned long)chunk > remain) chunk = (uint16_t)remain;
-        if (fwrite(inBuf + pos, 1, chunk, cur) != chunk) { msg("WAVEGET: disk write failed (is it full?)"); fclose(cur); return 1; }
+        if (writeMax && chunk > writeMax) chunk = writeMax;   /* netwrite= */
+        _doserrno = 0;
+        if (fwrite(inBuf + pos, 1, chunk, cur) != chunk) {
+          writeFailed(renaming ? tmp : full, curSize - remain);
+          fclose(cur);
+          return 1;
+        }
         if (crcWanted) crc = crcAdd(crc, inBuf + pos, chunk);
         pos += chunk; remain -= chunk; done += chunk;
         if (remain == 0) {
@@ -748,6 +791,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         if (files && !checked)          /* no C line after the first file */
           crcWanted = 0;
         unsigned long size = strtoul(line + 2, NULL, 10);
+        curSize = size;
         const char *rel = strchr(line + 2, ' ');
         if (!rel) return 1;
         rel++;
