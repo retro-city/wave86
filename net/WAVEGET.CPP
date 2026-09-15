@@ -84,6 +84,7 @@ extern "C" {
 static int musicWanted = 1;         /* netmusic=0 in WAVE86.INI turns it off */
 static int crcWanted = 1;           /* netcrc=0, or a server that sends none */
 static uint16_t writeMax = 0;       /* netwrite=N: at most N bytes per write */
+static int screenWanted = 1;        /* netscreen=0: the single progress line */
 
 static void msg(const char *m);     /* on the transfer screen, or plain */
 static uint16_t localPort = 4096;   /* a fresh one per run: see connectTo */
@@ -325,6 +326,7 @@ static void msg(const char *m) {
 static void uiOpen(const char *title, const char *host) {
   int x, y;
   char line[96];
+  if (!screenWanted) return;        /* netscreen=0: the old single line */
   scrOpen();
   if (!screenOn) return;
   for (x = 0; x < vcols; x++)                       /* the colour band */
@@ -516,6 +518,7 @@ static void musicStart(const char *exePath) {
       if (strnicmp(buf, "netmusic=", 9) == 0) musicWanted = atoi(buf + 9);
       else if (strnicmp(buf, "netcrc=", 7) == 0) crcWanted = atoi(buf + 7);
       else if (strnicmp(buf, "netwrite=", 9) == 0) writeMax = (uint16_t)atoi(buf + 9);
+      else if (strnicmp(buf, "netscreen=", 10) == 0) screenWanted = atoi(buf + 10);
       else if (strnicmp(buf, "adlib=", 6) == 0) cfg_adlib = atoi(buf + 6);
     }
     fclose(f);
