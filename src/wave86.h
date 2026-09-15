@@ -107,12 +107,14 @@ typedef struct {
     char netcd;                 /* 1 = the server can also keep the CD (NetDrive) */
     char netplay;               /* 1 = can be played off the server (NetDrive) */
     unsigned long cdkb;         /* the CD image's share of kb */
+    unsigned long rawkb;        /* the discs as they came (cue/bin, audio kept) */
     char src[8];                /* "exodos" or "tdc" */
 } NetGame;
 extern int net_count;
 extern char cfg_server[32];     /* ini server=a.b.c.d:port */
 extern char net_pending_dir[9]; /* folder of the last download, after net_apply_pending */
 extern int net_cdmode;          /* 1 = leave CDs on the server (NET CD), 0 = download them */
+extern int net_rawcd;           /* 1 = a card mounts the discs: fetch cue/bin untouched */
 unsigned long net_size(const NetGame *g);   /* the download in the current mode */
 int net_load(void);             /* offsets into NETLIST.TXT; count */
 const NetGame *net_get(int i);  /* reads that line; valid until the next call */

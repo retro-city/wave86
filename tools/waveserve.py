@@ -255,10 +255,17 @@ def imgmount_bat(iso, letter, net=None):
                   'if "%IMGMOUNT%"=="" goto software',
                   'if "%IMGMOUNT%"=="SOFTWARE" goto software',
                   "goto card",
-                  ":software",
-                  f"LH SHCDHD86 /F:%WAVECDROM%\\{img} /Q",
-                  f"LH SHCDX86 /D:SHSU-CDH,{letter} /I /Q",
-                  "goto letter",
+                  ":software"]
+        if img.upper().endswith(".CUE"):
+            lines += [f"echo {img} is a cue sheet, which keeps the CD audio, and SHSUCDHD",
+                      "echo mounts plain ISO images only. Set imgmount= to a card that",
+                      "echo takes cue/bin, or install the game again in software mode.",
+                      "goto done"]
+        else:
+            lines += [f"LH SHCDHD86 /F:%WAVECDROM%\\{img} /Q",
+                      f"LH SHCDX86 /D:SHSU-CDH,{letter} /I /Q",
+                      "goto letter"]
+        lines += [
                   ":card",
                   "rem the card loads the image itself; WAVECDN=1 gives its command",
                   "rem the bare file name instead of the whole path. The test comes",
@@ -450,6 +457,45 @@ def short_name(title, full, used):
     return cand
 
 
+def raw_disc_entries(z, top, cues, raw_isos, members):
+    """The game's discs as the collection has them, for a card that mounts
+    cue/bin itself (a PicoGUS plays the audio tracks the ISO conversion
+    throws away). Names are cut to 8.3 after the game folder - the cue's
+    own FILE names are long and full of spaces - and each cue is rewritten
+    to point at its renamed image. One entry list: the cue sheets as bytes,
+    the images streamed from the zip as they are."""
+    out, used = [], set()
+    lower = {n.lower(): n for n in members}
+    for cue in cues:
+        try:
+            text = z.read(cue).decode("latin-1")
+        except KeyError:
+            continue
+        cue_dir = cue.rsplit("/", 1)[0] + "/" if "/" in cue else ""
+        base = iso_name(top, used)
+        images, lines = [], []
+        for line in text.splitlines():
+            m = re.match(r'(\s*FILE\s+)"(.*)"(\s+\S+\s*)$', line, re.I)
+            if m:
+                member = lower.get((cue_dir + m.group(2)).lower())
+                if not member:
+                    images = None           # a cue that points at nothing: skip it
+                    break
+                # one image: NAME.BIN; more: the first six letters and a number
+                name = f"{base}.BIN" if not images else f"{base[:6]}{len(images) + 1:02d}.BIN"
+                images.append((f"CD\\{name}", member, z.getinfo(member).file_size))
+                line = f'{m.group(1)}"{name}"{m.group(3)}'
+            lines.append(line.rstrip())
+        if not images:
+            continue
+        sheet = ("\r\n".join(lines) + "\r\n").encode("latin-1")
+        out.append((f"CD\\{base}.CUE", None, len(sheet), sheet))
+        out += images
+    for member, size in raw_isos:           # plain ISOs need no conversion anyway
+        out.append((f"CD\\{iso_name(top, used)}.ISO", member, size))
+    return out
+
+
 def disc_last(files):
     """The disc image goes at the end of a pack. It dwarfs the rest, so a
     transfer that stops part way then leaves a complete game folder and
@@ -554,6 +600,7 @@ def index(root, max_mb, include_cd):
             # the CD, as one ISO per data track, made from the cue/bin while
             # streaming; the DOS side mounts CD\NAME.ISO when the game runs
             cd_kb, used, isos = 0, set(), []
+            raw_discs, raw_kb = [], 0           # the discs as they came: cue/bin with their audio
             if include_cd and cd:               # the conf mounts a disc: cue/bin pairs, or plain ISOs
                 with zipfile.ZipFile(path) as z:
                     members = z.namelist()
@@ -565,6 +612,8 @@ def index(root, max_mb, include_cd):
                         files.append((isos[-1], None, size, spec))
                         total += size
                         cd_kb += (size + 1023) // 1024
+                    raw_discs = raw_disc_entries(z, top, sorted(cues), sorted(raw_isos), members)
+                    raw_kb = sum((e[2] + 1023) // 1024 for e in raw_discs)
             exe_file = ""
             for exe in cands:           # first word that is a real program wins
                 for ext in ("BAT", "EXE", "COM"):
@@ -636,6 +685,12 @@ def index(root, max_mb, include_cd):
                 mount = imgmount_bat(isos[0].split("\\")[-1], cd_letter, net)
                 files_net = [("IMGMOUNT.BAT", None, len(mount), mount) if e[0] == "IMGMOUNT.BAT" else e
                              for e in files if e[0] not in isos]
+            files_raw = None
+            if raw_discs:                       # same pack with the discs untouched, for a card
+                mount = imgmount_bat(raw_discs[0][0], cd_letter, None)
+                files_raw = [e for e in files if e[0] not in isos and e[0] != "IMGMOUNT.BAT"]
+                files_raw += [("IMGMOUNT.BAT", None, len(mount), mount)] + raw_discs
+                files_raw = disc_last(files_raw)
             files = disc_last(files)            # the disc after everything else
             if files_net:
                 files_net = disc_last(files_net)
@@ -643,7 +698,8 @@ def index(root, max_mb, include_cd):
             seen.add(fn)
             games.append(dict(title=ascii_text(m.group(1)), year=m.group(2), dir=top.upper(),
                               zip=path, src="exodos", kb=(total + 1023) // 1024, files=files, exe=exe_file,
-                              cd=cd, cd_kb=cd_kb, netcd=netcd, files_net=files_net, genre=md.get("genre", ""), developer=md.get("developer", ""),
+                              cd=cd, cd_kb=cd_kb, netcd=netcd, files_net=files_net,
+                              files_raw=files_raw, raw_kb=raw_kb, genre=md.get("genre", ""), developer=md.get("developer", ""),
                               notes=md.get("notes", "")))
     games.sort(key=lambda g: g["title"].lower())
     return games
@@ -721,7 +777,7 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(b"E\n")
             return
         if p == "/list":
-            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0) | (8 if NETDRIVE_DIR else 0)}|{g['src']}|{g.get('cd_kb', 0)}\r\n"
+            body = "".join(f"{i}|{g['dir']}|{g['title'][:40]}|{g['year']}|{g['genre'][:14]}|{g['kb']}|{g['exe']}|{int(g['cd']) | (2 if g.get('partial') else 0) | (4 if g.get('netcd') else 0) | (8 if NETDRIVE_DIR else 0)}|{g['src']}|{g.get('cd_kb', 0)}|{g.get('raw_kb', 0)}\r\n"
                            for i, g in enumerate(games)).encode("ascii", "replace")
             self._head("text/plain", len(body))
             self.wfile.write(body)
@@ -775,7 +831,9 @@ class H(BaseHTTPRequestHandler):
         # are left out and the client is told what it missed.
         args = dict((kv.split("=", 1) + [""])[:2] for kv in query.split("&") if kv)
         entries = g["files"]
-        if g.get("files_net") and args.get("cd") != "local":
+        if args.get("cd") == "raw" and g.get("files_raw"):
+            entries = g["files_raw"]             # the discs untouched, audio and all
+        elif g.get("files_net") and args.get("cd") not in ("local", "raw"):
             entries = g["files_net"]
         skip = 0
         try:

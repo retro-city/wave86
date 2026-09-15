@@ -211,7 +211,7 @@ static const char *under_dosbox(void)
 static int bat_scan(const Game *g, char *iso)
 {
     char path[PATH_LEN + 24], buf[160];
-    int h, flags = 0, keep = 0, n;
+    int h, flags = 0, keep = 0, n, e;
 
     iso[0] = 0;
     sprintf(path, "%s\\%s\\IMGMOUNT.BAT", gamedir, g->dir);
@@ -226,17 +226,18 @@ static int bat_scan(const Game *g, char *iso)
             flags |= BAT_NETDRIVE;
         if (strstr(buf, "waveserve made") || strstr(buf, "WAVE86 wrote"))
             flags |= BAT_GEN;
-        for (dot = iso[0] ? NULL : strstr(buf, ".ISO"); dot; dot = strstr(dot + 1, ".ISO")) {
-            char *s = dot;
-            while (s > buf && s[-1] != '\\' && s[-1] != ' ' && s[-1] != ':')
-                s--;
-            if (s > buf && dot - s <= 8) {   /* a whole name, delimiter and all */
-                memcpy(iso, s, (unsigned)(dot - s) + 4);
-                iso[(dot - s) + 4] = 0;
-                flags |= BAT_ISO;
-                break;
+        for (e = 0; e < 2 && !iso[0]; e++)  /* a cue sheet first, then an ISO */
+            for (dot = strstr(buf, e ? ".ISO" : ".CUE"); dot; dot = strstr(dot + 1, e ? ".ISO" : ".CUE")) {
+                char *s = dot;
+                while (s > buf && s[-1] != '\\' && s[-1] != ' ' && s[-1] != ':')
+                    s--;
+                if (s > buf && dot - s <= 8) {   /* a whole name, delimiter and all */
+                    memcpy(iso, s, (unsigned)(dot - s) + 4);
+                    iso[(dot - s) + 4] = 0;
+                    flags |= BAT_ISO;
+                    break;
+                }
             }
-        }
         keep = n < 20 ? n : 20;         /* a name or marker split across reads */
         memmove(buf, buf + n - keep, keep);
     }
@@ -353,6 +354,12 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
             fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
         }
         fprintf(f, "set CD=%c\n", letter);
+        fprintf(f, "goto done\n");
+    } else if (stricmp(iso + strlen(iso) - 4, ".CUE") == 0) {
+        strcpy(dbg_mount, "(nothing: SHSUCDHD cannot read a cue sheet)");
+        fprintf(f, "echo %s is a cue sheet, which keeps the CD audio, and SHSUCDHD\n", iso);
+        fprintf(f, "echo mounts plain ISO images only. Set imgmount= to your card in\n");
+        fprintf(f, "echo WAVE86.INI, or install the game again in software mode.\n");
         fprintf(f, "goto done\n");
     } else {
         sprintf(dbg_mount, "LH %s%sSHCDHD86.EXE /F:%s /Q", home_dir, sep, img);
@@ -830,8 +837,15 @@ static void net_get_cmd(char *cmd, unsigned size, const NetGame *g, const char *
     char key[32];
     if (stricmp(g->src, "exodos") == 0) strcpy(key, g->dir);
     else sprintf(key, "%s:%s", g->src, g->dir);
-    if (g->cd && g->netcd)
-        strcat(key, g->netcd && net_cdmode ? "?cd=net" : "?cd=local");
+    /* NET CD leaves the disc on the server; otherwise a card that mounts
+       cue/bin itself gets the discs as they came, audio tracks and all,
+       and SHSUCDHD - which reads plain ISOs only - gets the converted ISO */
+    if (g->cd) {
+        if (g->netcd && net_cdmode)
+            strcat(key, "?cd=net");
+        else
+            strcat(key, net_rawcd && g->rawkb ? "?cd=raw" : "?cd=local");
+    }
     sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, net_size(g), key);
     {
         const char *cdrom = cd_root();
@@ -1042,6 +1056,10 @@ int main(int argc, char **argv)
         ini_load(path);
         theme_select(cfg_theme);
         net_cdmode = cfg_netcd;
+        {   /* a card mounts the discs itself: it can have them untouched */
+            const char *m = ini_global("imgmount");
+            net_rawcd = m && m[0] && stricmp(m, "SOFTWARE") != 0;
+        }
     }
     if (getenv("WAVESRV")) {            /* make run: the emulator's host */
         strncpy(cfg_server, getenv("WAVESRV"), sizeof(cfg_server) - 1);

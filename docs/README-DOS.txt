@@ -61,6 +61,11 @@ reloads the card's firmware: an image handed over in the next breath is
 refused. If the load command fails, the batch says so and asks for a key
 to try again.
 
+With a card configured, games are installed with their discs as they
+came - a cue sheet and its image, SETTLR2G.CUE and SETTLR2G.BIN - because
+the card plays the CD audio tracks an ISO would have lost. Software mode
+still gets an ISO, which is all SHSUCDHD can read.
+
 WAVE86 writes each game's IMGMOUNT.BAT itself, from these settings, every
 time it starts that game: the paths, the command and the letter go into
 the batch as they are, so nothing depends on the environment having room

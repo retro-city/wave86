@@ -318,6 +318,16 @@ by the card's own command, `cdmount_<mode>=` (and `cdunmount_<mode>=`).
 The image is appended to that command, as its full path or, with
 `cdrom_name=1`, as its bare file name.
 
+A card that mounts images itself gets the discs as they came. The ISO
+conversion keeps only the data track, and many of these games have their
+music as CD audio: Settlers II Gold carries 328 MB of it and Warcraft II
+more still. So when `imgmount=` names a card, the launcher asks the server
+for `?cd=raw` and receives the cue sheet and its image untouched - renamed
+to 8.3 after the game folder, `SETTLR2G.CUE` and `SETTLR2G.BIN`, with the
+cue's `FILE` line rewritten to match - and the card gets the `.CUE`. In
+software mode it still asks for `?cd=local`, the ISO, because SHSUCDHD
+reads nothing else.
+
 A PicoGUS with CD-ROM support reads its images from a drive, so put
 them there and let PGUSINIT load them:
 

@@ -29,6 +29,7 @@ int net_count = 0;
 char cfg_server[32] = "";
 char net_pending_dir[9] = "";
 int net_cdmode = 0;             /* LOCAL CD until netcd=1 says otherwise */
+int net_rawcd = 0;
 
 /*
  * The install queue. DOS runs one program at a time and the launcher
@@ -72,12 +73,12 @@ static void chomp(char *line)
 static void parse_line(char *line, NetGame *g)
 {
     char *p = line;
-    char *id, *dir, *title, *year, *genre, *kb, *exe, *cd, *src, *cdkb;
+    char *id, *dir, *title, *year, *genre, *kb, *exe, *cd, *src, *cdkb, *rawkb;
 
     chomp(line);
     id = field(&p); dir = field(&p); title = field(&p); year = field(&p);
     genre = field(&p); kb = field(&p); exe = field(&p); cd = field(&p);
-    src = field(&p); cdkb = field(&p);
+    src = field(&p); cdkb = field(&p); rawkb = field(&p);
     (void)id; (void)genre;
     memset(g, 0, sizeof(*g));
     strncpy(g->dir, dir, 8);
@@ -86,6 +87,7 @@ static void parse_line(char *line, NetGame *g)
     g->year = (unsigned)atoi(year);
     g->kb = strtoul(kb, NULL, 10);
     g->cdkb = strtoul(cdkb, NULL, 10);
+    g->rawkb = strtoul(rawkb, NULL, 10);  /* 0 from a server that has no such thing */
     g->cd = (atoi(cd) & 1) != 0;          /* flags: 1 = needs CD, 2 = incomplete */
     g->partial = (atoi(cd) & 2) != 0;
     g->netcd = (atoi(cd) & 4) != 0;
@@ -218,6 +220,8 @@ unsigned long net_size(const NetGame *g)
 {
     if (g->cd && g->netcd && net_cdmode && g->cdkb < g->kb)
         return g->kb - g->cdkb;
+    if (g->cd && net_rawcd && g->rawkb && g->cdkb <= g->kb)
+        return g->kb - g->cdkb + g->rawkb;  /* the cue/bin instead of the ISO */
     return g->kb;
 }
 
