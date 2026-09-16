@@ -7,7 +7,7 @@
 
 #include <stdio.h>
 
-#define VERSION_STR "0.3"
+#define VERSION_STR "0.4"
 
 #define MAX_GAMES   128
 #define NAME_LEN    40

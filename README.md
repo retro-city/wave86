@@ -7,9 +7,8 @@ its own and its own soundtrack.
 It is a plain 16-bit real-mode program, so it runs on anything from an
 XT to a 486 and beyond. I build it on a Mac with Open Watcom and try it
 in dosbox-x, and on a real DOS booted in dosbox-x, before it goes onto
-the real machine, a 486 with a PicoGUS. Version 0.3: the network side
-has been through real hardware, and a large download now survives being
-interrupted.
+the real machine, a 486 with a PicoGUS. Version 0.4: the server shows
+what it is doing, and a large download survives being interrupted.
 
 ![WAVE86 running in dosbox-x](docs/screenshot.png)
 
@@ -224,11 +223,24 @@ On the machine with the collection (Mac, Linux, a NAS with Python):
     make waveserve TDC=~/Downloads/TDC WAVESERVE_ARGS="--log serve.log"
 
 `make waveserve` builds first, since the server hands `build/` to WAVEGET
-UPDATE, fetches the NetDrive server if it is not there yet, and starts
-`tools/waveserve.py` on the collection in `EXODOS` (default
-`~/Downloads/eXoDOS`) with CD games and their discs included, the discs
-also kept as NetDrive volumes under `NETDRIVE_DIR` (`~/wave86-cd`).
-`q` in its console stops it. Run by hand, the same thing is:
+UPDATE, fetches the NetDrive server binary if `build/netdrive` is not
+there yet (only then - it is a file target, so `make clean` is what makes
+it download again), and starts `tools/waveserve.py` with its console,
+CD games and their discs included. `q` in the console stops it and
+returns to the prompt. A missing collection fails with one line rather
+than starting a server with no games. The knobs, each overridable on the
+command line:
+
+| variable | default | |
+| --- | --- | --- |
+| `EXODOS` | `~/Downloads/eXoDOS` | the eXoDOS collection |
+| `TDC` | none | a Total DOS Collection folder, instead or as well |
+| `PORT` | `8086` | what to put in `server=` on the DOS side |
+| `MAX_MB` | `200` | games bigger than this are left out of the list |
+| `NETDRIVE_DIR` | `~/wave86-cd` | where the CD volumes for playing off the server live |
+| `WAVESERVE_ARGS` | none | anything else, such as `"--log serve.log"` or `--headless` |
+
+Run by hand, the same thing is:
 
     python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd
     python3 tools/waveserve.py --tdc ~/Downloads/1981-1992 --port 8086
