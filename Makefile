@@ -54,12 +54,30 @@ music-files: $(MUSIC)
 ND_VER = 2025-01-10
 # (pattern) with both parentheses: a bare pattern) would close the $(shell
 ND_BIN = $(shell case "$$(uname -s)-$$(uname -m)" in (Darwin-arm64) echo netdrive_darwin_arm64;; (Linux-x86_64) echo netdrive_linux_amd64;; (Linux-aarch64) echo netdrive_linux_arm64;; (*) echo unknown;; esac)
-netdrive:
+netdrive: build/netdrive
+build/netdrive:
 	@mkdir -p build
 	curl -sL -o build/netdrive-server.zip https://www.brutman.com/mTCP/download/mTCP_NetDrive_server-bin_$(ND_VER).zip
 	cd build && unzip -q -o -j netdrive-server.zip "mTCP_NetDrive_server-bin_$(ND_VER)/$(ND_BIN)" "mTCP_NetDrive_server-bin_$(ND_VER)/copying.txt" && mv $(ND_BIN) netdrive && chmod +x netdrive && rm netdrive-server.zip
 	@xattr -d com.apple.quarantine build/netdrive 2>/dev/null || true
 	@./build/netdrive 2>&1 | head -1
+
+# The server, on this machine: make waveserve starts it with its console
+# (q stops it). EXODOS is the collection; CD games come with their discs,
+# kept as NetDrive volumes under NETDRIVE_DIR for playing off the server.
+# It serves build/ to WAVEGET UPDATE, so it depends on all: a fresh build
+# is what goes out.
+#   make waveserve EXODOS=/Volumes/Games/eXoDOS PORT=8086
+#   make waveserve TDC=~/Downloads/TDC WAVESERVE_ARGS="--log serve.log"
+EXODOS ?= $(HOME)/Downloads/eXoDOS
+TDC ?=
+PORT ?= 8086
+MAX_MB ?= 200
+NETDRIVE_DIR ?= $(HOME)/wave86-cd
+WAVESERVE_ARGS ?=
+waveserve: all build/netdrive
+	@test -n "$(TDC)" -o -d "$(EXODOS)" || { echo "make waveserve: no collection at $(EXODOS); EXODOS=<folder> or TDC=<folder>"; exit 1; }
+	python3 tools/waveserve.py $(if $(wildcard $(EXODOS)),$(EXODOS)) $(if $(TDC),--tdc $(TDC)) --port $(PORT) --cd --max-mb $(MAX_MB) --netdrive $(NETDRIVE_DIR) $(WAVESERVE_ARGS)
 
 # CD image drivers for real DOS (cdrom/README.md)
 cdrom: $(wildcard cdrom/*.COM cdrom/*.EXE)
@@ -192,4 +210,4 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test dostest dosrun netdrive dist clean music music-files thumbs net cdrom
+.PHONY: all run test dostest dosrun netdrive waveserve dist clean music music-files thumbs net cdrom

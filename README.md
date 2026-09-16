@@ -175,6 +175,7 @@ one, `binl64` on Linux) plus `h` and `lib286` into `toolchain/`.
 
     make          builds build/WAVE86.EXE and copies WAVE.BAT, the INI and MUSIC\
     make run      opens it in dosbox-x, with sound and networking (see below)
+    make waveserve  starts the game server on this machine, with its console
     make test     renders the UI headlessly to build/screen.png
     make dist     the DOS side as dist/wave86-<version>-dos.zip, ready to copy over
     make music    regenerates the soundtrack
@@ -217,6 +218,17 @@ executable set, and Enter plays it off the server without copying. Nothing is un
 streams plain files.
 
 On the machine with the collection (Mac, Linux, a NAS with Python):
+
+    make waveserve
+    make waveserve EXODOS=/Volumes/Games/eXoDOS PORT=8086
+    make waveserve TDC=~/Downloads/TDC WAVESERVE_ARGS="--log serve.log"
+
+`make waveserve` builds first, since the server hands `build/` to WAVEGET
+UPDATE, fetches the NetDrive server if it is not there yet, and starts
+`tools/waveserve.py` on the collection in `EXODOS` (default
+`~/Downloads/eXoDOS`) with CD games and their discs included, the discs
+also kept as NetDrive volumes under `NETDRIVE_DIR` (`~/wave86-cd`).
+`q` in its console stops it. Run by hand, the same thing is:
 
     python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd
     python3 tools/waveserve.py --tdc ~/Downloads/1981-1992 --port 8086
