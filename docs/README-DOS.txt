@@ -15,6 +15,16 @@ Setting up
 
 WAVE86 /diag prints what it found when something looks wrong.
 
+A PicoMem 2 can have all of this on a ready-made disk: make picomem-image
+on the build machine writes a 512 MB FreeDOS image with the launcher, the
+card's tools, mTCP, the Gravis files and a CONFIG.SYS and AUTOEXEC.BAT
+that do everything below, for the HDD folder of the card's SD card (the
+project README says what to check). Its packet driver line is
+LH NE2000 0x60 3 0x300: the card's NE2000 defaults to IRQ 3 (BIOS Setup,
+Other menu), while its Sound Blaster and GUS take IRQ 5. Its WAVE86.INI
+says theme=picomem: the launcher in black and gold, after the card;
+theme=exodos or theme=wave86 there brings back the other looks.
+
 Games from a server on the LAN (PicoMem or any NE2000)
 ------------------------------------------------------
 DOS's default environment (256 bytes) runs out once MTCPCFG joins PATH,
@@ -23,13 +33,36 @@ in CONFIG.SYS:
     SHELL=C:\COMMAND.COM C:\ /E:1024 /P
 
 On the DOS machine, in AUTOEXEC.BAT:
-    LH NE2000 0x60 5 0x300          (your card's interrupt and port)
+    LH NE2000 0x60 5 0x300          (your card's interrupt and port; a
+                                     PicoMem's NE2000 is on IRQ 3 unless
+                                     its BIOS Setup says otherwise)
     SET MTCPCFG=C:\WAVE86\MTCP.CFG
     C:\WAVE86\DHCP
 and in WAVE86.INI:
     server=192.168.1.10:8086        (the machine running waveserve.py)
-Then N in the menu lists the games there; I installs one, Enter plays
-it straight off the server.
+Then N in the menu lists the games there. Space queues the one under
+the bar; Enter (or I) fetches the queue, or installs the one under the
+bar when nothing is queued; Q shows the queue (Del takes one out); P
+plays a game straight off the server. / (or S) searches for a title:
+type a few letters of it, Enter; F3 searches on. Left and right turn
+the page. In the games list / and F3 search, left and right page, the
+same way, and Del removes a game from the disk after a yes. M (or ?) in
+either list opens a menu of everything it does, each with its key.
+If downloads stop with "the server went quiet", nettimeout=300 in
+WAVE86.INI makes WAVEGET wait five minutes instead of two.
+A game installed from the server comes with a picture for the details
+pane, its title screen unless netart= in WAVE86.INI says gameplay, box,
+logo or another kind (netart=0 for none). A game with a picture shows
+it under its name; P swaps in the path, program, setup program and
+tags, and back. VGA only.
+O opens a game's options: CPU SLOWDOWN (SLOWDOWN.COM runs while the
+game does) and MEMORY LIMIT (MEMLIM hides the extended memory beyond
+it: 31 MB for a game that fails with 32 MB and up, like Aladdin), and
+its sound mode; Enter writes the ones you changed into the game's
+section of WAVE86.INI. A value typed into the INI by hand that no
+preset matches (slowdown=486:40, 25%, a memlimit of 20) shows as
+CUSTOM and is left as it is. Both programs live next to WAVE86.EXE; U
+fetches them.
 
 CD images kept on the server (NetDrive) also need, in CONFIG.SYS:
     DEVICE=C:\WAVE86\EXTRAS\JEMMEX.EXE     (or HIMEM.SYS plus EMM386.EXE)
@@ -45,7 +78,7 @@ A game installed with its CD (LOCAL CD in the network view) keeps the
 image in its own CD\ folder, and SHSUCDHD + SHSUCDX put it on D: while
 the game runs. WAVE86.INI can name one folder for every disc instead,
 and hand the mounting to a card that emulates a CD-ROM drive itself -
-a PicoGUS, and a PicoMem 2 once its firmware can load an image:
+a PicoGUS, or a PicoMem 2:
     cdrom_storage=W:          (where the images go; W: here is the PicoGUS's)
     imgmount=PICOGUS          (SOFTWARE, the default, uses SHSUCDHD+SHSUCDX)
     cdrom_letter=D            (the letter MSCDEX gave the card's drive)
@@ -55,6 +88,13 @@ The image is appended to that command - /cdloadname takes a name, while
 file name instead of the whole path. The card needs a moment before the
 disc it has been handed can be read, so the batch waits for a key after
 loading it; cdrom_pause=0 in the INI skips the wait.
+
+A PicoMem 2 is cdrom_storage=W:\CDROM (its SD card is W: through
+PMDFS) and imgmount=PICOMEM with cdmount_picomem= left empty: the card
+has no DOS command to hand it an image yet, so the batch names the
+disc, asks you to load it on the card by hand and waits for a key
+before it goes on. When the firmware gets a load command, it goes in
+cdmount_picomem=.
 
 A game with sound= switches the PicoGUS's mode first, and pgusinit /mode
 reloads the card's firmware: an image handed over in the next breath is
@@ -70,8 +110,9 @@ WAVE86 writes each game's IMGMOUNT.BAT itself, from these settings, every
 time it starts that game: the paths, the command and the letter go into
 the batch as they are, so nothing depends on the environment having room
 for them, and a change here reaches games that are already installed. A
-game whose disc stays on the server keeps the batch the server sent. PGUSINIT.EXE /cdload is the default, so
-cdmount_picogus= is only needed to give PGUSINIT's path.
+game whose disc stays on the server keeps the batch the server sent.
+PGUSINIT.EXE /cdloadname is the default, so cdmount_picogus= is only
+needed to give PGUSINIT's path.
 
 Space marks a game for the install queue and I then fetches every
 marked game, one after another - the launcher cannot download in the
@@ -90,9 +131,9 @@ cable or a tired card, not against anything on the network pretending to
 be your server - the protocol is plain HTTP with no authentication.
 
 While a game comes in, WAVEGET shows a progress screen - the bar, the
-rate, the files as they land - and plays the soundtrack from MUSIC\ on
-the AdLib. M, +, -, < and > work there as they do in the menu, Esc
-stops the download. netmusic=0 in WAVE86.INI keeps it quiet.
+rate, the files as they land - and, with netmusic=1 in WAVE86.INI,
+plays the soundtrack from MUSIC\ on the AdLib. M, +, -, < and > work
+there as they do in the menu, Esc stops the download.
 
 When a game will not start
 --------------------------
@@ -117,15 +158,19 @@ WAVE86 /diag will tell you how much of it is left.
 
 Updating over the network
 -------------------------
-U in the network view fetches a fresh WAVE86.EXE, WAVEGET.EXE and
-DRVOFF.EXE from the server and starts the new launcher - no floppy
-shuffle when testing a build on the real machine. The same thing from
-the prompt:
+U in the network view fetches a fresh launcher, WAVEGET, DRVOFF,
+MEMLIM, SLOWDOWN and WAVE86.DEF from the server and starts the new
+launcher - no floppy shuffle when testing a build on the real machine.
+The same thing from the prompt:
     WAVEGET UPDATE 192.168.1.10:8086 C:\WAVE86
-Each file is renamed into place only once it has arrived whole, so a
-dropped connection leaves what is already there alone. The server sends
-what it built; anything else it should push (a WAVE86.INI of your own,
-drivers) goes in its --update folder.
+Each file is renamed into place only once it has arrived whole and its
+checksum matched, so a dropped connection leaves what is already there
+alone. The server sends what it built; anything else it should push (a
+WAVE86.INI of your own, drivers) goes in its --update folder. WAVE86.DEF
+is the shipped WAVE86.INI: from it WAVEGET adds to your INI the settings
+it lacks, comments and all - all but gamedir=, since without that line
+the launcher uses the GAMES folder beside it - and touches nothing
+already there.
 
 EXTRAS
 ------

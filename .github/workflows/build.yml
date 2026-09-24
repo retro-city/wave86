@@ -21,6 +21,9 @@ jobs:
       - name: Build the DOS side
         run: make dist
 
+      - name: Test the server's torrent reader
+        run: python3 tools/test_torrentfs.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: wave86-dos

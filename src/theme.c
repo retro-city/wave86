@@ -1,7 +1,10 @@
 /*
- * theme.c - the looks. A theme is the logo (5 rows of '#'), its row
- * colours and shadow, the tagline, the divider band and the 16 DAC
- * colours. theme= in WAVE86.INI picks one; exodos is the default.
+ * theme.c - the looks. A theme is the logo (5 rows of '#', or a hex
+ * digit for a cell in a colour of its own), its row colours and shadow,
+ * the tagline, the divider band and the 16 DAC colours. theme= in
+ * WAVE86.INI picks one; exodos is the default. The pictures that come
+ * with games are matched to these colours (tools/makethumb.py carries
+ * the same tables), and a theme costs about 330 bytes of near data.
  */
 #include <string.h>
 #include "wave86.h"
@@ -34,6 +37,22 @@ static const Theme themes[] = {
         { 44,  4, 22 }, { 34,  8, 48 }, { 63, 34,  4 }, { 42, 38, 46 },
         { 18, 12, 26 }, { 34, 26, 63 }, { 24, 60, 30 }, { 52, 40, 63 },
         { 62, 14, 40 }, { 50, 28, 63 }, { 63, 50, 12 }, { 63, 62, 63 } } },
+    /* the PicoMEM card's Black Gold edition: a matte black board, gold
+       lettering and edge fingers, white silkscreen - and its elephant
+       (the card's mascot, by Adnz; this one is five rows of blocks) */
+    { "picomem",
+      { "#### ###  ###  ##  #   # #### #   #    ffffff  ",
+        "#  #  #  #    #  # ## ## #    ## ##   ffffffff ",
+        "####  #  #    #  # # # # ###  # # #   fffff fff",
+        "#     #  #    #  # #   # #    #   #   ffffff  f",
+        "#    ###  ###  ##  #   # #### #   #   ff  ff  f" },
+      { 14, 14, 11, 9, 3 }, 6,
+      "WAVE86 PICOMEM EDITION",
+      { 14, 9, 3, 2, 1, 8 },
+      { {  4,  4,  3 }, { 14, 12,  8 }, { 24, 20,  8 }, { 36, 30, 12 },
+        { 40,  8,  8 }, { 30, 22,  6 }, { 22, 16,  4 }, { 44, 42, 38 },
+        { 20, 19, 17 }, { 52, 44, 24 }, { 26, 40, 20 }, { 58, 48, 26 },
+        { 63, 26, 22 }, { 63, 58, 44 }, { 63, 54, 28 }, { 63, 63, 63 } } },
 };
 
 const Theme *theme = &themes[1];         /* exodos */

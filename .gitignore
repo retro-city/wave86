@@ -1,5 +1,5 @@
 build/
-toolchain/
+toolchain
 GAMES/
 .DS_Store
 *.BIN
@@ -17,6 +17,10 @@ music/razorgirl.xm
 music/techno.mod
 music/warrior.mod
 music/worms.mod
+# the collection's torrents: not ours to publish (the Lite one is private)
+*.torrent
 build_*/
+# worktrees the Claude desktop app makes for its agents
+.claude/worktrees/
 __pycache__/
 dist/

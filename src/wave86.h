@@ -7,7 +7,7 @@
 
 #include <stdio.h>
 
-#define VERSION_STR "0.4"
+#define VERSION_STR "0.5"
 
 #define MAX_GAMES   128
 #define NAME_LEN    40
@@ -71,13 +71,19 @@ extern int game_count;
 extern char gamedir[PATH_LEN];      /* absolute path to games root */
 extern char home_dir[PATH_LEN];     /* where WAVE86.EXE lives: INI, MUSIC\ */
 
+extern int ui_show_details;     /* P in the games list: details instead of the picture */
 int scan_games(void);
+int scan_rmtree(const char *path);  /* a folder and all in it; 0 when gone */
 
 /* --- config (ini.c) --- */
 void ini_load(const char *fname);   /* reads gamedir= */
 void ini_apply(void);               /* per-game [sections] onto games[] */
 int ini_write_name(const char *dir, const char *name); /* set/add name= */
 int ini_write_key(const char *dir, const char *key, const char *value);
+int ini_remove_section(const char *dir);
+int ini_remove_key(const char *dir, const char *key);          /* one line out of a section */
+const char *ini_game(const char *dir, const char *key);        /* a game's own value, or NULL */
+int ini_sound_modes(char (*modes)[16], int max);               /* the soundcmd_<mode> names */
 void ini_emit_extras(FILE *bat, const char *dir, int after); /* env/pre/post/sound */
 const char *ini_global(const char *key);   /* value of a global key, or NULL */
 void sort_games(void);
@@ -117,12 +123,24 @@ extern int net_cdmode;          /* 1 = leave CDs on the server (NET CD), 0 = dow
 extern int net_rawcd;           /* 1 = a card mounts the discs: fetch cue/bin untouched */
 unsigned long net_size(const NetGame *g);   /* the download in the current mode */
 int net_load(void);             /* offsets into NETLIST.TXT; count */
+int net_find(const char *NEEDLE, int from);     /* next title holding it, or -1 */
+int text_has(const char *hay, const char *NEEDLE);
 const NetGame *net_get(int i);  /* reads that line; valid until the next call */
 int net_letter_first(char c);   /* first title starting with c, or -1 */
 void net_free(void);
 void net_mark_pending(const NetGame *g);    /* appends to NETGAME.TXT */
 void net_pending_reset(void);   /* forget what was on its way in */
+/* the menu (M or ?): a key chooser. code is what pressing the item's key
+   would send the main loop, K_MUSIC for the one whose key opens the menu */
+typedef struct { const char __far *key; const char __far *label; unsigned code; } MenuItem;
+#define K_MUSIC 0x1000
+
+#define QUEUE_MAX 16
+#define QT_LEN    33            /* a queued title as the queue box shows it */
+#define QROW      (QT_LEN + 9)  /* a row of the box: the title, then the folder name */
 extern int net_qcount;          /* games in the install queue */
+int net_queue_get(int k, char *dir, unsigned long *kb);  /* entry k of the queue */
+void net_pending_forget(const char *dir);   /* drop a game from NETGAME.TXT */
 int net_queued(const char *dir);               /* is that folder queued? */
 int net_queue_toggle(const char *dir, unsigned long kb);  /* 1 in, 0 out, -1 full */
 int net_queue_add(const char *dir, unsigned long kb);

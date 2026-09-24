@@ -36,3 +36,21 @@ The harness loads it first in CONFIG.SYS with `DOS=HIGH,UMB`, puts
 NetDrive up with DEVICEHIGH and the packet driver, the mouse and the CD
 drivers with LH, so the games get the conventional memory back. It works
 under MS-DOS and FreeDOS alike.
+
+# Boot sector for `make picomem-image`
+
+`FAT16.BS` is the FreeDOS FAT16 boot sector that `tools/mkimage.py`
+writes onto the hard-disk image it builds, and `boot.asm` and `magic.mac`
+are its source: `boot/boot.asm` and `boot/magic.mac` of
+https://github.com/FDOS/kernel at commit d6791ad (2026-07-01; boot.asm
+itself last changed 2024-02-18), GPL v2 like the kernel (magic.mac is
+public domain, E. C. Masloch). `make bootsector` reassembles it with
+`nasm -dISFAT16 -f bin`; the FAT12 build on FREEDOS.IMG is a different
+binary (the FAT chain walk differs), so it could not simply be reused.
+dosbox-x's IMGMAKE, which makes the image, writes a partition with a
+"not bootable" stub; mkimage.py puts this sector over it, keeping the
+BPB IMGMAKE wrote (bytes 0x0B-0x3D), with OEM name `FRDOS5.1` and BIOS
+drive 80h, which is what the kernel's SYS.COM does. The sector finds
+KERNEL.SYS by searching the root directory and reads through INT 13h
+extensions when the BIOS has them, CHS from the BPB otherwise, which is
+what the PicoMem's BIOS (DOSBox's, CHS only) will get.

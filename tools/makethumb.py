@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """makethumb - turn a screenshot into a WAVE86 text-mode picture.
 
-    makethumb.py screenshot.png THUMBS/KEEN4.THM
-
+    makethumb.py screenshot.png THUMBS/KEEN4.THM [--theme wave86] [--size 36x10]
+    thumb(png_bytes_or_path, "exodos", 36, 10) -> the .THM's bytes, from a program
 VGA text mode has no pixels, but its character shapes live in RAM, and
 in 512-character mode bit 3 of the attribute picks one of two fonts.
 The picture sits centred under the details: 26x7 cells (about 4:3 on
@@ -19,8 +19,7 @@ code for bank A, nB x the same for bank B, then cols*rows x (char, attr).
 """
 import sys, subprocess
 
-COLS, ROWS = 26, 7
-W, H = COLS * 8, ROWS * 16
+COLS, ROWS = 26, 7               # the size when none is asked for
 
 # the launcher's palettes (src/theme.c), 6-bit VGA DAC values
 PALETTES = {
@@ -28,14 +27,15 @@ PALETTES = {
                (15,9,26),(27,24,60),(18,60,40),(28,63,63),(63,26,34),(63,24,56),(63,54,16),(62,58,63)],
     "exodos": [(3,0,6),(16,4,30),(0,34,18),(34,20,50),(44,4,22),(34,8,48),(63,34,4),(42,38,46),
                (18,12,26),(34,26,63),(24,60,30),(52,40,63),(62,14,40),(50,28,63),(63,50,12),(63,62,63)],
+    # black and gold, after the PicoMEM card's Black Gold edition
+    "picomem": [(4,4,3),(14,12,8),(24,20,8),(36,30,12),(40,8,8),(30,22,6),(22,16,4),(44,42,38),
+                (20,19,17),(52,44,24),(26,40,20),(58,48,26),(63,26,22),(63,58,44),(63,54,28),(63,63,63)],
 }
 THEME = "exodos"                 # --theme wave86 for the other look's colours
-if "--theme" in sys.argv:
-    _i = sys.argv.index("--theme")
-    THEME = sys.argv[_i + 1]
-    del sys.argv[_i:_i + 2]
-PAL6 = PALETTES[THEME]
-PAL = [(r*255//63, g*255//63, b*255//63) for r, g, b in PAL6]
+
+
+def palette(theme):
+    return [(r * 255 // 63, g * 255 // 63, b * 255 // 63) for r, g, b in PALETTES[theme]]
 
 # codes the UI never displays, available in both banks (0xAE/0xAF are the
 # << >> of the 386+ badge, 0x10/0x18/0x19 the arrows, 0x0D/0x0E the notes)
@@ -53,22 +53,23 @@ STD = {
 }
 
 
-def nearest(c):
+def nearest(c, pal):
     r, g, b = c
-    return min(range(16), key=lambda i: (PAL[i][0]-r)**2 + (PAL[i][1]-g)**2 + (PAL[i][2]-b)**2)
+    return min(range(16), key=lambda i: (pal[i][0]-r)**2 + (pal[i][1]-g)**2 + (pal[i][2]-b)**2)
 
 def dist(a, b): return sum((x - y) ** 2 for x, y in zip(a, b))
 def hamming(a, b): return sum(bin(x ^ y).count("1") for x, y in zip(a, b))
 def invert(bits): return [b ^ 0xFF for b in bits]
 
 
-def analyse(px):
+def analyse(px, pal, cols=COLS, rows=ROWS):
     """per cell: (bits with colour 1 set, colour 1, colour 2)"""
     cells = []
-    for cy in range(ROWS):
-        for cx in range(COLS):
-            pts = [px[(cy*16+y)*W + cx*8 + x] for y in range(16) for x in range(8)]
-            idx = [nearest(p) for p in pts]
+    w = cols * 8
+    for cy in range(rows):
+        for cx in range(cols):
+            pts = [px[(cy*16+y)*w + cx*8 + x] for y in range(16) for x in range(8)]
+            idx = [nearest(p, pal) for p in pts]
             count = {}
             for i in idx: count[i] = count.get(i, 0) + 1
             top = sorted(count, key=lambda i: -count[i])
@@ -79,7 +80,7 @@ def analyse(px):
             for y in range(16):
                 b = 0
                 for x in range(8):
-                    if dist(pts[y*8+x], PAL[c1]) <= dist(pts[y*8+x], PAL[c2]):
+                    if dist(pts[y*8+x], pal[c1]) <= dist(pts[y*8+x], pal[c2]):
                         b |= 0x80 >> x
                 bits.append(b)
             cells.append((bits, c1, c2))
@@ -124,27 +125,52 @@ def assign(cells, tol):
     return bank, out, stats
 
 
-def main():
-    src, dst = sys.argv[1], sys.argv[2]
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vf", f"scale={W}:{H}",
-                          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
-    px = [(raw[i], raw[i+1], raw[i+2]) for i in range(0, len(raw), 3)]
-    cells = analyse(px)
+def decode(src, cols=COLS, rows=ROWS):
+    """the picture as cols*8 x rows*16 rgb pixels; src is a file name or the file's bytes"""
+    data = src if isinstance(src, bytes) else None
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", "-" if data else src, "-vf", f"scale={cols * 8}:{rows * 16}",
+                          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                         input=data, capture_output=True, check=True).stdout
+    return [(raw[i], raw[i+1], raw[i+2]) for i in range(0, len(raw), 3)]
 
-    for tol in (6, 10, 14, 18, 24, 32):
+
+def encode(cells, cols=COLS, rows=ROWS):
+    """the .THM bytes for analysed cells, and a line about how it went"""
+    for tol in (6, 10, 14, 18, 24, 32, 40, 48):
         bank, out, stats = assign(cells, tol)
         if stats["fallback"] <= 4:
             break
+    data = bytearray(b"W86T" + bytes((cols, rows, len(bank[0]), len(bank[1]))))
+    for b in (0, 1):
+        for k, g in enumerate(bank[b]):
+            data += bytes([FREE[k]] + g)
+    for ch, fg, bg in out:
+        data += bytes((ch, (bg << 4) | fg))
+    info = (f"{cols}x{rows} tol={tol}, glyphs A={len(bank[0])} B={len(bank[1])} of {len(FREE)}; "
+            f"cells flat={stats['flat']} std={stats['std']} reuse={stats['reuse']} new={stats['new']} fallback={stats['fallback']}")
+    return bytes(data), info
 
+
+def thumb(src, theme=THEME, cols=COLS, rows=ROWS):
+    """a picture (file name or bytes) as a cols x rows .THM for that theme's colours"""
+    return encode(analyse(decode(src, cols, rows), palette(theme), cols, rows), cols, rows)[0]
+
+
+def main():
+    theme, cols, rows = THEME, COLS, ROWS
+    if "--theme" in sys.argv:
+        i = sys.argv.index("--theme")
+        theme = sys.argv[i + 1]
+        del sys.argv[i:i + 2]
+    if "--size" in sys.argv:
+        i = sys.argv.index("--size")
+        cols, rows = (int(v) for v in sys.argv[i + 1].lower().split("x"))
+        del sys.argv[i:i + 2]
+    src, dst = sys.argv[1], sys.argv[2]
+    data, info = encode(analyse(decode(src, cols, rows), palette(theme), cols, rows), cols, rows)
     with open(dst, "wb") as f:
-        f.write(b"W86T" + bytes((COLS, ROWS, len(bank[0]), len(bank[1]))))
-        for b in (0, 1):
-            for k, g in enumerate(bank[b]):
-                f.write(bytes([FREE[k]] + g))
-        for ch, fg, bg in out:
-            f.write(bytes((ch, (bg << 4) | fg)))
-    print(f"{dst}: {COLS}x{ROWS} tol={tol}, glyphs A={len(bank[0])} B={len(bank[1])} of {len(FREE)}; "
-          f"cells flat={stats['flat']} std={stats['std']} reuse={stats['reuse']} new={stats['new']} fallback={stats['fallback']}")
+        f.write(data)
+    print(f"{dst}: {info}")
 
 
 if __name__ == "__main__":

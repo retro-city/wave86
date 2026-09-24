@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <io.h>
 #include <fcntl.h>
+#include <direct.h>
 #include "wave86.h"
 
 Game games[MAX_GAMES];
@@ -181,6 +182,54 @@ static void scan_one(Game *g)
             close(h);
         }
     }
+}
+
+/*
+ * Delete a folder and everything in it (Del in the games list). One path
+ * buffer serves the whole walk, grown and cut back at each level: the
+ * stack is 2K, and a find_t per level is all it can afford. DOS carries
+ * on a findnext across deletions in the same folder. Read-only files are
+ * made plain first, as the eXoDOS zips leave a few. Stops RM_LEVELS deep,
+ * which no game folder reaches. Returns 0 when the folder is gone.
+ */
+#define RM_LEVELS 12
+static char rm_path[PATH_LEN * 2];
+
+static int rm_level(unsigned len, int depth)
+{
+    struct find_t ft;
+    unsigned rc;
+
+    if (depth > RM_LEVELS || len + 14 >= sizeof(rm_path))
+        return 1;
+    strcpy(rm_path + len, "\\*.*");
+    rc = _dos_findfirst(rm_path, _A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_ARCH | _A_SUBDIR, &ft);
+    while (rc == 0) {
+        if (ft.name[0] != '.') {
+            rm_path[len] = '\\';
+            strcpy(rm_path + len + 1, ft.name);
+            if (ft.attrib & _A_SUBDIR) {
+                if (rm_level(len + 1 + strlen(ft.name), depth + 1))
+                    return 1;
+            } else {
+                if (ft.attrib & (_A_RDONLY | _A_HIDDEN | _A_SYSTEM))
+                    _dos_setfileattr(rm_path, _A_NORMAL);
+                if (remove(rm_path) != 0)
+                    return 1;
+            }
+        }
+        rc = _dos_findnext(&ft);
+    }
+    rm_path[len] = 0;
+    return rmdir(rm_path) != 0;
+}
+
+int scan_rmtree(const char *path)
+{
+    if (strlen(path) + 16 >= sizeof(rm_path))
+        return 1;
+    strcpy(rm_path, path);
+    return rm_level(strlen(rm_path), 0);
 }
 
 static int cmp_games(const void *a, const void *b)

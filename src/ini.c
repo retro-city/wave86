@@ -12,30 +12,40 @@
  *   cd=CD\SYNDICAT.ISO      (found by itself when it sits in CD\)
  *
  * Section names match game directory names (case-insensitive).
- * The file is read once into a small line store so sections can be
- * applied again after every rescan.
+ * The file is read once into a line store so sections can be applied
+ * again after every rescan.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <malloc.h>
 #include "wave86.h"
 
-/* The INI is held in memory for reading (ini_global, ini_apply); writing
-   streams the file through a .TMP instead, so a file with more lines than
-   fit is never rewritten short. What does not fit is simply not seen, so
-   these are sized for a big collection while leaving the 64K data segment
-   room for a stack and a heap - two open streams need about 1.2K of it. */
-#define MAX_LINES 220
+/* The INI is held in memory for reading (ini_global, ini_apply, ini_game):
+   the lines that matter, trimmed and packed one after another in a 60K
+   block of far memory, room for a few thousand of them. The 64K data
+   segment could spare a table of 220, and a collection past 45 games
+   installed from the server fell off its end unseen. Writing streams the
+   file through a .TMP instead, so nothing is ever rewritten short. */
+#define POOL_MAX  0xF000u
 #define LINE_LEN  80
 
-static char lines[MAX_LINES][LINE_LEN];
+static char __far *pool = NULL;     /* the lines, a NUL after each */
+static unsigned pool_used = 0;
 static int nlines = 0;
+
+/* the line at pos into buf; what comes back is where the next one starts */
+static unsigned line_at(unsigned pos, char *buf)
+{
+    _fstrcpy(buf, pool + pos);
+    return pos + strlen(buf) + 1;
+}
 
 int cfg_modrate = -1;           /* modrate= : MOD mixer rate, 0 disables */
 int cfg_adlib = -1;             /* adlib=   : 1 force FM on, 0 off */
 int cfg_music = 0;              /* music=   : 1 = play at startup */
-char cfg_theme[16] = "";        /* theme=   : wave86 (default) or exodos */
+char cfg_theme[16] = "";        /* theme=   : exodos (default) or wave86 */
 int cfg_netcd = 0;              /* netcd=   : 1 = leave CDs on the server (NET CD) */
 
 static char *trim(char *s)
@@ -63,23 +73,31 @@ void ini_load(const char *fname)
     f = fopen(fname, "r");
 
     nlines = 0;
+    pool_used = 0;
     if (!f)
         return;
-    while (nlines < MAX_LINES && fgets(buf, sizeof(buf), f)) {
+    if (!pool)
+        pool = (char __far *)_fmalloc(POOL_MAX);
+    while (pool && fgets(buf, sizeof(buf), f)) {
         char *s = trim(buf);
+        unsigned n;
         if (*s == 0 || *s == ';' || *s == '#')
             continue;
-        strncpy(lines[nlines], s, LINE_LEN - 1);
-        lines[nlines][LINE_LEN - 1] = 0;
+        n = strlen(s) + 1;
+        if (pool_used + n > POOL_MAX)
+            break;                      /* 60K of settings: the rest goes unseen */
+        _fmemcpy(pool + pool_used, s, n);
+        pool_used += n;
         nlines++;
     }
     fclose(f);
 
     /* global keys live before the first [section] */
     {
-        int i;
-        for (i = 0; i < nlines; i++) {
-            char *s = lines[i];
+        unsigned pos;
+        for (pos = 0; pos < pool_used; ) {
+            char *s = buf;
+            pos = line_at(pos, buf);
             if (s[0] == '[')
                 break;
             if (strnicmp(s, "gamedir=", 8) == 0) {
@@ -116,11 +134,13 @@ static void set_field(char *dst, unsigned dstlen, const char *val)
 
 void ini_apply(void)
 {
-    int i;
+    char buf[LINE_LEN];
+    unsigned pos;
     Game *cur = NULL;
 
-    for (i = 0; i < nlines; i++) {
-        char *s = lines[i];
+    for (pos = 0; pos < pool_used; ) {
+        char *s = buf;
+        pos = line_at(pos, buf);
         if (s[0] == '[') {
             char sect[FN_LEN];
             char *e = strchr(s, ']');
@@ -174,10 +194,11 @@ void ini_apply(void)
 const char *ini_global(const char *key)
 {
     static char val[LINE_LEN];
-    unsigned kl = strlen(key);
-    int i;
-    for (i = 0; i < nlines; i++) {
-        char *s = lines[i];
+    char buf[LINE_LEN];
+    unsigned kl = strlen(key), pos;
+    for (pos = 0; pos < pool_used; ) {
+        char *s = buf;
+        pos = line_at(pos, buf);
         if (s[0] == '[')
             break;
         if (strnicmp(s, key, kl) == 0 && s[kl] == '=') {
@@ -268,6 +289,136 @@ int ini_write_key(const char *dir, const char *key, const char *name)
         return 1;
     ini_load(ini_path);                 /* pick the change up */
     return 0;
+}
+
+/* Del in the games list: the section goes with the folder, or the file
+   fills up with games that are not there. Its keys go, and the blank line
+   after them; a comment between that and the next [section] introduces
+   the next one, so it stays. */
+int ini_remove_section(const char *dir)
+{
+    char tmp[PATH_LEN + 4], buf[LINE_LEN], line[LINE_LEN];
+    FILE *in, *out;
+    int skipping = 0, found = 0;    /* 1 in the section, 2 past its blank line */
+    char *dot;
+
+    strcpy(tmp, ini_path);
+    dot = strrchr(tmp, '.');
+    if (dot && !strchr(dot, '\\'))
+        *dot = 0;
+    strcat(tmp, ".TMP");
+    in = fopen(ini_path, "r");
+    if (!in)
+        return 1;
+    out = fopen(tmp, "w");
+    if (!out) { fclose(in); return 1; }
+    while (fgets(buf, sizeof(buf), in)) {
+        char *t;
+        strcpy(line, buf);
+        t = trim(line);
+        if (t[0] == '[') {
+            skipping = section_is(t, dir);
+            found |= skipping;
+        } else if (skipping == 1 && t[0] == 0)
+            skipping = 2;
+        if (skipping == 1)
+            continue;
+        if (skipping == 2 && t[0] != ';' && t[0] != '#')
+            continue;                   /* a stray key or blank line still belongs to it */
+        fputs(buf, out);
+    }
+    fclose(in);
+    fclose(out);
+    if (!found) { remove(tmp); return 0; }
+    remove(ini_path);
+    if (rename(tmp, ini_path) != 0)
+        return 1;
+    ini_load(ini_path);
+    return 0;
+}
+
+/* the options box turning a setting off: the line goes, and with it the
+   game's own say, so the global default is back */
+int ini_remove_key(const char *dir, const char *key)
+{
+    char tmp[PATH_LEN + 4], buf[LINE_LEN], line[LINE_LEN];
+    FILE *in, *out;
+    int in_target = 0, found = 0;
+    unsigned kl = strlen(key);
+    char *dot;
+
+    strcpy(tmp, ini_path);
+    dot = strrchr(tmp, '.');
+    if (dot && !strchr(dot, '\\'))
+        *dot = 0;
+    strcat(tmp, ".TMP");
+    in = fopen(ini_path, "r");
+    if (!in)
+        return 1;
+    out = fopen(tmp, "w");
+    if (!out) { fclose(in); return 1; }
+    while (fgets(buf, sizeof(buf), in)) {
+        char *t;
+        strcpy(line, buf);
+        t = trim(line);
+        if (t[0] == '[')
+            in_target = section_is(t, dir);
+        else if (in_target && strnicmp(t, key, kl) == 0 && t[kl] == '=') {
+            found = 1;
+            continue;
+        }
+        fputs(buf, out);
+    }
+    fclose(in);
+    fclose(out);
+    if (!found) { remove(tmp); return 0; }
+    remove(ini_path);
+    if (rename(tmp, ini_path) != 0)
+        return 1;
+    ini_load(ini_path);
+    return 0;
+}
+
+const char *ini_game(const char *dir, const char *key)
+{
+    static char val[LINE_LEN];
+    char buf[LINE_LEN];
+    unsigned kl = strlen(key), pos;
+    int in = 0;
+    for (pos = 0; pos < pool_used; ) {
+        char *s = buf;
+        pos = line_at(pos, buf);
+        if (s[0] == '[') {
+            if (in) break;
+            in = section_is(s, dir);
+        } else if (in && strnicmp(s, key, kl) == 0 && s[kl] == '=') {
+            strcpy(val, trim(s + kl + 1));
+            return val;
+        }
+    }
+    return NULL;
+}
+
+/* the sound modes the INI knows commands for: soundcmd_sb, soundcmd_gus... */
+int ini_sound_modes(char (*modes)[16], int max)
+{
+    char buf[LINE_LEN];
+    unsigned pos;
+    int n = 0;
+    for (pos = 0; pos < pool_used && n < max; ) {
+        char *s = buf;
+        pos = line_at(pos, buf);
+        if (s[0] == '[')
+            break;
+        if (strnicmp(s, "soundcmd_", 9) == 0) {
+            int k;
+            for (k = 0; k < 15 && s[9 + k] && s[9 + k] != '=' && s[9 + k] != ' '; k++)
+                modes[n][k] = (char)tolower((unsigned char)s[9 + k]);
+            modes[n][k] = 0;
+            if (k) n++;
+        }
+    }
+    return n;
 }
 
 int ini_write_name(const char *dir, const char *name)

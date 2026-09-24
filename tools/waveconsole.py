@@ -132,12 +132,15 @@ def games_rows(games, scroll, count, width):
 def render(state, width, height, ascii_only=False):
     """The screen: rows of (text, style), exactly height of them.
 
-    state: title (str), transfers (list of dicts from Monitor.snapshot),
+    state: title (str), swarm (a line about the torrent, or None),
+    transfers (list of dicts from Monitor.snapshot),
     lines (the log), games (list or None for the log view), scroll (rows
     from the top of the list, or None to follow the log's tail), now,
     rates (a Rates)."""
     now = state["now"]
     rows = [(f" {state['title']}"[:width].ljust(width), "title")]
+    if state.get("swarm"):
+        rows.append((f" {state['swarm']}"[:width], "dim"))
     transfers = state["transfers"]
     rows.append((" TRANSFERS" if transfers else " TRANSFERS  (none yet)", "head"))
     shown = transfers[-max(3, height // 3):]
@@ -169,10 +172,11 @@ def render(state, width, height, ascii_only=False):
     return rows
 
 
-def run(mon, title_fn, games_fn, actions):
+def run(mon, title_fn, games_fn, actions, swarm_fn=None):
     """Paint render() with curses until q. mon is waveserve's Monitor,
     title_fn() the title line, games_fn() the game list, actions a dict of
-    callables for the keys ('rescan')."""
+    callables for the keys ('rescan'), swarm_fn() a line about the torrent
+    when there is one."""
     import curses, sys
     ascii_only = (sys.stdout.encoding or "").lower().replace("-", "") != "utf8"
 
@@ -226,8 +230,8 @@ def run(mon, title_fn, games_fn, actions):
             if games is not None:
                 games = list(games_fn())    # a rescan may have changed it
             h, w = scr.getmaxyx()
-            state = dict(title=title_fn(), transfers=transfers, lines=lines, games=games,
-                         scroll=scroll, now=now, rates=rates)
+            state = dict(title=title_fn(), swarm=swarm_fn() if swarm_fn else None, transfers=transfers,
+                         lines=lines, games=games, scroll=scroll, now=now, rates=rates)
             scr.erase()
             for y, (text, style) in enumerate(render(state, w, h, ascii_only)):
                 try:

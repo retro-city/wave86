@@ -12,6 +12,8 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <malloc.h>
+#include <dos.h>
 #include <direct.h>
 #include <bios.h>
 #include <i86.h>
@@ -26,10 +28,14 @@ void ui_status(const char *msg);
 void ui_music_tick(void);
 void ui_music_volshow(void);
 void ui_edit_field(const char *text);
+void ui_prompt(const char *label, const char *text);
 void ui_net_static(void);
 void ui_net_list(int sel, int top);
 void ui_net_details(int sel);
-void ui_net_keybar(void);
+void ui_net_keybar(int cur);
+void ui_queue_box(int n, int sel, int top, const char __far *titles, const unsigned long __far *kbs);
+void ui_menu(const char *title, const MenuItem __far *items, int n, int sel, const unsigned char *dim);
+void ui_options(const char *title, const char *const *labels, const char *const *values, int n, int sel);
 
 #define K_UP    0x4800
 #define K_DOWN  0x5000
@@ -37,6 +43,12 @@ void ui_net_keybar(void);
 #define K_PGDN  0x5100
 #define K_HOME  0x4700
 #define K_END   0x4F00
+#define K_LEFT  0x4B00
+#define K_RIGHT 0x4D00
+#define K_F3    0x3D00
+#define K_DEL   0x5300
+#define PAGE    14              /* rows in a list */
+#define QROWS   12              /* rows in the queue box */
 
 static char launcher_dir[PATH_LEN];     /* cwd at start: where to return */
 char home_dir[PATH_LEN];                /* EXE directory: INI and MUSIC\ */
@@ -69,9 +81,38 @@ extern volatile unsigned mus_coff;
 extern int mus_loops;
 extern FILE *mod_dumpf;
 
+/* /keys <script>, for the test harness: these come out of getkey() before
+   the keyboard does, and with /dump the screen is dumped when they run
+   out. ~ Enter, ` Esc, { } left and right, ! F3, _ space. */
+static const char *opt_keys = NULL;
+static void quit(void);
+
 static unsigned getkey(void)
 {
     unsigned k;
+    if (opt_keys) {
+        char c = *opt_keys;
+        if (c) {
+            opt_keys++;
+            switch (c) {
+            case '~': return 0x0D;
+            case '`': return 0x1B;
+            case '{': return K_LEFT;
+            case '}': return K_RIGHT;
+            case '!': return K_F3;
+            case '#': return K_DEL;
+            case '[': return K_UP;
+            case ']': return K_DOWN;
+            case '_': return ' ';
+            }
+            return (unsigned char)c;
+        }
+        opt_keys = NULL;
+        if (opt_dump) {
+            scr_dump("SCREEN.BIN", "FONT.BIN", "PAL.BIN");
+            quit();
+        }
+    }
     while (!_bios_keybrd(_KEYBRD_READY)) {
         mus_poll();                 /* idle: keep the playlist moving */
         ui_music_tick();            /* ... and the VU meter bouncing */
@@ -276,7 +317,7 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
     char path[PATH_LEN + 24], mode[16], cmd[80], cmdu[80];
     const char *v, *sep;
     char letter = 'D';
-    int byname = 0, card, i, settle = 1;
+    int byname = 0, card, i, settle = 1, manual = 0;
     FILE *f;
 
     mode[0] = cmd[0] = cmdu[0] = 0;
@@ -296,8 +337,9 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
         sprintf(key, "cdunmount_%s", mode);
         if ((v = ini_global(key)) != NULL && v[0])
             clean_cmd(cmdu, v);
-        if (!cmd[0])
-            return 0;               /* a card with no command yet: leave it */
+        /* a card with no command for it yet (the PicoMem 2, whose discs are
+           picked on the card): the batch asks for the disc and waits */
+        manual = !cmd[0];
     }
     if ((v = ini_global("cdrom_letter")) != NULL && v[0])
         letter = (char)toupper((unsigned char)v[0]);
@@ -320,7 +362,16 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
     fprintf(f, "rem at every launch. The game's batch calls it and reads CD.\n");
     fprintf(f, "if exist Z:\\IMGMOUNT.COM goto dosbox\n");
     fprintf(f, "if exist Z:\\SYSTEM\\IMGMOUNT.COM goto dosboxx\n");
-    if (card) {
+    if (card && manual) {
+        strcpy(dbg_mount, "(the disc is loaded on the card by hand)");
+        fprintf(f, "echo.\n");
+        fprintf(f, "echo   PLEASE LOAD %s ON YOUR %s NOW\n", iso, mode);
+        fprintf(f, "echo   (the image is %s)\n", img);
+        fprintf(f, "echo   and press any key when the card has it.\n");
+        fprintf(f, "pause > NUL\n");
+        fprintf(f, "set CD=%c\n", letter);
+        fprintf(f, "goto done\n");
+    } else if (card) {
         /* Stand in the image's folder while the card loads it, the way you
            would at the prompt: a bare name (cdrom_name=1) is looked up in
            the current directory, and the game batch that calls this one is
@@ -552,6 +603,70 @@ static int debug_mode(void)
     return v && v[0] == '1';
 }
 
+/*
+ * slowdown= and memlimit= from a game's section: SLOWDOWN.COM (Bret
+ * Johnson's; make slowdown fetches it) and MEMLIM.EXE (ours) run before
+ * the game and are undone after it - and undone at the top of every
+ * batch too, for a game that never got to its own end. Only when the
+ * program is next to the launcher: a folder without it changes nothing.
+ * The slowdown value is an era (pentium, 486, 386, 286, xt), each with
+ * SLOWDOWN's argument for it - slow_<era>= in the INI overrides one -
+ * or SLOWDOWN's own notation: 486:40, 286:12, 25%.
+ */
+static const char *slow_arg(const char *v, char *arg)
+{
+    static const char *const eras[] = {"pentium", "486", "386", "286", "xt"};
+    static const char *const args[] = {"/MHz486:150", "/MHz486:66", "/MHz486:25", "/ATSpeed", "/XTSpeed"};
+    char key[16];
+    const char *o;
+    int i, n = strlen(v);
+    if (!v[0] || stricmp(v, "0") == 0 || stricmp(v, "off") == 0)
+        return NULL;
+    for (i = 0; i < 5; i++)
+        if (stricmp(v, eras[i]) == 0) {
+            sprintf(key, "slow_%s", eras[i]);
+            o = ini_global(key);
+            strcpy(arg, o && o[0] ? o : args[i]);
+            return arg;
+        }
+    if (stricmp(v, "at") == 0) { strcpy(arg, "/ATSpeed"); return arg; }
+    if (n > 1 && v[n - 1] == '%') { sprintf(arg, "/Percent:%.*s", n - 1, v); return arg; }
+    if (strnicmp(v, "486:", 4) == 0) { sprintf(arg, "/MHz486:%s", v + 4); return arg; }
+    if (strnicmp(v, "286:", 4) == 0) { sprintf(arg, "/MHz286:%s", v + 4); return arg; }
+    if (v[0] == '/') { strcpy(arg, v); return arg; }    /* SLOWDOWN's own switch, as is */
+    return NULL;
+}
+
+static void emit_limits(FILE *f, const char *dir, int when)     /* 0 before, 1 after, 2 the top */
+{
+    char tool[PATH_LEN + 16], arg[96];     /* an INI value is up to 79 chars, plus SLOWDOWN's prefix */
+    const char *sep = home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\";
+    const char *v;
+    int nocache, int70;
+
+    sprintf(tool, "%s%sMEMLIM.EXE", home_dir, sep);
+    if (access(tool, 0) == 0) {
+        if (when == 0) {
+            if ((v = ini_game(dir, "memlimit")) != NULL && atoi(v) > 0)
+                fprintf(f, "%s %d\n", tool, atoi(v));
+        } else
+            fprintf(f, "%s /FREE > NUL\n", tool);
+    }
+    sprintf(tool, "%s%sSLOWDOWN.COM", home_dir, sep);
+    if (access(tool, 0) == 0) {
+        if (when == 0) {
+            if ((v = ini_game(dir, "slowdown")) != NULL && slow_arg(v, arg)) {
+                /* ini_global hands out one static buffer: each value is judged before the next call */
+                v = ini_global("slowcache"); nocache = v && v[0] == '0';
+                v = ini_global("slowint70"); int70 = v && v[0] == '1';
+                fprintf(f, "%s /Q /DisableHotKeys %s%s%s\n", tool, arg,
+                        nocache ? " /UseCPUCache:No" : "", int70 ? " /UseInt70" : "");
+            }
+        } else
+            fprintf(f, "%s /Q /Uninstall > NUL\n", tool);
+    }
+}
+
 static void write_bat(const Game *g, int use_setup)
 {
     const char *prog = use_setup ? g->setup : g->exe;
@@ -580,9 +695,11 @@ static void write_bat(const Game *g, int use_setup)
     } else {
         fprintf(f, "@echo off\n");
     }
+    emit_limits(f, g->dir, 2);          /* what an earlier game may have left behind */
     fprintf(f, "%c:\n", gamedir[0]);
     fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
     ini_emit_extras(f, g->dir, 0);     /* sound mode, env, pre */
+    emit_limits(f, g->dir, 0);          /* less memory, a slower machine */
     emit_cd(f, g, 0, bat);
     if (dbg) {
         fprintf(f, "@echo off\necho [WAVE86] the environment the game will see:\n");
@@ -627,6 +744,7 @@ static void write_bat(const Game *g, int use_setup)
         fprintf(f, "pause\n@echo on\n");
     }
     emit_cd(f, g, 1, bat);
+    emit_limits(f, g->dir, 1);          /* full speed and all the memory again */
     ini_emit_extras(f, g->dir, 1);     /* post */
     if (dbg)
         fprintf(f, "pause\n@echo off\n");
@@ -639,6 +757,279 @@ static void redraw(int sel, int top);
 
 /* type a new display name for the selected game; Enter saves it to the
    INI and re-sorts, Esc leaves things alone */
+/*
+ * S or / asks for a few letters and goes to the next title that holds
+ * them, round past the end; F3, or Enter on an empty line, looks for the
+ * same letters again. Returns the entry (which may be the one we are on:
+ * the only one), -1 when there is nothing to look for - the caller puts
+ * its status line back - or -2 when nothing matches, which the status
+ * line now says.
+ */
+static char find_text[20];      /* in capitals; kept for F3 */
+
+static int find_title(int net, int from, int again)
+{
+    char buf[20], msg[60];
+    unsigned len = 0;
+    int i, hit = -1;
+
+    buf[0] = 0;
+    while (!again) {
+        unsigned k;
+        ui_prompt("SEARCH:", buf);
+        k = getkey();
+        if (k == 0x1B) return -1;
+        if (k == 0x0D) break;
+        if (k == 0x08) {
+            if (len) buf[--len] = 0;
+        } else if (k >= 32 && k < 127 && len < sizeof(buf) - 1) {
+            buf[len++] = (char)(k >= 'a' && k <= 'z' ? k - 32 : k);
+            buf[len] = 0;
+        }
+    }
+    if (buf[0]) strcpy(find_text, buf);
+    if (!find_text[0]) return -1;
+    if (net) {
+        ui_prompt("SEARCHING FOR", find_text);  /* a long list on a slow disk */
+        hit = net_find(find_text, from);
+    } else {
+        for (i = 1; i <= game_count && hit < 0; i++)
+            if (text_has(games[(from + i) % game_count].name, find_text))
+                hit = (from + i) % game_count;
+    }
+    if (hit < 0) {
+        sprintf(msg, "NO TITLE HAS \"%s\" IN IT.", find_text);
+        ui_status(msg);
+        return -2;
+    }
+    if (hit == from)
+        ui_status("THAT IS THE ONLY ONE.");
+    return hit;
+}
+
+/*
+ * M or ?: the menu. Everything the view does, with its key, over the
+ * bottom of the screen; the arrows and Enter pick one, or the key itself
+ * does. What comes back is the key the main loop would have got - so a
+ * choice is handled exactly as the key is - or 0 for nothing (Esc, or an
+ * item that does nothing just now). The one key that cannot come back
+ * as itself is M, which opens the menu: music is K_MUSIC.
+ */
+#define GAMES_MENU(X) \
+    X(g01, "ENTER", "RUN GAME",                0x0D) \
+    X(g14, "S",     "SETUP PROGRAM",           's') \
+    X(g02, "F2",    "RENAME",                  0x3C00) \
+    X(g03, "/",     "SEARCH",                  '/') \
+    X(g04, "F3",    "SEARCH NEXT",             K_F3) \
+    X(g05, "DEL",   "DELETE GAME",             K_DEL) \
+    X(g06, "R",     "RESCAN GAMES FOLDER",     'r') \
+    X(g07, "N",     "OPEN NETWORK INSTALL",    'n') \
+    X(g08, "P/D",   "DETAILS",                 'p') \
+    X(g13, "O",     "GAME OPTIONS",            'o') \
+    X(g09, "M",     "MUSIC ON/OFF",            K_MUSIC) \
+    X(g10, "+/-",   "VOLUME CONTROL",          '+') \
+    X(g11, "</>",   "PREVIOUS/NEXT SONG",      '>') \
+    X(g12, "ESC",   "QUIT TO DOS",             0x1B)
+#define NET_MENU(X) \
+    X(n01, "ENTER", "INSTALL IT, OR THE QUEUE", 0x0D) \
+    X(n02, "P",     "PLAY IT OFF THE SERVER",  'p') \
+    X(n03, "SPACE", "QUEUE IT, OR TAKE IT OUT", ' ') \
+    X(n04, "Q",     "THE QUEUE",               'q') \
+    X(n05, "/",     "SEARCH",                  '/') \
+    X(n06, "F3",    "SEARCH NEXT",             K_F3) \
+    X(n07, "L",     "FETCH THE LIST AGAIN",    'l') \
+    X(n08, "C",     "LOCAL/NET CD",            'c') \
+    X(n09, "U",     "UPDATE WAVE86",           'u') \
+    X(n10, "M",     "MUSIC ON/OFF",            K_MUSIC) \
+    X(n11, "+/-",   "VOLUME CONTROL",          '+') \
+    X(n12, "</>",   "PREVIOUS/NEXT SONG",      '>') \
+    X(n13, "ESC",   "BACK TO THE GAMES",       0x1B)
+/* the text and the tables live in far memory: the data segment is full */
+#define MENU_TEXT(id, k, l, c) static const char __far id##k_[] = k, id##l_[] = l;
+#define MENU_ITEM(id, k, l, c) { id##k_, id##l_, c },
+GAMES_MENU(MENU_TEXT)
+NET_MENU(MENU_TEXT)
+static const MenuItem __far menu_games[] = { GAMES_MENU(MENU_ITEM) };
+static const MenuItem __far menu_net[]   = { NET_MENU(MENU_ITEM) };
+#define MENU_ROWS 8
+static int menu_sel[2];         /* where the bar was, per view */
+
+static unsigned menu_pick(int net, int cur)
+{
+    const MenuItem __far *items = net ? menu_net : menu_games;
+    int n = net ? (int)(sizeof(menu_net) / sizeof(*menu_net)) : (int)(sizeof(menu_games) / sizeof(*menu_games));
+    int sel = menu_sel[net], i;
+    unsigned char dim[16];
+    int nomusic = !mus_present || !mus_ntracks;
+
+    for (i = 0; i < n; i++) {
+        unsigned c = items[i].code;
+        int d = 0;
+        if (c == K_MUSIC || c == '+' || c == '-' || c == '<' || c == '>') d = nomusic;
+        else if (net) {
+            if (c == 'q') d = !net_qcount;
+            else if (c == 'p') d = !net_count || !net_get(cur)->netplay;
+            else if (c == 0x0D || c == ' ' || c == '/' || c == K_F3) d = !net_count;
+        } else {
+            if (c == 's') d = !game_count || !games[cur].setup[0];
+            else if (c == 'n') d = !cfg_server[0];
+            else if (c != 'r' && c != 0x1B && c != 'p' && c != 'n') d = !game_count;
+        }
+        dim[i] = (unsigned char)d;
+    }
+    for (;;) {
+        unsigned k;
+        ui_menu(" MENU ", items, n, sel, dim);
+        k = getkey();
+        if (k == 0x1B || k == '?') return 0;
+        if (k == 'm' || k == 'M') k = K_MUSIC;
+        if (k == 0x0D) { menu_sel[net] = sel; return dim[sel] ? 0 : items[sel].code; }
+        if (k >= 'a' && k <= 'z') k -= 32;
+        if (!net && k == 'D') k = 'P';              /* D is the other key for the details */
+        /* the music keys that share an item: the view does the right thing */
+        if (k == '=' || k == '-' || k == '_' || k == '<' || k == ',' || k == '.')
+            return nomusic ? 0 : k;
+        for (i = 0; i < n; i++) {
+            unsigned c = items[i].code;
+            if (c >= 'a' && c <= 'z') c -= 32;
+            if (c == k) { menu_sel[net] = i; return dim[i] ? 0 : items[i].code; }
+        }
+        switch (k) {
+        case K_UP:    sel--; break;
+        case K_DOWN:  sel++; break;
+        case K_LEFT:  if (sel >= MENU_ROWS) sel -= MENU_ROWS; break;
+        case K_RIGHT: if (sel + MENU_ROWS < n) sel += MENU_ROWS; break;
+        case K_HOME:  sel = 0; break;
+        case K_END:   sel = n - 1; break;
+        }
+        if (sel < 0) sel = n - 1;
+        if (sel >= n) sel = 0;
+    }
+}
+
+/*
+ * O: a game's options - what to do to the machine before it runs, kept
+ * in its INI section: slowdown= (percent of full speed, 0 for none),
+ * memlimit= (MB the game may see, 0 for all), sound= (a soundcmd_ mode).
+ * Left and right step a value, Enter writes them, Esc leaves them.
+ */
+static const char *const slow_names[] = {"", "pentium", "486", "386", "286", "xt"};
+static const char *const slow_shown[] = {"OFF", "PENTIUM 133", "486 DX2-66", "386 DX-33", "286 AT, 8 MHZ", "XT, 4.77 MHZ"};
+static const unsigned char mem_levels[] = {0, 4, 8, 12, 16, 24, 31, 63};   /* 31 and 63: under the 32 and 64 MB bugs */
+#define NLEVELS(a) ((int)(sizeof(a) / sizeof(*(a))))
+
+static int mem_level_of(const char *v)
+{
+    int want = v ? atoi(v) : 0, i;
+    if (want <= 0) return 0;
+    for (i = 1; i < NLEVELS(mem_levels); i++)       /* the first one at or above */
+        if (mem_levels[i] >= want) return i;
+    return NLEVELS(mem_levels) - 1;
+}
+
+static int slow_level_of(const char *v)
+{
+    int i;
+    for (i = 1; v && i < NLEVELS(slow_names); i++)
+        if (stricmp(v, slow_names[i]) == 0) return i;
+    return 0;
+}
+
+static void game_options(int *sel, int *top)
+{
+    static const char *const labels[] = {"CPU SLOWDOWN", "MEMORY LIMIT", "SOUND MODE"};
+    char modes[8][16], vslow[32], vmem[24], vsnd[20], dir[FN_LEN], title[NAME_LEN + 12];
+    char cslow[16], cmem[8];        /* a hand-written value the presets do not have */
+    /* the eras are SLOWDOWN's calibrated model, not this machine's clock: see slow_arg() */
+    const char *values[3];
+    const char *v;
+    int nmodes = ini_sound_modes(modes, 8), i;
+    int slow, mem, snd = 0, row = 0;
+    int dirty[3] = {0, 0, 0};       /* Enter writes only what the arrows touched */
+    const Game *g = &games[*sel];
+
+    strcpy(dir, g->dir);
+    sprintf(title, " OPTIONS: %.40s ", g->name);
+    cslow[0] = cmem[0] = 0;
+    v = ini_game(dir, "slowdown");
+    slow = slow_level_of(v);
+    if (v && v[0] && !slow && stricmp(v, "0") != 0 && stricmp(v, "off") != 0) {
+        strncpy(cslow, v, 15);      /* 486:40, 25%, a switch: shown as it is, left as it is */
+        cslow[15] = 0;
+    }
+    v = ini_game(dir, "memlimit");
+    mem = mem_level_of(v);
+    if (v && atoi(v) > 0 && atoi(v) != mem_levels[mem]) {
+        strncpy(cmem, v, 7);
+        cmem[7] = 0;
+    }
+    if ((v = ini_game(dir, "sound")) != NULL)
+        for (i = 0; i < nmodes; i++)
+            if (stricmp(modes[i], v) == 0) snd = i + 1;
+    for (;;) {
+        unsigned k;
+        if (cslow[0] && !dirty[0]) sprintf(vslow, "CUSTOM: %s", cslow);
+        else strcpy(vslow, slow_shown[slow]);
+        if (cmem[0] && !dirty[1]) sprintf(vmem, "CUSTOM: %s MB", cmem);
+        else if (mem) sprintf(vmem, "%d MB", mem_levels[mem]); else strcpy(vmem, "OFF");
+        if (snd) { for (i = 0; modes[snd - 1][i] && i < 15; i++) vsnd[i] = (char)toupper((unsigned char)modes[snd - 1][i]); vsnd[i] = 0; }
+        else strcpy(vsnd, nmodes ? "(DEFAULT)" : "(NO SOUNDCMD LINES)");
+        values[0] = vslow; values[1] = vmem; values[2] = vsnd;
+        ui_options(title, labels, values, 3, row);
+        k = getkey();
+        if (k == 0x1B) break;
+        if (k == 0x0D) {
+            char num[8];
+            if (dirty[0]) {
+                if (slow) ini_write_key(dir, "slowdown", slow_names[slow]);
+                else ini_remove_key(dir, "slowdown");
+            }
+            if (dirty[1]) {
+                if (mem) { sprintf(num, "%d", mem_levels[mem]); ini_write_key(dir, "memlimit", num); }
+                else ini_remove_key(dir, "memlimit");
+            }
+            if (dirty[2]) {
+                if (snd) ini_write_key(dir, "sound", modes[snd - 1]);
+                else ini_remove_key(dir, "sound");
+            }
+            scan_games();               /* the fields come back from the file */
+            i = find_game(dir);
+            if (i >= 0) *sel = i;
+            break;
+        }
+        switch (k) {
+        case K_UP:   if (row > 0) row--; break;
+        case K_DOWN: if (row < 2) row++; break;
+        case K_LEFT: case K_RIGHT: {
+            int d = k == K_LEFT ? -1 : 1;
+            if (row == 0) slow = (slow + d + NLEVELS(slow_names)) % NLEVELS(slow_names);
+            else if (row == 1) mem = (mem + d + NLEVELS(mem_levels)) % NLEVELS(mem_levels);
+            else if (nmodes) snd = (snd + d + nmodes + 1) % (nmodes + 1);
+            if (row < 2 || nmodes) dirty[row] = 1;
+            break;
+        }
+        }
+    }
+    if (*sel < *top || *sel >= *top + PAGE) *top = *sel > 6 ? *sel - 6 : 0;
+    redraw(*sel, *top);
+}
+
+/* left and right turn the page: the list moves, the bar stays on its row */
+static void turn_page(int *sel, int *top, int count, int dir)
+{
+    int row = *sel - *top, was = *top;
+    if (count <= PAGE) { *sel = dir < 0 ? 0 : count - 1; return; }
+    *top += dir * PAGE;
+    if (*top > count - PAGE) *top = count - PAGE;
+    if (*top < 0) *top = 0;
+    if (*top == was)
+        *sel = dir < 0 ? 0 : count - 1;     /* the first or last page already: go to its end */
+    else {
+        *sel = *top + row;
+        if (*sel >= count) *sel = count - 1;
+    }
+}
+
 static void edit_name(int *sel, int *top)
 {
     char buf[NAME_LEN], dir[FN_LEN], oldname[NAME_LEN];
@@ -689,13 +1080,20 @@ static void redraw(int sel, int top)
     ui_status(NULL);
 }
 
+static void net_status(void);
+
 static void net_redraw(int sel, int top)
 {
-    char msg[60];
     ui_net_static();
     ui_net_list(sel, top);
     ui_net_details(sel);
-    ui_net_keybar();
+    ui_net_keybar(sel);
+    net_status();
+}
+
+static void net_status(void)
+{
+    char msg[60];
     if (net_qcount)
         sprintf(msg, "%d QUEUED OF %d GAMES ON %s", net_qcount, net_count,
                 cfg_server[0] ? cfg_server : "?");
@@ -863,10 +1261,10 @@ static void net_get_cmd(char *cmd, unsigned size, const NetGame *g, const char *
  * it fetches, so nothing can come in behind your back; a queue is the
  * next best thing - mark a few games, walk away, find them installed.
  */
-static void net_download(int nsel)
+static void net_download(int nsel, int whole_queue)
 {
     char cmd[PATH_LEN * 2 + 96], exe[PATH_LEN + 16], msg[80];
-    int n = net_qcount, k;
+    int n = whole_queue ? net_qcount : 0, k;
     FILE *f;
 
     waveget_path(exe);
@@ -907,6 +1305,152 @@ static void net_download(int nsel)
     fprintf(f, "%c:\ncd %s\n", launcher_dir[0], launcher_dir);
     fclose(f);
     hand_off(msg);
+}
+
+static void net_arrived_notice(void);
+
+/* hand a download to WAVEGET, and (bare mode only) come back to the
+   games list with what arrived selected */
+static void net_install(int nsel, int whole_queue, int *sel, int *top)
+{
+    int i;
+    net_download(nsel, whole_queue);
+    scan_games();
+    i = net_apply_pending();
+    view = 0;
+    net_free();
+    if (i >= 0) { *sel = i; *top = *sel > 13 ? *sel - 13 : 0; }
+    redraw(*sel, *top);
+    if (i == -2) net_arrived_notice();
+}
+
+/*
+ * Q: the install queue in a box, in the order it will be fetched, with
+ * titles from the list. Del takes one out; Enter or I starts fetching
+ * them, which is what a 1 says to the caller.
+ */
+static int queue_modal(void)
+{
+    /* the rows come from the far heap: the data segment has no room */
+    char __far *rows = (char __far *)_fmalloc(QUEUE_MAX * QROW + QUEUE_MAX * sizeof(unsigned long));
+    unsigned long __far *kbs;
+    char d[9];
+    int n = 0, j, sel = 0, top = 0, rc = 0;
+
+    if (!rows) return 0;
+    kbs = (unsigned long __far *)(rows + QUEUE_MAX * QROW);
+#define TITLE(i) (rows + (i) * QROW)
+#define DIR(i)   (rows + (i) * QROW + QT_LEN)
+    for (j = 0; j < net_count && n < net_qcount; j++) {    /* one pass, list order */
+        const NetGame *g = net_get(j);
+        if (!net_queued(g->dir))
+            continue;
+        _fstrncpy(TITLE(n), g->title, QT_LEN - 1);
+        TITLE(n)[QT_LEN - 1] = 0;
+        _fstrcpy(DIR(n), g->dir);
+        kbs[n] = net_size(g);
+        n++;
+    }
+    for (j = 0; j < net_qcount && n < QUEUE_MAX; j++) {   /* queued before this list came */
+        unsigned long kb;
+        int k;
+        net_queue_get(j, d, &kb);
+        for (k = 0; k < n && _fstricmp(DIR(k), d); k++) ;
+        if (k < n)
+            continue;
+        _fstrcpy(TITLE(n), d);
+        _fstrcpy(DIR(n), d);
+        kbs[n] = kb;
+        n++;
+    }
+    for (;;) {
+        unsigned k;
+        ui_queue_box(n, sel, top, rows, kbs);
+        k = getkey();
+        switch (k) {
+        case K_UP:   sel--; break;
+        case K_DOWN: sel++; break;
+        case K_PGUP: case K_LEFT:  sel -= QROWS; break;
+        case K_PGDN: case K_RIGHT: sel += QROWS; break;
+        case K_HOME: sel = 0; break;
+        case K_END:  sel = n - 1; break;
+        case K_DEL: case 0x08: case ' ':
+            if (n) {
+                _fstrcpy(d, DIR(sel));
+                net_queue_toggle(d, 0);
+                for (j = sel; j + 1 < n; j++) {
+                    _fmemcpy(TITLE(j), TITLE(j + 1), QROW);
+                    kbs[j] = kbs[j + 1];
+                }
+                n--;
+                if (!n) goto out;
+            }
+            break;
+        case 0x0D: case 'i': case 'I':
+            rc = n > 0;
+            goto out;
+        case 0x1B: case 'q': case 'Q':
+            goto out;
+        }
+        if (sel < 0) sel = 0;
+        if (sel >= n) sel = n - 1;
+        if (top > n - QROWS) top = n - QROWS;   /* fewer rows after a Del: no empty ones */
+        if (top < 0) top = 0;
+        if (sel < top) top = sel;
+        if (sel >= top + QROWS) top = sel - QROWS + 1;
+    }
+out:
+    _ffree(rows);
+    return rc;
+#undef TITLE
+#undef DIR
+}
+
+/*
+ * Del: the game's folder and everything in it, after a yes, and its
+ * section in the INI; a disc kept on the CD storage (cdrom_storage=) is
+ * not touched. The bar lands on the next game.
+ */
+static void uninstall(int *sel, int *top)
+{
+    char path[PATH_LEN + 16], msg[100], dir[FN_LEN], name[NAME_LEN];
+    const Game *g = &games[*sel];
+    const char *st = ini_global("cdrom_storage");
+    int elsewhere = st && st[0] && (g->flags & GF_CDBAT);
+    unsigned k;
+
+    sprintf(path, "%s\\%s", gamedir, g->dir);
+    if (st && st[0]) {                  /* a program dropped into the disc folder makes it a game to the scan */
+        unsigned n = strlen(path);
+        if (strnicmp(st, path, n) == 0 && (st[n] == 0 || st[n] == '\\')) {
+            ui_status("THAT FOLDER IS THE CD STORAGE: NOT DELETING IT.");
+            return;
+        }
+    }
+    sprintf(msg, "DELETE %.60s AND EVERYTHING IN IT? Y/N", path);
+    ui_status(msg);
+    k = getkey();
+    if (k != 'y' && k != 'Y') { ui_status(NULL); return; }
+    strcpy(dir, g->dir);
+    strcpy(name, g->name);
+    ui_status("DELETING ...");
+    if (scan_rmtree(path) == 0) {
+        ini_remove_section(dir);
+        net_pending_forget(dir);
+        if (net_queued(dir))
+            net_queue_toggle(dir, 0);
+        sprintf(msg, "%.40s REMOVED.%s", name, elsewhere ? " ITS DISC ON THE CD STORAGE STAYS." : "");
+    } else {
+        sprintf(msg, "COULD NOT REMOVE ALL OF %.50s (A FILE IN USE?)", path);
+    }
+    scan_games();
+    if (*sel >= game_count) *sel = game_count - 1;
+    if (*sel < 0) *sel = 0;
+    if (*top > *sel) *top = *sel;
+    if (*top > game_count - 14) *top = game_count - 14;
+    if (*top < 0) *top = 0;
+    redraw(*sel, *top);
+    ui_status(msg);
 }
 
 /* the lines that find NetDrive's letter: WAVEND if that is one, else the
@@ -1016,6 +1560,7 @@ int main(int argc, char **argv)
             }
         }
         if (stricmp(argv[i], "/nopal") == 0) opt_nopal = 1;
+        if (stricmp(argv[i], "/keys") == 0 && i + 1 < argc) opt_keys = argv[i + 1];
         if (stricmp(argv[i], "/mustest") == 0) {
             opt_mustest = 5;            /* seconds, optional argument */
             if (i + 1 < argc && atoi(argv[i + 1]) > 0)
@@ -1131,6 +1676,39 @@ int main(int argc, char **argv)
                        used, size, size - used,
                        size - used < 96 ? "  <- too little, see README" : "");
         }
+        {   /* the disk: this program read back, and its folder walked,
+               each for about a second, so a slow drive shows a number */
+            unsigned long __far *ticks = (unsigned long __far *)MK_FP(0x40, 0x6C);
+            const char *sep = home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\";
+            char path[PATH_LEN + 16];
+            char __far *buf = (char __far *)_fmalloc(8192);
+            unsigned long t0, ms, bytes = 0;
+            unsigned n, entries = 0, passes = 0;
+            int h;
+            struct find_t ft;
+            sprintf(path, "%s%sWAVE86.EXE", home_dir, sep);
+            t0 = *ticks;
+            while (buf && passes < 8 && *ticks - t0 < 18) {
+                if (_dos_open(path, O_RDONLY, &h) != 0) break;
+                while (_dos_read(h, buf, 8192, &n) == 0 && n) bytes += n;
+                _dos_close(h);
+                passes++;
+            }
+            ms = (*ticks - t0) * 55;
+            if (passes)
+                printf("Disk   : WAVE86.EXE read %u time%s, %luK in %lu ms: %lu KB/s\n", passes, passes == 1 ? "" : "s",
+                       bytes / 1024, ms, ms ? bytes / 1024 * 1000 / ms : 9999);
+            sprintf(path, "%s%s*.*", home_dir, sep);
+            t0 = *ticks;
+            for (passes = 0; passes < 8 && *ticks - t0 < 18; passes++)
+                if (_dos_findfirst(path, _A_NORMAL | _A_RDONLY | _A_ARCH | _A_SUBDIR, &ft) == 0) {
+                    entries = 0;
+                    do entries++; while (_dos_findnext(&ft) == 0);
+                }
+            ms = (*ticks - t0) * 55;
+            printf("         the folder's %u entries listed %u time%s in %lu ms\n", entries, passes, passes == 1 ? "" : "s", ms);
+            if (buf) _ffree(buf);
+        }
         mus_init();
         mus_diag();
         mus_shutdown();
@@ -1210,7 +1788,7 @@ int main(int argc, char **argv)
             ui_status("THE SHELL'S ENVIRONMENT IS ALMOST FULL: GAMES THAT NEED A DISC WILL NOT MOUNT IT");
     }
 
-    if (opt_dump) {
+    if (opt_dump && !opt_keys) {        /* with /keys, getkey() dumps when they run out */
         scr_dump("SCREEN.BIN", "FONT.BIN", "PAL.BIN");
         quit();
     }
@@ -1222,13 +1800,31 @@ int main(int argc, char **argv)
         if (view == 1) {                /* ---- the eXoDOS list ---- */
             static int nsel = 0, ntop = 0;
             int nold = nsel;
+            if (k == '?' || k == 'm' || k == 'M') {
+                k = menu_pick(1, nsel);
+                net_redraw(nsel, ntop);
+                if (!k) continue;
+            }
             switch (k) {
+            case K_MUSIC: music_key(); continue;
             case K_UP:   nsel--; break;
             case K_DOWN: nsel++; break;
-            case K_PGUP: nsel -= 14; break;
-            case K_PGDN: nsel += 14; break;
+            case K_PGUP: case K_LEFT:  turn_page(&nsel, &ntop, net_count, -1); nold = -1; break;
+            case K_PGDN: case K_RIGHT: turn_page(&nsel, &ntop, net_count, 1); nold = -1; break;
             case K_HOME: nsel = 0; break;
             case K_END:  nsel = net_count - 1; break;
+            case 's': case 'S': case '/': case K_F3:
+                if (net_count) {
+                    int hit = find_title(1, nsel, k == K_F3);
+                    if (hit == -1) net_status();
+                    if (hit < 0 || hit == nsel) continue;
+                    nsel = hit;
+                    if (nsel < ntop || nsel >= ntop + PAGE) ntop = nsel > 3 ? nsel - 3 : 0;
+                    net_status();
+                    nold = -1;
+                    break;
+                }
+                continue;
             case 0x1B: case 'n': case 'N':
                 view = 0;
                 net_free();
@@ -1256,26 +1852,28 @@ int main(int argc, char **argv)
                 net_update();
                 net_redraw(nsel, ntop);
                 continue;
-            case 0x0D:                      /* play it off the server */
+            case 'p': case 'P':             /* play it off the server */
                 if (net_count && net_get(nsel)->netplay) {
                     net_play(nsel);
                     net_redraw(nsel, ntop);     /* bare mode: back here */
+                } else if (net_count) {
+                    ui_status("NOTHING PLAYS OFF THIS SERVER: IT HAS NO NETDRIVE. ENTER INSTALLS IT.");
                 }
                 continue;
-            case 'i': case 'I':             /* install: the queue, or this one */
-                if (net_count) {
-                    net_download(nsel);
-                    /* bare mode only: back here with the game on disk */
-                    scan_games();
-                    i = net_apply_pending();
-                    view = 0;
-                    net_free();
-                    if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
-                    redraw(sel, top);
-                    if (i == -2) net_arrived_notice();
+            case 0x0D: case 'i': case 'I':  /* install the queue, or this one when nothing is queued */
+                if (net_count)
+                    net_install(nsel, net_qcount > 0, &sel, &top);
+                continue;
+            case 'q': case 'Q':             /* the queue, in a box */
+                if (net_qcount) {
+                    if (queue_modal())
+                        net_install(nsel, 1, &sel, &top);
+                    else
+                        net_redraw(nsel, ntop);
+                } else if (net_count) {
+                    ui_status("NOTHING IS QUEUED. SPACE PUTS THE GAME UNDER THE BAR IN THE QUEUE.");
                 }
                 continue;
-            case 'm': case 'M': music_key(); continue;
             case '+': case '=': mus_volume(1); ui_music_volshow(); continue;
             case '-': case '_': mus_volume(-1); ui_music_volshow(); continue;
             case '.': case '>': mus_skip(1); ui_status(NULL); continue;
@@ -1312,19 +1910,51 @@ int main(int argc, char **argv)
             continue;
         }
 
+        if (k == '?' || k == 'm' || k == 'M') {
+            k = menu_pick(0, sel);
+            redraw(sel, top);
+            if (!k) continue;
+        }
         switch (k) {
+        case K_MUSIC:
+            music_key();
+            break;
         case K_UP:   sel--; break;
         case K_DOWN: sel++; break;
-        case K_PGUP: sel -= 14; break;
-        case K_PGDN: sel += 14; break;
+        case K_PGUP: case K_LEFT:  turn_page(&sel, &top, game_count, -1); old = -1; break;
+        case K_PGDN: case K_RIGHT: turn_page(&sel, &top, game_count, 1); old = -1; break;
         case K_HOME: sel = 0; break;
         case K_END:  sel = game_count - 1; break;
+        case '/': case K_F3:            /* S is setup here; the network list has it for this too */
+            if (game_count) {
+                int hit = find_title(0, sel, k == K_F3);
+                if (hit == -1) ui_status(NULL);
+                if (hit >= 0 && hit != sel) {
+                    sel = hit;
+                    if (sel < top || sel >= top + PAGE) top = sel > 3 ? sel - 3 : 0;
+                    old = -1;
+                    ui_status(NULL);
+                }
+            }
+            break;
         case 0x3C00:                    /* F2: rename in place */
             if (game_count) {
                 edit_name(&sel, &top);
                 old = -1;               /* force a list refresh */
             }
             break;
+        case K_DEL:                     /* off the disk */
+            if (game_count)
+                uninstall(&sel, &top);
+            continue;
+        case 'o': case 'O':             /* the game's options */
+            if (game_count)
+                game_options(&sel, &top);
+            continue;
+        case 'p': case 'P': case 'd': case 'D':   /* the details instead of the picture, and back */
+            ui_show_details = !ui_show_details;
+            ui_details(sel);
+            continue;
         case 0x1B:
             quit();
         case 0x0D:
@@ -1349,9 +1979,6 @@ int main(int argc, char **argv)
             if (net_load() == 0 && cfg_server[0])
                 net_fetch_list();
             net_redraw(0, 0);
-            break;
-        case 'm': case 'M':
-            music_key();
             break;
         case '+': case '=':
             mus_volume(1);

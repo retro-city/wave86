@@ -30,7 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKER = "WAVE86DONE-MARKER"
 LAUNCHER_FILES = ["WAVE86.EXE", "WAVE.BAT", "SHCDHD86.EXE", "SHCDX86.COM",
                   "SHSUCDHD.EXE", "SHSUCDX.COM", "WAVEGET.EXE", "DHCP.EXE", "MTCP.CFG", "NE2000.COM",
-                  "NETDRIVE.SYS", "NETDRIVE.EXE", "DRVOFF.EXE"]
+                  "NETDRIVE.SYS", "NETDRIVE.EXE", "DRVOFF.EXE", "MEMLIM.EXE", "SLOWDOWN.COM", "SLOWDOWN.DOC", "WAVE86.DEF"]
 DOS_EXTRAS = ["CHOICE.EXE", "CTMOUSE.EXE", "JEMMEX.EXE"]        # from dos/: what eXoDOS start batches expect of a DOS install
 NET_FLAGS = ["-set", "ne2000 ne2000=true", "-set", "ne2000 backend=slirp",
              "-set", "ne2000 nicbase=300", "-set", "ne2000 nicirq=3"]

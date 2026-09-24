@@ -40,7 +40,12 @@
 #define INBUF             (8192)
 #define CONNECT_TIMEOUT   (10000ul)
 #define DISK_TIMEOUT (120000)   /* a big disc takes the server a while */
-#define IDLE_TIMEOUT      (30000ul)
+/* How long the server may say nothing before we give up on it. It was 30
+   seconds, which a server reading its games off a disk never noticed; one
+   that fetches them from a swarm can stall in the middle of a file, where
+   it has no way of telling us so. nettimeout= in the INI, in seconds. */
+static unsigned long idleMs = 120000ul;
+#define IDLE_TIMEOUT      (idleMs)
 
 static TcpSocket *sock;
 static uint8_t inBuf[INBUF];
@@ -81,9 +86,11 @@ extern "C" {
   extern char cpu_desc[32];
   void cpu_identify(void);
 }
-static int musicWanted = 1;         /* netmusic=0 in WAVE86.INI turns it off */
+static int musicWanted = 0;         /* netmusic=1 in WAVE86.INI turns it on */
 static int crcWanted = 1;           /* netcrc=0, or a server that sends none */
 static uint16_t writeMax = 0;       /* netwrite=N: at most N bytes per write */
+static char artKind[16] = "title";  /* netart=: the picture that comes with a game, or none */
+static char themeName[12] = "exodos";   /* theme=: whose colours it is made for; the launcher's default look */
 static int screenWanted = 1;        /* netscreen=0: the single progress line */
 
 static void msg(const char *m);     /* on the transfer screen, or plain */
@@ -182,7 +189,7 @@ static int16_t recvStep(void) {
 
 /* GET the path; returns 0 with the first body bytes at inBuf[*bodyStart..n) */
 static int httpGet(IpAddr_t addr, uint16_t port, const char *path, int16_t *n, uint16_t *bodyStart) {
-  char req[160];
+  char req[256];                    /* the path alone can pass 90 chars: ?cd=&from=&at=&crc=&wait=&art=&theme=&thumb= */
   int rc = connectTo(addr, port);
   if (rc) return rc == -2 ? 2 : 1;
   sprintf(req, "GET %s HTTP/1.0\r\nHost: %d.%d.%d.%d\r\nUser-Agent: WAVE86\r\nConnection: close\r\n\r\n",
@@ -499,6 +506,14 @@ static void uiProgress(const char *file, unsigned long done, unsigned long total
 /* MUSIC\ sits next to WAVEGET.EXE; netmusic=0 in WAVE86.INI says no,
    netcrc=0 turns the checksums off, and adlib= is honoured the way the
    launcher honours it */
+/* a word from an INI line: up to a space, a tab or a ; comment */
+static void iniWord(char *dst, unsigned n, const char *s) {
+  unsigned i = 0;
+  while (*s == ' ' || *s == '\t') s++;
+  while (*s && *s != ' ' && *s != '\t' && *s != ';' && *s != '\r' && *s != '\n' && i < n - 1) dst[i++] = *s++;
+  dst[i] = 0;
+}
+
 static void musicStart(const char *exePath) {
   char path[120];
   FILE *f;
@@ -519,6 +534,12 @@ static void musicStart(const char *exePath) {
       else if (strnicmp(buf, "netcrc=", 7) == 0) crcWanted = atoi(buf + 7);
       else if (strnicmp(buf, "netwrite=", 9) == 0) writeMax = (uint16_t)atoi(buf + 9);
       else if (strnicmp(buf, "netscreen=", 10) == 0) screenWanted = atoi(buf + 10);
+      else if (strnicmp(buf, "netart=", 7) == 0) iniWord(artKind, sizeof(artKind), buf + 7);
+      else if (strnicmp(buf, "theme=", 6) == 0) iniWord(themeName, sizeof(themeName), buf + 6);
+      else if (strnicmp(buf, "nettimeout=", 11) == 0) {
+        unsigned long secs = strtoul(buf + 11, NULL, 10);
+        if (secs >= 5 && secs <= 3600) idleMs = secs * 1000ul;
+      }
       else if (strnicmp(buf, "adlib=", 6) == 0) cfg_adlib = atoi(buf + 6);
     }
     fclose(f);
@@ -822,9 +843,10 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   FILE *cur = NULL; unsigned long remain = 0, done = 0; int files = 0;
   char curName[80] = "", full[160], tmp[160];
   unsigned long curSize = 0;
-  int renaming = 0, checked = 0, unverified = 0, skipped = 0;
+  int renaming = 0, checked = 0, unverified = 0, skipped = 0, waited = 0;
+  int pendingRename = 0;            /* a whole file in its .TMP name, waiting for its C line */
   unsigned long crc = 0xFFFFFFFFUL, lastCrc = 0, lastCheckpoint = 0;
-  clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0;
+  clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0, tWait = t0;
   int finished = 0;
 
   while (!finished) {
@@ -853,27 +875,59 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
           fclose(cur); cur = NULL; files++; doneFiles = files;
           partBytes = 0;
           lastCrc = crc ^ 0xFFFFFFFFUL;
-          if (renaming) { remove(full); rename(tmp, full); }
+          if (renaming) pendingRename = 1;   /* into place once its checksum has been seen */
           uiLog(curName);
         }
       } else {                                     /* a header line */
         char c = inBuf[pos++];
         if (c != '\n') { if (lineLen < sizeof(line) - 1) line[lineLen++] = c; continue; }
         line[lineLen] = 0; lineLen = 0;
+        if (pendingRename && line[0] != 'C') {   /* no checksum for it: into place as it came */
+          remove(full); rename(tmp, full); pendingRename = 0;
+        }
+        if (waited && (line[0] == 'F' || line[0] == 'P')) {   /* the wait is not the network's fault: keep it out of the rate */
+          waited = 0;
+          tStart += Timer_diff(tWait, TIMER_GET_CURRENT());
+          if (screenOn) uiStatus("");
+        }
         if (line[0] == 'E') { finished = 1; break; }
         if (line[0] == 'C') {           /* the file's checksum, from the server */
           unsigned long want = strtoul(line + 2, NULL, 10);
-          if (!crcWanted || unverified) { unverified = 0; continue; }
-          if (want != lastCrc) {
+          if (!crcWanted || unverified) { unverified = 0; }
+          else if (want != lastCrc) {
             char m[120];
+            if (pendingRename) { remove(tmp); pendingRename = 0; }   /* the old file stays */
             sprintf(m, "WAVEGET: %.40s came through damaged - fetch it again", curName);
             files--; doneFiles = files;   /* so the next run starts at it */
             partBytes = 0;                /* ... from its first byte */
             msg(m);
             return 1;
+          } else
+            checked++;
+          if (pendingRename) {          /* it is what the server sent: into place */
+            remove(full); rename(tmp, full); pendingRename = 0;
           }
-          checked++;
           continue;
+        }
+        if (line[0] == 'W') {           /* the server is waiting for its own source */
+          const char *sp = strchr(line + 2, ' ');
+          if (screenOn) uiStatus(sp ? sp + 1 : "the server is fetching it");
+          else printf("\r%-70.70s", sp ? sp + 1 : "the server is fetching it");
+          if (!waited) tWait = TIMER_GET_CURRENT();
+          waited = 1;
+          continue;
+        }
+        if (line[0] == 'T') {           /* what the pack really holds, in bytes */
+          const char *sp = strchr(line + 2, ' ');
+          if (sp) kbTotal = (strtoul(sp + 1, NULL, 10) + 1023) / 1024;
+          continue;
+        }
+        if (line[0] == 'X') {           /* it gave up, and says why */
+          char m[100];
+          sprintf(m, "WAVEGET: the server: %.70s", line + 2);
+          msg(m);
+          if (cur) fclose(cur);
+          return 1;
         }
         if (line[0] == 'S') {           /* resumed: what the server left out */
           char m[60];
@@ -943,7 +997,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         if (size == 0) {
           fclose(cur); cur = NULL; files++; doneFiles = files;
           lastCrc = crc ^ 0xFFFFFFFFUL;     /* nothing in it: CRC 0 */
-          if (renaming) { remove(full); rename(tmp, full); }
+          if (renaming) pendingRename = 1;   /* into place once its checksum has been seen */
           uiLog(curName);
         }
       }
@@ -961,7 +1015,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
     if (n == -2) { if (cur) fclose(cur); msg("WAVEGET: aborted"); return 2; }
     if (n == -1) { msg("WAVEGET: the connection dropped mid-way"); if (cur) fclose(cur); return 1; }
     if (n == 0) {
-      if (Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(IDLE_TIMEOUT)) { msg("WAVEGET: timeout"); if (cur) fclose(cur); return 1; }
+      if (Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(IDLE_TIMEOUT)) { msg("WAVEGET: the server went quiet (nettimeout= in WAVE86.INI is how long to wait)"); if (cur) fclose(cur); return 1; }
       n = 0; continue;
     }
     t0 = TIMER_GET_CURRENT();
@@ -991,7 +1045,7 @@ static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *
 }
 
 static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal, const char *key) {
-  char path[96];
+  char path[160];
   const char *k = key ? key : dir;
   int from;
   sprintf(gameRoot, "%s\\%s", gamesdir, dir);
@@ -1007,6 +1061,12 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
     sprintf(path + strlen(path), "&at=%lu", resumeAt);
   if (crcWanted)
     sprintf(path + strlen(path), "%ccrc=1", strchr(path, '?') ? '&' : '?');
+  /* wait=1: we know W, T and X lines - a server that fetches the game from
+     somewhere itself may take its time and say so, instead of going quiet */
+  sprintf(path + strlen(path), "%cwait=1", strchr(path, '?') ? '&' : '?');
+  /* and a picture of it for the details pane, unless netart=0 */
+  if (artKind[0] && stricmp(artKind, "0") != 0 && stricmp(artKind, "none") != 0)
+    sprintf(path + strlen(path), "&art=%s&theme=%s&thumb=36x10", artKind, themeName[0] ? themeName : "exodos");
   uiOpen(dir, serverText);
   int rc = doStream(addr, port, path, dir, kbTotal, 0);
   uiClose();
@@ -1017,6 +1077,104 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
 /* WAVE86.EXE and its helpers, straight from the machine that builds them,
    into dir (the launcher's folder). Run from the batch loop, so the
    launcher itself is not in memory when its EXE is replaced. */
+/* ------------------------------------- the INI, after an update */
+/* WAVE86.DEF comes down with an update: the shipped WAVE86.INI, every
+   setting with its comment above it. The machine's INI keeps every value
+   it has; a setting it lacks - one newer than the file - is added at the
+   end of its global part, comment and all, at its default, so the file
+   goes on documenting itself. Returns how many were added, their names
+   in `names`. */
+#define INI_KEY_MAX 96
+static char iniKeys[INI_KEY_MAX][20];
+static int iniKeyN = 0;
+
+static void iniKeyOf(const char *line, char *key) {
+  int i = 0;
+  while (*line == ' ' || *line == '\t') line++;
+  while (*line && *line != '=' && *line != ' ' && *line != '\t' && *line != '\r' && *line != '\n' && i < 19)
+    key[i++] = (char)tolower((unsigned char)*line++);
+  key[i] = 0;
+}
+
+static int iniHas(const char *key) {
+  int i;
+  for (i = 0; i < iniKeyN; i++) if (stricmp(iniKeys[i], key) == 0) return 1;
+  return 0;
+}
+
+static int mergeIni(const char *dir, char *names, unsigned namesLen) {
+  char ini[160], def[160], tmp[160], line[200], block[1200], key[20], sect[200];
+  FILE *fi, *fd, *ft;
+  int added = 0, hadSection = 0;
+  unsigned blockLen = 0;
+  sprintf(ini, "%s\\WAVE86.INI", dir);
+  sprintf(def, "%s\\WAVE86.DEF", dir);
+  sprintf(tmp, "%s\\WAVE86.TMP", dir);
+  names[0] = 0;
+  fd = fopen(def, "r");
+  if (!fd) return 0;
+  fi = fopen(ini, "r");
+  if (!fi) { fclose(fd); return 0; }
+  iniKeyN = 0;                      /* the settings the INI has, in its global part */
+  while (fgets(line, sizeof(line), fi)) {
+    const char *s = line;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '[') break;
+    if (*s == ';' || *s == '#' || *s == '\r' || *s == '\n' || !*s || !strchr(s, '=')) continue;
+    if (iniKeyN < INI_KEY_MAX) { iniKeyOf(s, iniKeys[iniKeyN]); if (iniKeys[iniKeyN][0]) iniKeyN++; }
+  }
+  rewind(fi);
+  ft = fopen(tmp, "w");
+  if (!ft) { fclose(fi); fclose(fd); return 0; }
+  while (fgets(line, sizeof(line), fi)) {       /* the INI's global part, as it is */
+    const char *s = line;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '[') { strcpy(sect, line); hadSection = 1; break; }
+    fputs(line, ft);
+  }
+  while (fgets(line, sizeof(line), fd)) {       /* the blocks the INI lacks */
+    const char *s = line;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '[' || (s[0] == ';' && s[1] == '[')) break;   /* the games: not settings */
+    if (*s == '\r' || *s == '\n' || !*s) { blockLen = 0; block[0] = 0; continue; }
+    if (*s == ';') {
+      unsigned n = strlen(line);
+      if (blockLen + n < sizeof(block)) { strcpy(block + blockLen, line); blockLen += n; }
+      continue;
+    }
+    if (!strchr(s, '=')) continue;
+    iniKeyOf(s, key);
+    /* gamedir= is left alone: without the line the launcher looks in the
+       GAMES folder beside it, and the shipped C:\GAMES would move a
+       setup that relied on that */
+    if (key[0] && !iniHas(key) && stricmp(key, "gamedir") != 0) {
+      if (!added) fputs("\n; ---- Added by WAVEGET UPDATE: settings this file did not have yet, at their defaults.\n", ft);
+      fputs(block, ft);                 /* the stream is text mode: \n comes out as CR LF */
+      fputs(line, ft);
+      if (strlen(names) + strlen(key) + 2 < namesLen) { if (names[0]) strcat(names, ", "); strcat(names, key); }
+      added++;
+      blockLen = 0; block[0] = 0;       /* the comment went with it; a group's next key stands alone */
+    }
+  }
+  if (added && hadSection) fputs("\n", ft);
+  if (hadSection) {                             /* the games, as they were */
+    fputs(sect, ft);
+    while (fgets(line, sizeof(line), fi)) fputs(line, ft);
+  }
+  {
+    int bad = ferror(ft);               /* a full disk: the INI stays as it was */
+    if (fclose(ft) != 0) bad = 1;
+    fclose(fi); fclose(fd);
+    if (!added || bad) { remove(tmp); return 0; }
+  }
+  sprintf(def, "%s\\WAVE86.BAK", dir);       /* the old file is a step away until the new one is in place */
+  remove(def);
+  if (rename(ini, def) != 0) { remove(tmp); return 0; }
+  if (rename(tmp, ini) != 0) { rename(def, ini); remove(tmp); return 0; }
+  remove(def);
+  return added;
+}
+
 static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
   strncpy(gameRoot, dir && dir[0] ? dir : ".", sizeof(gameRoot) - 1);
   gameRoot[sizeof(gameRoot) - 1] = 0;
@@ -1043,6 +1201,12 @@ static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
     if (biosIsKeyReady()) biosKeyRead();
   }
   uiClose();
+  if (rc == 0) {
+    char names[120];
+    int n = mergeIni(gameRoot, names, sizeof(names));
+    if (n) printf("WAVEGET: WAVE86.INI: %d new setting%s added at %s default%s (%s), comments and all\n",
+                  n, n == 1 ? "" : "s", n == 1 ? "its" : "their", n == 1 ? "" : "s", names);
+  }
   return rc;
 }
 

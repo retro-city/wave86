@@ -38,7 +38,6 @@ int net_rawcd = 0;
  * after another, unattended. Indices into the list, which is why L and
  * leaving the view empty it again.
  */
-#define QUEUE_MAX 16
 static struct { char dir[9]; unsigned long kb; } queue[QUEUE_MAX];
 int net_qcount = 0;
 
@@ -138,6 +137,15 @@ void net_queue_clear(void)
     net_qcount = 0;
 }
 
+int net_queue_get(int k, char *dir, unsigned long *kb)
+{
+    if (k < 0 || k >= net_qcount)
+        return 0;
+    strcpy(dir, queue[k].dir);
+    *kb = queue[k].kb;
+    return 1;
+}
+
 /* what the whole queue comes to, as it was when each game was put in */
 unsigned long net_queue_kb(void)
 {
@@ -214,6 +222,51 @@ const NetGame *net_get(int i)
     return &cur;
 }
 
+/* does hay hold NEEDLE (which is in capitals already), whatever its case */
+int text_has(const char *hay, const char *NEEDLE)
+{
+    unsigned n = strlen(NEEDLE);
+    for (; *hay; hay++) {
+        unsigned k;
+        for (k = 0; k < n; k++) {
+            char c = hay[k];
+            if (c >= 'a' && c <= 'z') c -= 32;
+            if (c != NEEDLE[k]) break;
+        }
+        if (k == n) return 1;
+    }
+    return 0;
+}
+
+/*
+ * The first title after entry `from` that holds NEEDLE, going round past
+ * the end; -1 when none does. The list is read straight through rather
+ * than entry by entry: thousands of titles, one seek, and a 286 gets
+ * through them while the key is still going down.
+ */
+int net_find(const char *NEEDLE, int from)
+{
+    char line[160];
+    int pass, i, end;
+
+    if (!listf || !net_count || !NEEDLE[0])
+        return -1;
+    for (pass = 0; pass < 2; pass++) {
+        i = pass ? 0 : from + 1;
+        end = pass ? from + 1 : net_count;
+        if (i >= end) continue;
+        fseek(listf, (long)offs[i / OFF_PER_BLOCK][i % OFF_PER_BLOCK], SEEK_SET);
+        while (i < end && fgets(line, sizeof(line), listf)) {
+            char *p = line, *t;
+            field(&p); field(&p); t = field(&p);
+            if (!t[0]) continue;            /* net_load() did not count it either */
+            if (text_has(t, NEEDLE)) return i;
+            i++;
+        }
+    }
+    return -1;
+}
+
 /* the size of the download as the mode has it: without the disc when it
    stays on the server */
 unsigned long net_size(const NetGame *g)
@@ -231,6 +284,36 @@ int net_letter_first(char c)
     if (c >= 'a' && c <= 'z') c -= 32;
     if (c < 'A' || c > 'Z') return -1;
     return letter_first[c - 'A'];
+}
+
+/* Del in the games list: a game that has just been deleted is not one to
+   fetch again at the next start, whatever NETGAME.TXT says about it */
+void net_pending_forget(const char *dir)
+{
+    char path[PATH_LEN + 16], keep[PATH_LEN + 16], line[112], copy[112];
+    FILE *f, *out;
+    int left = 0;
+
+    net_path(path, "NETGAME.TXT");
+    f = fopen(path, "r");
+    if (!f)
+        return;
+    net_path(keep, "NETGAME.$$$");
+    out = fopen(keep, "w");
+    if (!out) { fclose(f); return; }
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        strcpy(copy, line);
+        chomp(p);
+        if (stricmp(field(&p), dir) == 0)
+            continue;
+        fputs(copy, out);
+        left++;
+    }
+    fclose(f);
+    fclose(out);
+    remove(path);
+    if (left) rename(keep, path); else remove(keep);
 }
 
 void net_pending_reset(void)
