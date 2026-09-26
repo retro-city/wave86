@@ -537,9 +537,13 @@ TDC games as `tdc:DIR`.
 A collection that is still coming in over BitTorrent is handled: folders
 with nothing downloaded yet are left out, and a game whose files are
 partly placeholders (0 bytes, dated the day the torrent started) is
-listed as "INCOMPLETE" and shipped without them. If what arrives has
-nothing to run, the launcher says so on the status line instead of
-listing an empty folder. The server re-indexes every five minutes.
+listed as "INCOMPLETE" and shipped without them. If a game arrives
+whole (WAVEGET checks every file's sum before it says so) and the scan
+still finds nothing to run in its folder, the launcher says so on the
+status line instead of listing it or fetching it again; `WAVE86 /diag`
+shows the folder as the scan lists it, names, sizes and attributes,
+which is where a drive that lists things its own way (the card's SD
+through PMDFS) shows. The server re-indexes every five minutes.
 
 On the DOS machine, copy `WAVEGET.EXE`, `DHCP.EXE` and `MTCP.CFG` from
 `build/` next to the launcher, put the server's address in the INI - or
@@ -864,6 +868,14 @@ wheel - and only when `--torrent` is given.
   would have been anyway. A swarm that delivers nothing of a file for
   half an hour ends the pack with an `X` line saying so, and the next
   attempt resumes where it stopped.
+- WAVEGET, for its part, shows a wait as it goes (`nothing from the
+  server for 12 s (gives up at 120)`), so a screen that does not move is
+  known to be waiting; and it times every write to the disk. A write
+  that takes seconds (the card's SD through PMDFS has stalled for
+  minutes) is said on the screen, kept out of the timeout and the KB/s,
+  and named when it gives up: `no data for 120 s at 596K of INTRO.PAK;
+  disk stalls: 130 s` is the disk, `nothing from the server for 120 s,
+  596K into INTRO.PAK` is the network or the server.
 - **What is fetched is kept** in `--cache` (one part file, plus what the
   zips that were opened held, so a restart asks the swarm nothing twice)
   and is seeded back, at `torrent_upload=` KB/s at most (1024; 0 for no

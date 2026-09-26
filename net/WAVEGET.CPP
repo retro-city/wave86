@@ -846,7 +846,9 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   int renaming = 0, checked = 0, unverified = 0, skipped = 0, waited = 0;
   int pendingRename = 0;            /* a whole file in its .TMP name, waiting for its C line */
   unsigned long crc = 0xFFFFFFFFUL, lastCrc = 0, lastCheckpoint = 0;
-  clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0, tWait = t0;
+  clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0, tWait = t0, tIdle = t0;
+  unsigned long slowWriteMs = 0;    /* the longest one write to the disk took */
+  int idleShown = 0;                /* the "nothing from the server" line is up */
   int finished = 0;
 
   while (!finished) {
@@ -856,10 +858,26 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         if ((unsigned long)chunk > remain) chunk = (uint16_t)remain;
         if (writeMax && chunk > writeMax) chunk = writeMax;   /* netwrite= */
         _doserrno = 0;
-        if (fwrite(inBuf + pos, 1, chunk, cur) != chunk) {
-          writeFailed(renaming ? tmp : full, curSize - remain);
-          fclose(cur);
-          return 1;
+        {
+          /* A write is timed: a drive that stalls (the card's SD through
+             PMDFS has) is not the server going quiet, and the wait is
+             taken out of the timeout and the rate - and said. */
+          clockTicks_t tw = TIMER_GET_CURRENT();
+          size_t wrote = fwrite(inBuf + pos, 1, chunk, cur);
+          unsigned long ms = Timer_diff(tw, TIMER_GET_CURRENT()) * TIMER_TICK_LEN;
+          if (ms > slowWriteMs) slowWriteMs = ms;
+          if (ms >= 2000) {
+            char m[80];
+            sprintf(m, "the disk took %lu s to write %u bytes of %.24s", ms / 1000, chunk, curName);
+            if (screenOn) uiStatus(m); else printf("\r%-70.70s", m);
+            t0 = TIMER_GET_CURRENT();
+            tStart += Timer_diff(tw, t0);
+          }
+          if (wrote != chunk) {
+            writeFailed(renaming ? tmp : full, curSize - remain);
+            fclose(cur);
+            return 1;
+          }
         }
         if (crcWanted) crc = crcAdd(crc, inBuf + pos, chunk);
         pos += chunk; remain -= chunk; done += chunk;
@@ -1015,9 +1033,30 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
     if (n == -2) { if (cur) fclose(cur); msg("WAVEGET: aborted"); return 2; }
     if (n == -1) { msg("WAVEGET: the connection dropped mid-way"); if (cur) fclose(cur); return 1; }
     if (n == 0) {
-      if (Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(IDLE_TIMEOUT)) { msg("WAVEGET: the server went quiet (nettimeout= in WAVE86.INI is how long to wait)"); if (cur) fclose(cur); return 1; }
+      clockTicks_t now = TIMER_GET_CURRENT();
+      unsigned long idle = Timer_diff(t0, now) * TIMER_TICK_LEN / 1000;
+      /* a wait of any length is shown as it goes, so a screen that does
+         not move is known to be waiting and not gone */
+      if (idle >= 3 && Timer_diff(tIdle, now) > TIMER_MS_TO_TICKS(1000)) {
+        char m[80];
+        tIdle = now;
+        sprintf(m, "nothing from the server for %lu s (gives up at %lu)", idle, IDLE_TIMEOUT / 1000);
+        if (screenOn) uiStatus(m); else printf("\r%-70.70s", m);
+        idleShown = 1;
+      }
+      if (Timer_diff(t0, now) > TIMER_MS_TO_TICKS(IDLE_TIMEOUT)) {
+        char m[120];
+        if (slowWriteMs >= 2000)
+          sprintf(m, "WAVEGET: no data for %lu s at %luK of %.12s; disk stalls: %lu s", idle, (curSize - remain) / 1024, curName, slowWriteMs / 1000);
+        else
+          sprintf(m, "WAVEGET: nothing from the server for %lu s, %luK into %.12s", idle, (curSize - remain) / 1024, curName);
+        msg(m);
+        if (cur) fclose(cur);
+        return 1;
+      }
       n = 0; continue;
     }
+    if (idleShown) { idleShown = 0; if (screenOn) uiStatus(""); else printf("\r%-70s\r", ""); }
     t0 = TIMER_GET_CURRENT();
   }
   unsigned long secs = Timer_diff(tStart, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;

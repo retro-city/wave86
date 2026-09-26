@@ -20,6 +20,7 @@
 #include <string.h>
 #include <malloc.h>
 #include <io.h>
+#include <dos.h>
 #include "wave86.h"
 
 #define OFF_PER_BLOCK 8000         /* 8000 x 4 bytes = 32000 per block */
@@ -358,6 +359,23 @@ int net_view_pending(void)
     return 1;
 }
 
+/* whether the game's folder holds anything at all */
+static int folder_has_files(const char *dir)
+{
+    char pat[PATH_LEN + 16];
+    struct find_t ft;
+    unsigned rc;
+
+    sprintf(pat, "%s\\%s\\*.*", gamedir, dir);
+    rc = _dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_ARCH, &ft);
+    while (rc == 0) {
+        if (ft.name[0] != '.')
+            return 1;
+        rc = _dos_findnext(&ft);
+    }
+    return 0;
+}
+
 /*
  * After a scan: every game that was on its way in gets its proper name,
  * exe and source in the INI - one line each, a whole queue's worth.
@@ -368,7 +386,7 @@ int net_view_pending(void)
 int net_apply_pending(void)
 {
     char path[PATH_LEN + 16], keep[PATH_LEN + 16];
-    char line[112], copy[112], firstdir[9] = "";
+    char line[112], copy[112], firstdir[9] = "", emptydir[9] = "";
     FILE *f, *rest;
     int empty = 0, left = 0;
 
@@ -397,13 +415,18 @@ int net_apply_pending(void)
         unfinished = access(path, 0) == 0;
         i = unfinished ? -1 : find_game(dir);
         if (i < 0) {
+            /* A folder with files in it and no note left behind came whole
+               (WAVEGET checks every file's sum before it says so), and the
+               scan still found nothing to run: fetching it again would bring
+               the same files, so it leaves the queue, and the notice says
+               where to look. Without files it never really arrived. */
+            if (!unfinished && folder_has_files(dir)) {
+                empty = 1;
+                strcpy(emptydir, net_pending_dir);  /* the one the notice names */
+                continue;
+            }
             if (rest) { fputs(copy, rest); fputc('\n', rest); left++; }
             net_queue_add(dir, kb[0] ? strtoul(kb, NULL, 10) : 0);
-            if (!unfinished) {          /* nothing runnable in the folder? */
-                sprintf(path, "%s\\%s", gamedir, dir);
-                if (access(path, 0) == 0)
-                    empty = 1;
-            }
             continue;
         }
         if (title[0]) {
@@ -430,8 +453,10 @@ int net_apply_pending(void)
         rename(keep, path);
     else
         remove(keep);
-    if (!firstdir[0])
+    if (!firstdir[0]) {
+        if (empty) strcpy(net_pending_dir, emptydir);
         return empty ? -2 : -1;
+    }
     strcpy(net_pending_dir, firstdir);  /* the one to land on in the list */
     return find_game(net_pending_dir);
 }

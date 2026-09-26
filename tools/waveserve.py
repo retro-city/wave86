@@ -921,7 +921,8 @@ def prefetch(g, entries):
             member = e[1] or (e[3][0] if len(e) == 4 and isinstance(e[3], tuple) else None)
             if member:
                 i = z.getinfo(member)
-                asked += raw.prefetch(i.header_offset, i.compress_size + 30 + len(i.filename) + 1024)
+                asked += raw.prefetch(i.header_offset, min(i.compress_size + 30 + len(i.filename) + 1024,
+                                                           raw.size - i.header_offset))
     return asked
 
 
@@ -1597,13 +1598,14 @@ class H(BaseHTTPRequestHandler):
         line, which the client shows."""
         raw = z.fp.raw
         i = z.getinfo(member)
-        length = i.compress_size + 30 + len(i.filename) + 1024     # the local header, with slack
+        length = min(i.compress_size + 30 + len(i.filename) + 1024,     # the local header, with slack
+                     raw.size - i.header_offset)                          # ... but not past the zip's end
         pieces = [p for p in raw.pieces(i.header_offset, length) if not SWARM.have(p)]
         if not pieces:
             return
         SWARM.want(pieces, urgent=True)
         name = member.rsplit("/", 1)[-1]
-        total, left, quiet_since = len(pieces), len(pieces), time.time()
+        total, left, quiet_since, tick = len(pieces), len(pieces), time.time(), 0
         self.rec["note"] = f"waiting for the swarm: {name}"
         MON.log(f"{self.rec.get('what', name)}: {total} pieces of {name} to come from the swarm before it goes out")
         while True:
@@ -1615,7 +1617,8 @@ class H(BaseHTTPRequestHandler):
             if time.time() - quiet_since > 1800:
                 raise SwarmQuiet(f"the swarm delivered nothing of {name} for half an hour: try again later")
             time.sleep(1)
-            if int(time.time()) % 3 == 0:
+            tick += 1
+            if tick % 3 == 0:               # every third second, whatever the clock says
                 pct = 100 * (total - now_left) // total
                 st = SWARM.status()
                 self.wait_line(f"fetching {name}: {pct}%, {now_left} pieces to go, {st['peers']} peers, "

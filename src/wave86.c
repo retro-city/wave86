@@ -1569,11 +1569,11 @@ static void music_key(void)
     ui_status(NULL);
 }
 
-/* a download landed, but the scan found nothing to run in the folder */
+/* a download landed whole, but the scan found nothing to run in the folder */
 static void net_arrived_notice(void)
 {
-    char msg[80];
-    sprintf(msg, "%s ARRIVED WITH NOTHING TO RUN. THE SERVER HAD ONLY PART OF IT.",
+    char msg[96];
+    sprintf(msg, "%s ARRIVED BUT NOTHING IN IT RUNS. SEE WAVE86 /DIAG",
             net_pending_dir);
     ui_status(msg);
 }
@@ -1697,6 +1697,7 @@ int main(int argc, char **argv)
         printf("Games  : %d under %s%s\n", game_count, gamedir,
                scan_sizes_missing ? " (the listing gave no size for some programs: a redirector drive)" : "");
         printf("INI    : %s; the games' sections in %s\n", ini_file_path(), ini_games_path());
+        scan_diag();
         {
             unsigned big, tot;
             if (xms_free(&big, &tot))

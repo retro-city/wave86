@@ -49,8 +49,12 @@ type a few letters of it, Enter; F3 searches on. Left and right turn
 the page. In the games list / and F3 search, left and right page, the
 same way, and Del removes a game from the disk after a yes. M (or ?) in
 either list opens a menu of everything it does, each with its key.
-If downloads stop with "the server went quiet", nettimeout=300 in
-WAVE86.INI makes WAVEGET wait five minutes instead of two.
+If downloads stop with "nothing from the server for 120 s",
+nettimeout=300 in WAVE86.INI makes WAVEGET wait five minutes instead
+of two; "disk stalls: N s" in that message means the drive it writes
+to stood still that long, and netwrite=512 makes the writes smaller.
+A game that arrived whole but "nothing in it runs": WAVE86 /diag
+shows the folder as the launcher sees it.
 A game installed from the server comes with a picture for the details
 pane, its title screen unless netart= in WAVE86.INI says gameplay, box,
 logo or another kind (netart=0 for none). A game with a picture shows

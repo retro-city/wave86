@@ -109,6 +109,9 @@ static int has_ext(const char *fn, const char *ext)
 
 unsigned scan_sizes_missing = 0;    /* programs the listing showed as 0 bytes (/diag) */
 
+/* what a game folder is listed with: everything but the volume label */
+#define SCAN_ATTRS (_A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_SUBDIR | _A_ARCH)
+
 static void scan_one(Game *g)
 {
     char pat[PATH_LEN + 16];
@@ -119,13 +122,16 @@ static void scan_one(Game *g)
     char best_setup[FN_LEN] = "";
     int best_setup_rank = 0;
 
+    /* every attribute is asked for and folders and labels skipped here: a
+       redirector drive that reads the mask its own way still lists the
+       programs. An empty EXE cannot run: a download that is still
+       incomplete on the server leaves such files behind. */
     sprintf(pat, "%s\\%s\\*.*", gamedir, g->dir);
-    rc = _dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft);
+    rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
     while (rc == 0) {
         const char *fn = ft.name;
-        /* an empty EXE cannot run: a download that is still incomplete
-           on the server leaves such files behind */
-        if (fn[0] != '.' && fn[0] != '_' &&
+        if (!(ft.attrib & (_A_SUBDIR | _A_VOLID)) &&
+            fn[0] != '.' && fn[0] != '_' &&
             (has_ext(fn, "EXE") || has_ext(fn, "COM") || has_ext(fn, "BAT"))) {
             unsigned long size = ft.size;
             if (size == 0) {            /* a redirector drive (the card's SD through
@@ -248,6 +254,50 @@ int scan_rmtree(const char *path)
 static int cmp_games(const void *a, const void *b)
 {
     return stricmp(((const Game *)a)->name, ((const Game *)b)->name);
+}
+
+/* /diag: the first game folder as the scan sees it - a drive that lists
+   things its own way (the card's SD through PMDFS) shows here: the names,
+   sizes and attributes with the scan's own mask, then with every mask */
+void scan_diag(void)
+{
+    char pat[PATH_LEN + 16], dir[FN_LEN] = "";
+    struct find_t ft;
+    unsigned rc, n = 0;
+
+    sprintf(pat, "%s\\*.*", gamedir);
+    rc = _dos_findfirst(pat, _A_SUBDIR, &ft);
+    while (rc == 0 && !dir[0]) {
+        if ((ft.attrib & _A_SUBDIR) && ft.name[0] != '.' && ft.name[0] != '_')
+            strcpy(dir, ft.name);
+        rc = _dos_findnext(&ft);
+    }
+    if (!dir[0]) {
+        printf("Folder : no game folder under %s (findfirst %u)\n", gamedir, rc);
+        return;
+    }
+    printf("Folder : %s\\%s as the scan lists it (name size attr):", gamedir, dir);
+    sprintf(pat, "%s\\%s\\*.*", gamedir, dir);
+    rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
+    if (rc)
+        printf(" nothing (error %u)", rc);
+    while (rc == 0 && n < 10) {
+        printf("%s %s %lu %02X", n ? "," : "", ft.name, ft.size, ft.attrib);
+        n++;
+        rc = _dos_findnext(&ft);
+    }
+    printf("%s\n", rc == 0 ? ", ..." : "");
+    n = 0;
+    rc = _dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft);
+    printf("         and asked for plain files only:");
+    if (rc)
+        printf(" nothing (error %u)", rc);
+    while (rc == 0 && n < 10) {
+        printf("%s %s %02X", n ? "," : "", ft.name, ft.attrib);
+        n++;
+        rc = _dos_findnext(&ft);
+    }
+    printf("%s\n", rc == 0 ? ", ..." : "");
 }
 
 int scan_games(void)
