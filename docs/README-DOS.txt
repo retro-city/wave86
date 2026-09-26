@@ -60,7 +60,9 @@ O opens a game's options: CPU SLOWDOWN (SLOWDOWN.COM runs while the
 game does) and MEMORY LIMIT (MEMLIM hides the extended memory beyond
 it: 31 MB for a game that fails with 32 MB and up, like Aladdin), and
 its sound mode; Enter writes the ones you changed into the game's
-section of WAVE86.INI. A value typed into the INI by hand that no
+section of GAMES.INI, in the games folder (the sections live there, so
+they travel with the games; one still in WAVE86.INI moves over at the
+next start). A value typed into the INI by hand that no
 preset matches (slowdown=486:40, 25%, a memlimit of 20) shows as
 CUSTOM and is left as it is. Both programs live next to WAVE86.EXE; U
 fetches them.

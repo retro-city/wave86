@@ -270,9 +270,13 @@ on lines of their own:
     [KEEN4]
     name=Commander Keen 4
 
-Section names are game folder names. The launcher adds a section for
-every new folder it finds, so the file always lists your collection;
-press `F2` in the menu to give a game a proper name (or run
+Section names are game folder names, and the sections live in
+`GAMES.INI` in the games folder itself (`W:\EXODOS\GAMES.INI` on a
+PicoMem's SD card), so the settings travel with the games; a section
+still in `WAVE86.INI` moves there the next time the launcher starts,
+and the launcher says so once. The launcher adds a section for every new
+folder it finds, so the file always lists your collection; press `F2`
+in the menu to give a game a proper name (or run
 `WAVE86 /name KEEN4 Commander Keen 4` from the prompt). Per game you can
 set `name`, `exe`, `setup`, `args`, `cd` and `hide=1`; `source=exodos` or
 `source=tdc` (set by the launcher after a download) shows where the game

@@ -60,28 +60,48 @@ static char *trim(char *s)
 }
 
 static char ini_path[PATH_LEN] = "WAVE86.INI";
+static char games_path[PATH_LEN + 12] = "";     /* <gamedir>\GAMES.INI: the [sections], once the folder is known */
 
-void ini_load(const char *fname)
+/* where a game's section is written: GAMES.INI next to the games, or the INI itself before that is known */
+static const char *section_file(void)
 {
-    FILE *f;
+    return games_path[0] ? games_path : ini_path;
+}
+
+const char *ini_file_path(void)  { return ini_path; }
+const char *ini_games_path(void) { return games_path; }
+
+/* the same file with .TMP for its extension: written whole, then swapped in */
+static void tmp_name(char *tmp, const char *path)
+{
+    char *dot;
+    strcpy(tmp, path);
+    dot = strrchr(tmp, '.');
+    if (dot && !strchr(dot, '\\'))
+        *dot = 0;
+    strcat(tmp, ".TMP");
+}
+
+/* the lines of fname into the pool: part 0 all of them, 1 those above the
+   first [section], 2 the sections and on */
+static void load_part(const char *fname, int part)
+{
+    FILE *f = fopen(fname, "r");
     char buf[LINE_LEN];
+    int in_sections = 0;
 
-    if (fname != ini_path) {
-        strncpy(ini_path, fname, PATH_LEN - 1);
-        ini_path[PATH_LEN - 1] = 0;
-    }
-    f = fopen(fname, "r");
-
-    nlines = 0;
-    pool_used = 0;
     if (!f)
         return;
-    if (!pool)
-        pool = (char __far *)_fmalloc(POOL_MAX);
     while (pool && fgets(buf, sizeof(buf), f)) {
         char *s = trim(buf);
         unsigned n;
         if (*s == 0 || *s == ';' || *s == '#')
+            continue;
+        if (*s == '[')
+            in_sections = 1;
+        if (part == 1 && in_sections)
+            break;
+        if (part == 2 && !in_sections)
             continue;
         n = strlen(s) + 1;
         if (pool_used + n > POOL_MAX)
@@ -91,6 +111,24 @@ void ini_load(const char *fname)
         nlines++;
     }
     fclose(f);
+}
+
+void ini_load(const char *fname)
+{
+    char buf[LINE_LEN];
+
+    if (fname != ini_path) {
+        strncpy(ini_path, fname, PATH_LEN - 1);
+        ini_path[PATH_LEN - 1] = 0;
+    }
+    nlines = 0;
+    pool_used = 0;
+    if (!pool)
+        pool = (char __far *)_fmalloc(POOL_MAX);
+    load_part(ini_path, 1);             /* the machine's settings */
+    if (games_path[0])
+        load_part(games_path, 0);       /* the games' sections, next to the games */
+    load_part(ini_path, 2);             /* sections still in the INI: the first for a game wins */
 
     /* global keys live before the first [section] */
     {
@@ -154,6 +192,8 @@ void ini_apply(void)
             *e = ']';
             for (g = 0; g < game_count; g++) {
                 if (stricmp(games[g].dir, sect) == 0) {
+                    if (games[g].flags & GF_INI)    /* a section earlier in the pool had it */
+                        break;
                     cur = &games[g];
                     cur->flags |= GF_INI;
                     break;
@@ -230,27 +270,26 @@ static int section_is(const char *line, const char *dir)
  */
 int ini_write_key(const char *dir, const char *key, const char *name)
 {
-    char tmp[PATH_LEN + 4];
+    char tmp[PATH_LEN + 16];
     char buf[LINE_LEN], line[LINE_LEN];
     char keyeq[24];
     FILE *in, *out;
+    const char *file = section_file();
     int in_target = 0, seen = 0, done = 0;
     unsigned kl;
-    char *dot;
 
     sprintf(keyeq, "%s=", key);
     kl = strlen(keyeq);
-
-    strcpy(tmp, ini_path);
-    dot = strrchr(tmp, '.');
-    if (dot && !strchr(dot, '\\'))
-        *dot = 0;
-    strcat(tmp, ".TMP");
+    tmp_name(tmp, file);
 
     out = fopen(tmp, "w");
     if (!out)
         return 1;
-    in = fopen(ini_path, "r");
+    in = fopen(file, "r");
+    if (!in && file == games_path)      /* the first game: the file gets its header */
+        fputs("; GAMES.INI - WAVE86's settings for the games in this folder, a\n"
+              "; [section] per game folder: name=, exe= and the rest (WAVE86.INI next\n"
+              "; to the launcher lists every key). The launcher keeps it; edit away.\n", out);
     if (in) {
         while (fgets(buf, sizeof(buf), in)) {
             char *t;
@@ -284,8 +323,8 @@ int ini_write_key(const char *dir, const char *key, const char *name)
     if (!seen)
         fprintf(out, "\n[%s]\n%s%s\n", dir, keyeq, name);
     fclose(out);
-    remove(ini_path);
-    if (rename(tmp, ini_path) != 0)
+    remove(file);
+    if (rename(tmp, file) != 0)
         return 1;
     ini_load(ini_path);                 /* pick the change up */
     return 0;
@@ -343,19 +382,14 @@ int ini_write_global(const char *key, const char *value)
    fills up with games that are not there. Its keys go, and the blank line
    after them; a comment between that and the next [section] introduces
    the next one, so it stays. */
-int ini_remove_section(const char *dir)
+static int remove_section_in(const char *file, const char *dir)
 {
-    char tmp[PATH_LEN + 4], buf[LINE_LEN], line[LINE_LEN];
+    char tmp[PATH_LEN + 16], buf[LINE_LEN], line[LINE_LEN];
     FILE *in, *out;
     int skipping = 0, found = 0;    /* 1 in the section, 2 past its blank line */
-    char *dot;
 
-    strcpy(tmp, ini_path);
-    dot = strrchr(tmp, '.');
-    if (dot && !strchr(dot, '\\'))
-        *dot = 0;
-    strcat(tmp, ".TMP");
-    in = fopen(ini_path, "r");
+    tmp_name(tmp, file);
+    in = fopen(file, "r");
     if (!in)
         return 1;
     out = fopen(tmp, "w");
@@ -378,29 +412,33 @@ int ini_remove_section(const char *dir)
     fclose(in);
     fclose(out);
     if (!found) { remove(tmp); return 0; }
-    remove(ini_path);
-    if (rename(tmp, ini_path) != 0)
+    remove(file);
+    if (rename(tmp, file) != 0)
         return 1;
-    ini_load(ini_path);
     return 0;
+}
+
+int ini_remove_section(const char *dir)
+{
+    int rc = remove_section_in(section_file(), dir);
+    if (games_path[0])
+        remove_section_in(ini_path, dir);       /* one the INI still had */
+    ini_load(ini_path);
+    return rc;
 }
 
 /* the options box turning a setting off: the line goes, and with it the
    game's own say, so the global default is back */
 int ini_remove_key(const char *dir, const char *key)
 {
-    char tmp[PATH_LEN + 4], buf[LINE_LEN], line[LINE_LEN];
+    char tmp[PATH_LEN + 16], buf[LINE_LEN], line[LINE_LEN];
     FILE *in, *out;
+    const char *file = section_file();
     int in_target = 0, found = 0;
     unsigned kl = strlen(key);
-    char *dot;
 
-    strcpy(tmp, ini_path);
-    dot = strrchr(tmp, '.');
-    if (dot && !strchr(dot, '\\'))
-        *dot = 0;
-    strcat(tmp, ".TMP");
-    in = fopen(ini_path, "r");
+    tmp_name(tmp, file);
+    in = fopen(file, "r");
     if (!in)
         return 1;
     out = fopen(tmp, "w");
@@ -420,11 +458,77 @@ int ini_remove_key(const char *dir, const char *key)
     fclose(in);
     fclose(out);
     if (!found) { remove(tmp); return 0; }
-    remove(ini_path);
-    if (rename(tmp, ini_path) != 0)
+    remove(file);
+    if (rename(tmp, file) != 0)
         return 1;
     ini_load(ini_path);
     return 0;
+}
+
+/*
+ * The games' sections live in GAMES.INI next to the games, so settings
+ * travel with the collection (an SD card, say) and WAVE86.INI keeps the
+ * machine's. Called once the games folder is known: what WAVE86.INI still
+ * holds of sections moves over (appended, as they are), and the INI keeps
+ * everything above them. 1 when something moved.
+ */
+int ini_games_file(const char *dir)
+{
+    FILE *in, *out;
+    char buf[LINE_LEN], tmp[PATH_LEN + 16];
+    int had = 0, moved = 0;
+
+    sprintf(games_path, "%s%sGAMES.INI", dir, dir[strlen(dir) - 1] == '\\' ? "" : "\\");
+    in = fopen(ini_path, "r");
+    if (!in) {
+        ini_load(ini_path);
+        return 0;
+    }
+    while (fgets(buf, sizeof(buf), in))
+        if (trim(buf)[0] == '[') { had = 1; break; }
+    if (had && (out = fopen(games_path, "a")) != NULL) {
+        int in_sections = 0;
+        if (ftell(out) == 0)
+            fputs("; GAMES.INI - WAVE86's settings for the games in this folder, a\n"
+                  "; [section] per game folder: name=, exe= and the rest (WAVE86.INI next\n"
+                  "; to the launcher lists every key). The launcher keeps it; edit away.\n", out);
+        rewind(in);
+        while (fgets(buf, sizeof(buf), in)) {   /* the sections, as they are */
+            char line[LINE_LEN];
+            strcpy(line, buf);
+            if (trim(line)[0] == '[')
+                in_sections = 1;
+            if (in_sections)
+                fputs(buf, out);
+        }
+        if (ferror(out) || fclose(out) != 0) {
+            fclose(in);
+            ini_load(ini_path);
+            return 0;                   /* the INI keeps them: nothing lost */
+        }
+        tmp_name(tmp, ini_path);
+        rewind(in);
+        out = fopen(tmp, "w");
+        if (out) {
+            while (fgets(buf, sizeof(buf), in)) {
+                char line[LINE_LEN];
+                strcpy(line, buf);
+                if (trim(line)[0] == '[')
+                    break;
+                fputs(buf, out);
+            }
+            fclose(out);
+            fclose(in);
+            in = NULL;
+            remove(ini_path);
+            if (rename(tmp, ini_path) == 0)
+                moved = 1;
+        }
+    }
+    if (in)
+        fclose(in);
+    ini_load(ini_path);
+    return moved;
 }
 
 const char *ini_game(const char *dir, const char *key)

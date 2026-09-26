@@ -766,6 +766,7 @@ static void redraw(int sel, int top);
  * line now says.
  */
 static char find_text[20];      /* in capitals; kept for F3 */
+static int ini_moved;           /* the sections went to GAMES.INI at this start: say so once */
 
 /*
  * N with no server= in the INI: ask for the address on the bottom line,
@@ -1661,6 +1662,7 @@ int main(int argc, char **argv)
         if (i > 3 && gamedir[i - 1] == '\\')
             gamedir[i - 1] = 0;
     }
+    ini_moved = ini_games_file(gamedir);    /* the game sections live next to the games */
 
     vid_detect();
     scan_games();
@@ -1694,6 +1696,7 @@ int main(int argc, char **argv)
                launcher_dir);
         printf("Games  : %d under %s%s\n", game_count, gamedir,
                scan_sizes_missing ? " (the listing gave no size for some programs: a redirector drive)" : "");
+        printf("INI    : %s; the games' sections in %s\n", ini_file_path(), ini_games_path());
         {
             unsigned big, tot;
             if (xms_free(&big, &tot))
@@ -1864,6 +1867,12 @@ int main(int argc, char **argv)
                 view = 0;
                 net_free();
                 redraw(sel, top);
+    if (ini_moved) {
+        char m[PATH_LEN + 40];
+        sprintf(m, "THE GAMES' SETTINGS NOW LIVE IN %s", ini_games_path());
+        ui_status(m);
+        ini_moved = 0;
+    }
                 continue;
             case 'l': case 'L':
                 net_fetch_list();
