@@ -1280,6 +1280,10 @@ class CrcWriter:
         return self.w.write(b)
 
 
+class SwarmQuiet(Exception):
+    """the swarm stopped delivering a file's pieces: said to the client with an X line"""
+
+
 class SkipWriter(CrcWriter):
     """The same, for a file the client already has the start of: every byte
     goes into the CRC, so the one sent at the end covers the whole file, but
@@ -1500,31 +1504,14 @@ class H(BaseHTTPRequestHandler):
                 self.rec["note"] = (self.rec.get("note", "") + "  from the swarm").strip()
             # four pieces ahead of the read: 32 MB, some minutes of a 486's
             # time, for the swarm to come up with the next one
-            with open_zip(g["zip"], readahead=4) as z:
-                for entry in entries:
-                    rel, name, size = entry[:3]
-                    member = name or (entry[3][0] if len(entry) == 4 and isinstance(entry[3], tuple) else None)
-                    if asked and patient and member:
-                        self.await_member(z, member)
-                    if len(entry) == 4 and isinstance(entry[3], bytes):
-                        body = entry[3]
-                        if b"%NDSRV%" in body:      # the address this client reached us on
-                            body = body.replace(b"%NDSRV%", f"{self.my_address()}:{NETDRIVE_PORT}".encode())
-                        cw = head(len(body), rel)
-                        cw.write(body)
-                        end_file(cw)
-                        continue
-                    cw = head(size, rel)
-                    if len(entry) == 4:
-                        if isinstance(entry[3], bytes):
-                            cw.write(entry[3])
-                        else:
-                            self.send_iso(z, entry[3], cw)
-                        end_file(cw)
-                        continue
-                    with z.open(name) as f:
-                        shutil.copyfileobj(f, cw, 65536)
-                    end_file(cw)
+            try:
+                self.send_entries(g, entries, patient, head, end_file)
+            except SwarmQuiet as e:         # between files: the client can be told
+                self.wfile.write(f"X {str(e)[:70]}\n".encode("ascii", "replace"))
+                MON.log(f"{g['dir']}: {e}")
+                MON.end(self.rec, f"failed: {e}")
+                self.rec = None
+                return
         else:                           # plain files on disk (TDC)
             for rel, fp, size in entries:
                 cw = head(size, rel)
@@ -1532,6 +1519,36 @@ class H(BaseHTTPRequestHandler):
                     shutil.copyfileobj(f, cw, 65536)
                 end_file(cw)
         self.wfile.write(b"E\n")
+
+    def send_entries(self, g, entries, patient, head, end_file):
+        """the files of a zip-backed game, in order; from a torrent, each one
+        whole on this side before its header goes out (await_member)"""
+        from_swarm = TORRENT is not None and g["zip"].startswith(TPREFIX)
+        with open_zip(g["zip"], readahead=4) as z:
+            for entry in entries:
+                rel, name, size = entry[:3]
+                member = name or (entry[3][0] if len(entry) == 4 and isinstance(entry[3], tuple) else None)
+                if from_swarm and patient and member:
+                    self.await_member(z, member)
+                if len(entry) == 4 and isinstance(entry[3], bytes):
+                    body = entry[3]
+                    if b"%NDSRV%" in body:      # the address this client reached us on
+                        body = body.replace(b"%NDSRV%", f"{self.my_address()}:{NETDRIVE_PORT}".encode())
+                    cw = head(len(body), rel)
+                    cw.write(body)
+                    end_file(cw)
+                    continue
+                cw = head(size, rel)
+                if len(entry) == 4:
+                    if isinstance(entry[3], bytes):
+                        cw.write(entry[3])
+                    else:
+                        self.send_iso(z, entry[3], cw)
+                    end_file(cw)
+                    continue
+                with z.open(name) as f:
+                    shutil.copyfileobj(f, cw, 65536)
+                end_file(cw)
 
     def waiting(self, work):
         """work() may sit waiting for the swarm. Meanwhile the client gets a
@@ -1556,31 +1573,53 @@ class H(BaseHTTPRequestHandler):
             raise box["error"]
         return box.get("value")
 
-    def wait_line(self):
-        if SWARM is None:
-            text = "the server is getting it ready"
-        else:
-            st = SWARM.status()
-            text = (f"the server is fetching it: {max(1, st['waiting'])} pieces to go, {st['peers']} peers, "
-                    f"{st['down'] / 1024:.0f} KB/s")
-        self.wfile.write(f"W 0 {text}\n".encode())
+    def wait_line(self, text=None, pct=0):
+        if text is None:
+            if SWARM is None:
+                text = "the server is getting it ready"
+            else:
+                st = SWARM.status()
+                text = (f"the server is fetching it: {max(1, st['waiting'])} pieces to go, {st['peers']} peers, "
+                        f"{st['down'] / 1024:.0f} KB/s")
+        self.wfile.write(f"W {pct} {text}\n".encode("ascii", "replace"))
         self.wfile.flush()
 
     def await_member(self, z, member):
-        """before a file's header goes out, have the start of it here: a
-        header followed by silence is a client timing out in mid-file"""
+        """Before a file's header goes out, have the whole of it here. A W line
+        keeps the client waiting, but only between files: inside one there is
+        nothing but its bytes, so a piece the swarm has not delivered by the
+        time the stream reaches it is two minutes of silence and a client
+        that gives up ("the server went quiet") - what happened at 14 MB into
+        a game the swarm was still fetching. So the file's pieces are asked
+        for, urgently and in order, and the header waits for the last of
+        them, the client hearing how far along it is every few seconds. A
+        swarm that delivers nothing for half an hour ends the pack with an X
+        line, which the client shows."""
         raw = z.fp.raw
         i = z.getinfo(member)
-        length = min(i.compress_size + 30 + len(i.filename) + 1024, 2 * TORRENT.t.piece_length)
+        length = i.compress_size + 30 + len(i.filename) + 1024     # the local header, with slack
         pieces = [p for p in raw.pieces(i.header_offset, length) if not SWARM.have(p)]
         if not pieces:
             return
         SWARM.want(pieces, urgent=True)
-        self.rec["note"] = "waiting for the swarm"
-        while any(not SWARM.have(p) for p in pieces):
+        name = member.rsplit("/", 1)[-1]
+        total, left, quiet_since = len(pieces), len(pieces), time.time()
+        self.rec["note"] = f"waiting for the swarm: {name}"
+        MON.log(f"{self.rec.get('what', name)}: {total} pieces of {name} to come from the swarm before it goes out")
+        while True:
+            now_left = sum(1 for p in pieces if not SWARM.have(p))
+            if not now_left:
+                break
+            if now_left < left:
+                left, quiet_since = now_left, time.time()
+            if time.time() - quiet_since > 1800:
+                raise SwarmQuiet(f"the swarm delivered nothing of {name} for half an hour: try again later")
             time.sleep(1)
             if int(time.time()) % 3 == 0:
-                self.wait_line()
+                pct = 100 * (total - now_left) // total
+                st = SWARM.status()
+                self.wait_line(f"fetching {name}: {pct}%, {now_left} pieces to go, {st['peers']} peers, "
+                               f"{st['down'] / 1024:.0f} KB/s", pct)
         self.rec["note"] = "from the swarm"
 
     def my_address(self):

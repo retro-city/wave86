@@ -853,14 +853,17 @@ wheel - and only when `--torrent` is given.
   `wait=1`) is sent a line every few seconds, and shows it - `the server
   is fetching it: 3 pieces to go, 41 peers, 2210 KB/s` - instead of timing
   out; the wait is kept out of its KB/s. It is also told the pack's real
-  size (`T`), or why there will be no pack (`X`). A large game starts
-  arriving while the swarm is still delivering the rest of it: the swarm
-  does megabytes a second, the 486 a fraction of one, and the server asks
-  for the pieces four ahead of the one it is reading. In the middle of a
-  file it cannot say that it is waiting, so WAVEGET waits two minutes for
-  a server that has gone quiet (`nettimeout=` in WAVE86.INI, in seconds)
-  before it gives up; the server then carries on fetching, and the resume
-  finds it all there.
+  size (`T`), or why there will be no pack (`X`). A file goes out only once the
+  swarm has delivered all of it, since in the middle of a file the server
+  cannot say that it is waiting, and a client that hears nothing for two
+  minutes (`nettimeout=` in WAVE86.INI, in seconds) gives up: the pieces
+  are asked for in order, and the line meanwhile names the file and how
+  far along it is - `fetching SOD3D.EXE: 37%, 12 pieces to go, 41 peers,
+  2210 KB/s`. The swarm does megabytes a second, the DOS machine a
+  fraction of one, so the wait for a file is mostly the wait the transfer
+  would have been anyway. A swarm that delivers nothing of a file for
+  half an hour ends the pack with an `X` line saying so, and the next
+  attempt resumes where it stopped.
 - **What is fetched is kept** in `--cache` (one part file, plus what the
   zips that were opened held, so a restart asks the swarm nothing twice)
   and is seeded back, at `torrent_upload=` KB/s at most (1024; 0 for no
