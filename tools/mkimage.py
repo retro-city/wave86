@@ -188,6 +188,13 @@ FOURDOS_NOSWAP_INI = FOURDOS_INI.replace("UMBLoad=Yes", "UMBLoad=No").replace("U
     .replace("UMBAlias=Yes", "UMBAlias=No").replace("UMBHistory=Yes", "UMBHistory=No").replace("Swapping=XMS", "Swapping=None") \
     .replace("; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
              "; NOSWAP.INI - 4DOS for the boot menu's item 2: nothing in upper memory, no swapping.")
+# and for items 5 and 6: swapping to EMS, or to disk, instead of XMS
+FOURDOS_SWAPEMS_INI = FOURDOS_INI.replace("Swapping=XMS", "Swapping=EMS") \
+    .replace("; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
+             "; SWAPEMS.INI - 4DOS for the boot menu's item 5: swapping to EMS instead of XMS.")
+FOURDOS_SWAPDISK_INI = FOURDOS_INI.replace("Swapping=XMS", "Swapping=C:\\TEMP") \
+    .replace("; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
+             "; SWAPDISK.INI - 4DOS for the boot menu's item 6: swapping to C:\\TEMP instead of XMS.")
 
 
 FLAVOURS = {"fdos": "FreeDOS", "edrdos": "EDR-DOS (the SvarDOS kernel)", "msdos": "MS-DOS", "pcdos": "PC DOS", "dos": "DOS"}
@@ -219,23 +226,25 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
               "; pair Phil's Computer Lab's FreeDOS boots with (HIMEMX for XMS, JEMM386",
               "; RAM for EMS and upper memory), with the card's own range kept out; 0",
               "; is that pair exactly as his, no X= at all. The rest are for finding",
-              "; out what a JemmEx exception or a hang is about, one piece at a time:",
-              "; 9 is JEMMEX, the same in one program; 5 to 8 take 9 apart (no upper",
-              "; memory; no EMS; 2's JEMMEX; the C and D segments kept off limits);",
+              "; out what a JemmEx exception or a hang is about, one piece at a time.",
+              "; On the card, 4DOS swapping itself to XMS under a memory manager was",
+              "; the difference between a boot and a fault, so 5, 6 and 8 are 1 with",
+              "; 4DOS swapping to EMS, to disk (C:\\TEMP), and FreeCOM for the shell;",
               "; 2 keeps JEMMEX with no EMS, nothing in upper memory and its own code",
               "; low, and 4DOS neither swapping nor loading high (C:\\4DOS\\NOSWAP.INI);",
-              "; 3 has no memory manager at all and FreeCOM for the shell; 4 has",
-              "; HIMEMX alone, XMS and the HMA without V86 mode. The lines that start",
-              "; with digits belong to those choices; F8 still steps.",
+              "; 7 is 2's JEMMEX with 4DOS swapping; 3 has no memory manager at all",
+              "; and FreeCOM; 4 has HIMEMX alone, XMS and the HMA without V86 mode; 9",
+              "; is JEMMEX, XMS, EMS and upper memory in one program. The lines that",
+              "; start with digits belong to those choices; F8 still steps.",
               "MENU",
               "MENU  1 - HIMEMX + JEMM386 RAM X=D000-D7FF (Phil's pair, the card kept out); 4DOS swapping to XMS",
               "MENU  2 - JEMMEX X=A000-FFFF NOEMS NOHI NOINVLPG; 4DOS not swapping, low",
               "MENU  3 - no memory manager; FreeCOM as the shell",
               "MENU  4 - HIMEMX: XMS only, no V86 mode; 4DOS swapping to XMS",
-              "MENU  5 - JEMMEX X=A000-FFFF: EMS, no upper memory; 4DOS as in 1",
-              "MENU  6 - JEMMEX X=D000-D7FF NOEMS: upper memory, no EMS; 4DOS as in 1",
-              "MENU  7 - JEMMEX as in 2; 4DOS as in 1",
-              "MENU  8 - JEMMEX X=C000-DFFF NOEMS: upper memory at E000 only; 4DOS as in 1",
+              "MENU  5 - as 1, 4DOS swapping to EMS instead of XMS",
+              "MENU  6 - as 1, 4DOS swapping to disk (C:\\TEMP) instead of XMS",
+              "MENU  7 - JEMMEX as in 2; 4DOS swapping to XMS as in 1",
+              "MENU  8 - as 1, FreeCOM as the shell instead of 4DOS",
               "MENU  9 - JEMMEX X=D000-D7FF: XMS, EMS, upper memory in one; 4DOS as in 1",
               "MENU  0 - HIMEMX + JEMM386 RAM, exactly Phil's lines; 4DOS as in 1",
               "MENU",
@@ -249,15 +258,12 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
           "; config.txt. (The PicoMem wiki warns that EMM386 breaks the Sound Blaster",
           "; of a PicoMem 1, whose DMA was done in software; the 2 has real DMA. If",
           "; sound fails here, try NOEMS after X=, then HIMEMX alone.)",
-          P(1, 4, 0) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
-          P(1) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF"]
+          P(1, 4, 5, 6, 8, 0) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
+          P(1, 5, 6, 8) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF"]
     if menu:
         c += [P(0) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM",
               P(9) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF",
               P(2, 7) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF NOEMS NOHI NOINVLPG",
-              P(5) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF",
-              P(6) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF NOEMS",
-              P(8) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=C000-DFFF NOEMS",
               P(4) + "DOS=HIGH"]
     c += [P(1, 2, 5, 6, 7, 8, 9, 0) + "DOS=HIGH,UMB",
           "FILES=30",
@@ -265,9 +271,9 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
           "LASTDRIVE=Z",
           "; mTCP NetDrive reserves D: and E:; AUTOEXEC.BAT frees D: for the disc",
           "; (DRVOFF D:), so discs kept on the server come in on E:",
-          P(1, 6, 8, 9, 0) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
+          P(1, 5, 6, 8, 9, 0) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
     if menu:
-        c.append(P(2, 3, 4, 5, 7) + "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")
+        c.append(P(2, 3, 4, 7) + "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")
     c += ["; the PicoMem 2's emulated CD-ROM drive: a Panasonic/MKE interface on",
           "; port 250 (no IRQ, no DMA), device MSCD000; SHSUCDX in AUTOEXEC.BAT",
           "; gives it D:. /Q: no Abort/Retry prompt when there is no drive - and",
@@ -286,10 +292,12 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
         c += ["; 4DOS 8.00 is the shell, from C:\\4DOS (its 4DOS.INI puts it in upper memory);",
               "; /P runs C:\\AUTOEXEC.BAT. COMMAND.COM stays in the root as a fallback:",
               "; SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT",
-              P(1, 4, 5, 6, 7, 8, 9, 0) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
+              P(1, 4, 7, 9, 0) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
         if menu:
             c += [P(2) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\NOSWAP.INI /E:2048 /P",
-                  P(3) + "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT"]
+                  P(5) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\SWAPEMS.INI /E:2048 /P",
+                  P(6) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\SWAPDISK.INI /E:2048 /P",
+                  P(3, 8) + "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT"]
     else:
         c.append("SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT")
     return bat(c)
@@ -632,6 +640,8 @@ def stage_tree(work, a):
         else:
             open(os.path.join(d, "4DOS.INI"), "w", newline="").write(FOURDOS_INI)
             open(os.path.join(d, "NOSWAP.INI"), "w", newline="").write(FOURDOS_NOSWAP_INI)
+            open(os.path.join(d, "SWAPEMS.INI"), "w", newline="").write(FOURDOS_SWAPEMS_INI)
+            open(os.path.join(d, "SWAPDISK.INI"), "w", newline="").write(FOURDOS_SWAPDISK_INI)
     open(os.path.join(stage, "CONFIG.SYS"), "w", newline="").write(config_sys(have_cdmke, fourdos, a.flavour))
     open(os.path.join(stage, "AUTOEXEC.BAT"), "w", newline="").write(autoexec_bat())
     return stage, notes

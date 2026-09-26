@@ -104,12 +104,14 @@ pair Phil's Computer Lab's FreeDOS boots with: HIMEMX for XMS and
 `X=D000-D7FF` keeping the upper memory off the card's own BIOS and RAM
 window and the 8 KB after it). The other items exist for finding out what
 a JemmEx exception or a hang on the card is about: 0 is that pair exactly
-as his, with no X=; 9 is JEMMEX, the same in one program; 5 to 8 take 9
-apart one piece at a time (no upper memory, no EMS, 2's JEMMEX with 1's
-4DOS, the whole C and D segments kept off limits); 2 is JEMMEX with
-`NOEMS NOHI NOINVLPG X=A000-FFFF` and 4DOS neither swapping nor loading
-high; 3 is no memory manager at all and FreeCOM as the shell; 4 is HIMEMX
-alone, XMS and the HMA without V86 mode. Then NetDrive's driver (in upper
+as his, with no X=; 9 is JEMMEX, the same in one program; on the card,
+4DOS swapping itself to XMS under a memory manager was the difference
+between a boot and a fault, so 5, 6 and 8 are 1 with 4DOS swapping to
+EMS, to disk, and with FreeCOM as the shell; 2 is JEMMEX with `NOEMS
+NOHI NOINVLPG X=A000-FFFF` and 4DOS neither swapping nor loading high,
+7 the same JEMMEX with 4DOS swapping; 3 is no memory manager at all and
+FreeCOM; 4 is HIMEMX alone, XMS and the HMA without V86 mode. Then
+NetDrive's driver (in upper
 memory where there is any),
 and `CDMKE.SYS /D:MSCD000 /P:250 /Q`, the Panasonic/MKE driver for the
 card's emulated CD-ROM; the shell is 4DOS 8.00 - the same one as on an
