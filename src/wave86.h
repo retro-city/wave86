@@ -73,6 +73,7 @@ extern char home_dir[PATH_LEN];     /* where WAVE86.EXE lives: INI, MUSIC\ */
 
 extern int ui_show_details;     /* P in the games list: details instead of the picture */
 int scan_games(void);
+extern unsigned scan_sizes_missing;    /* programs listed as 0 bytes: a redirector quirk */
 int scan_rmtree(const char *path);  /* a folder and all in it; 0 when gone */
 
 /* --- config (ini.c) --- */

@@ -107,6 +107,8 @@ static int has_ext(const char *fn, const char *ext)
     return dot && stricmp(dot + 1, ext) == 0;
 }
 
+unsigned scan_sizes_missing = 0;    /* programs the listing showed as 0 bytes (/diag) */
+
 static void scan_one(Game *g)
 {
     char pat[PATH_LEN + 16];
@@ -123,9 +125,20 @@ static void scan_one(Game *g)
         const char *fn = ft.name;
         /* an empty EXE cannot run: a download that is still incomplete
            on the server leaves such files behind */
-        if (fn[0] != '.' && fn[0] != '_' && ft.size != 0) {
-            if (has_ext(fn, "EXE") || has_ext(fn, "COM") ||
-                has_ext(fn, "BAT")) {
+        if (fn[0] != '.' && fn[0] != '_' &&
+            (has_ext(fn, "EXE") || has_ext(fn, "COM") || has_ext(fn, "BAT"))) {
+            unsigned long size = ft.size;
+            if (size == 0) {            /* a redirector drive (the card's SD through
+                                           PMDFS) may list no size: ask the file */
+                int h;
+                sprintf(pat, "%s\\%s\\%s", gamedir, g->dir, fn);
+                if ((h = open(pat, O_RDONLY | O_BINARY)) >= 0) {
+                    size = filelength(h);
+                    close(h);
+                }
+                scan_sizes_missing++;
+            }
+            if (size != 0) {
                 char base[9], ext[4];
                 int sr, sc;
 

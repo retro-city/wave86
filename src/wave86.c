@@ -1692,7 +1692,8 @@ int main(int argc, char **argv)
         printf("Started: %s, in %s\n",
                getenv("WAVE86") ? "by WAVE.BAT" : "bare (will run games in place)",
                launcher_dir);
-        printf("Games  : %d under %s\n", game_count, gamedir);
+        printf("Games  : %d under %s%s\n", game_count, gamedir,
+               scan_sizes_missing ? " (the listing gave no size for some programs: a redirector drive)" : "");
         {
             unsigned big, tot;
             if (xms_free(&big, &tot))
