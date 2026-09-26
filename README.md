@@ -94,8 +94,7 @@ folders on the SD's root for the games and the discs. On the image:
     C:\PICOMEM     the card's DOS tools (PMINIT, PMDFS, PM2000, NE2000, PMMOUSE...) and CDMKE.SYS
     C:\MTCP        Michael Brutman's mTCP client programs (FTP, Telnet, Ping, HTGet...)
     C:\ULTRASND    the Gravis UltraSound software (ULTRASND.INI, ULTRINIT, ULTRAMID, the patches)
-    C:\DOS         FreeDOS utilities: EDIT, MEM, MORE, XCOPY, DELTREE, ATTRIB, FIND, TREE, LABEL,
-                   and LBACACHE, a disk cache AUTOEXEC.BAT loads with 8 MB
+    C:\DOS         FreeDOS utilities: EDIT, MEM, MORE, XCOPY, DELTREE, ATTRIB, FIND, TREE, LABEL
     C:\4DOS        4DOS 8.00, the shell, with its help (4HELP, or F1 at the prompt), its
                    licence, and a 4DOS.INI that puts it in upper memory
 
@@ -181,7 +180,9 @@ cache - does not care which DOS is under it, so the builder takes three:
   directory entry); then the rest of the tree goes on with mtools, which
   leaves what is there alone. CONFIG.SYS gets its `HIMEM.SYS` and
   `EMM386.EXE RAM X=D000-D5FF` instead of JEMMEX, AUTOEXEC.BAT `SMARTDRV
-  /X 8192` instead of LBACACHE, and WAVE86.INI `slowcache=0`, since
+  /X 8192` as its cache (the FreeDOS image has none: LBACACHE was tried
+  and taken out), its DBLSPACE.BIN or DRVSPACE.BIN taken off the root so
+  IO.SYS loads no DoubleSpace driver, and WAVE86.INI `slowcache=0`, since
   MS-DOS 6.22's memory managers crash when SLOWDOWN touches the CPU
   cache. Named after the disks: `pmwave-msdos.img` for IO.SYS,
   `pmwave-pcdos.img` for IBMBIO.COM. Built and boot-tested here with

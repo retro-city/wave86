@@ -249,10 +249,11 @@ GUS_URL ?= $(PICOMEM_URL)/ultrasnd.zip
 GUS_ZIP = $(TP)/ultrasnd/ultrasnd.zip
 GUS_DIR ?= build/ultrasnd
 MKIMAGE_ARGS ?=
-# FreeDOS utilities for C:\DOS: EDIT and a few friends, and LBACACHE, a disk
-# cache AUTOEXEC loads (GPL; the FreeDOS 1.3 packages, in third-party/dosutils)
+# FreeDOS utilities for C:\DOS: EDIT and a few friends (GPL; the FreeDOS 1.3
+# packages, in third-party/dosutils). No disk cache: LBACACHE was here and
+# went out again, the card's disk is not the place for one.
 FREEDOS_REPO ?= https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base
-DOS_PKGS ?= edit lbacache mem more xcopy deltree attrib find tree label
+DOS_PKGS ?= edit mem more xcopy deltree attrib find tree label
 DOS_ZIPS = $(foreach p,$(DOS_PKGS),$(TP)/dosutils/$(p).zip)
 DOS_DIR ?= build/dosutils
 # 4DOS 8.00 as the shell (JP Software's 2004 notice licence: distribute with

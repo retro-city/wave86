@@ -363,6 +363,11 @@ def sys_from_disks(work, img, off, geom, disks, seconds):
     root = mtool("mdir", img, off, "-a", "-b", "::/").stdout.upper()     # -a: SYS hides its files
     if not any(n in root for n in ("IO.SYS", "IBMBIO.COM", "KERNEL.SYS")):
         sys.exit("mkimage: SYS C: left no system files on the image")
+    for n in ("DBLSPACE.BIN", "DRVSPACE.BIN"):    # SYS brings the DoubleSpace/DriveSpace driver, and IO.SYS
+        if n in root:                              # would load it at every boot: 40 KB for a drive we never compress
+            mtool("mattrib", img, off, "-r", "-s", "-h", f"::/{n}")
+            mtool("mdel", img, off, f"::/{n}")
+            print(f"mkimage: {n} taken off the root (no DoubleSpace at boot)")
     print(f"mkimage: {os.path.basename(disks[0])}: SYS C: done in {time.time() - t0:.0f} s, "
           f"{len(DOS_TOOLS) - len(missing)} tools into C:\\DOS" + (f"; not on the disks: {', '.join(missing)}" if missing else ""))
     return missing
@@ -401,7 +406,6 @@ def autoexec_bat():
         "REM A disk cache (8 MB of extended memory): the card's disk is read through",
         "REM its BIOS a sector at a time, so DIR and the launcher's list wait on it",
         "REM once, not every time.",
-        "IF EXIST C:\\DOS\\LBACACHE.COM LH C:\\DOS\\LBACACHE.COM 8192",
         "IF EXIST C:\\DOS\\SMARTDRV.EXE LH C:\\DOS\\SMARTDRV.EXE /X 8192",
         "PROMPT $P$G",
         "SET TEMP=C:\\TEMP",
@@ -542,7 +546,7 @@ def stage_tree(work, a):
                      " nothing); the GUS stays off until ULTRASND.INI and the rest are copied there")
     if a.dos and not a.dos_disks:       # a licensed DOS brings its own utilities
         copy_tree(a.dos, os.path.join(stage, "DOS"))
-        for n in ("EDIT.EXE", "LBACACHE.COM"):
+        for n in ("EDIT.EXE",):
             if not any(x.upper() == n for x in os.listdir(os.path.join(stage, "DOS"))):
                 notes.append(f"{n} is not in {a.dos}")
     fourdos = False
@@ -673,7 +677,7 @@ def main():
     ap.add_argument("--mtcp", required=True, help="folder with the mTCP client programs (dhcp.exe...)")
     ap.add_argument("--cdmke", help="folder with CDMKE.SYS, the MKE CD-ROM driver")
     ap.add_argument("--gus", help="folder with the Gravis UltraSound files for C:\\ULTRASND")
-    ap.add_argument("--dos", help="folder with FreeDOS utilities (EDIT, LBACACHE...) for C:\\DOS")
+    ap.add_argument("--dos", help="folder with FreeDOS utilities (EDIT, MEM, XCOPY...) for C:\\DOS")
     ap.add_argument("--4dos", dest="fourdos", help="folder with 4DOS 8.00 (4DOS.COM, 4DOS.HLP, LICENSE.TXT...): the shell")
     ap.add_argument("--kernel", choices=("freedos", "edrdos"), default="freedos",
                     help="the kernel under the FreeDOS boot sector: FreeDOS (default) or EDR-DOS (--edr folder)")
