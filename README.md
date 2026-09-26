@@ -245,8 +245,12 @@ What dosbox-x cannot tell you, to check on the card itself:
 - PMDFS on FreeDOS: it is EtherDFS for DOS 4+, not tried on this kernel.
 - The IRQs: the card's own on 7 (a jumper, mandatory in this firmware),
   Sound Blaster and GUS on 5 with DMA 1 (the other jumper), NE2000 on 3 -
-  the card author's numbers. A card whose BIOS Setup still says another
-  NE2000 IRQ leaves the packet driver deaf and DHCP waiting at every boot.
+  the card author's numbers. The packet driver is the author's PM2000,
+  which reads the port and IRQ off the card and reads odd-sized packets
+  right; the stock NE2000 driver under it (the REM line in AUTOEXEC.BAT,
+  loaded when PM2000.COM is missing) does not, per the author's notes,
+  and a transfer that stalls at the same place every time is what that
+  looks like: the frame fails its checksum on every retransmission.
   Whether JEMMEX gets in the way of the card's Sound Blaster is not
   documented (the PicoMem 1 warning is about EMM386 and software DMA);
   `NOEMS` after `X=D000-D5FF` is the next thing to try, then no JEMMEX.
@@ -869,13 +873,40 @@ wheel - and only when `--torrent` is given.
   half an hour ends the pack with an `X` line saying so, and the next
   attempt resumes where it stopped.
 - WAVEGET, for its part, shows a wait as it goes (`nothing from the
-  server for 12 s (gives up at 120)`), so a screen that does not move is
-  known to be waiting; and it times every write to the disk. A write
-  that takes seconds (the card's SD through PMDFS has stalled for
-  minutes) is said on the screen, kept out of the timeout and the KB/s,
-  and named when it gives up: `no data for 120 s at 596K of INTRO.PAK;
-  disk stalls: 130 s` is the disk, `nothing from the server for 120 s,
-  596K into INTRO.PAK` is the network or the server.
+  server for 12 s (connects again at 30)`), so a screen that does not
+  move is known to be waiting. On the PicoMEM a transfer stops dead now
+  and then - the server sits blocked with its buffers full while the
+  client hears nothing - and a fresh connection works at once, so after
+  `netreconnect=` seconds of silence (30) WAVEGET drops the connection
+  and asks for the rest on a new one, in the same run, from the note it
+  keeps: `connecting again (2): silent 30 s at 596K of INTRO.PAK`. Only
+  connections that bring nothing new for `nettimeout=` seconds in all
+  (120) end it - the server's own wait lines count as something, as
+  they always have, and UPDATE, LIST and PLAY, which do not reconnect,
+  keep the plain `nettimeout=` wait. While it waits it also
+  transmits: mTCP sends nothing on its own when nothing comes in, and a
+  card whose NIC keeps what it received until its next interrupt is
+  woken by any transmit, so at three seconds of silence, then every six,
+  WAVEGET sends an ARP request for the server (sixty bytes; the gateway
+  when the server is on another network). Data that follows one within
+  a second is counted as a stall kicked awake, and the reply says
+  whether the way in works at all. It times every write to the disk
+  too: one that takes seconds (the card's SD through PMDFS) is said on
+  the screen, kept out of the timeout and the KB/s. What it says when
+  it gives up follows that evidence, from the last silence: `the server
+  sent nothing for 120 s over 4 connections, 596K into INTRO.PAK` when
+  the ARP reply came back and the server was silent; `nothing reaches
+  the card for ...` when not one packet did; `packets came in damaged
+  for ...` when frames came and failed their checksums (read wrong off
+  the card: the stock NE2000 driver's odd-size bug looks like this);
+  `no data for 120 s, 596K into INTRO.PAK; disk stalls: 130 s` when the
+  disk stood still; `nothing from the server for ...` when it cannot
+  tell. Every download or update that ended, well or not, adds a line
+  to `WAVEGET.LOG` next to the program: what was said, then the stack's
+  counters - packets in and out and dropped, TCP sequence errors,
+  buffer drops and checksum failures, ARP requests and replies, kicks
+  and how many woke something, reconnects, and what the last silence
+  looked like - which is what to send along with a report of a stall.
 - **What is fetched is kept** in `--cache` (one part file, plus what the
   zips that were opened held, so a restart asks the swarm nothing twice)
   and is seeded back, at `torrent_upload=` KB/s at most (1024; 0 for no

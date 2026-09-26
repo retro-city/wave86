@@ -496,11 +496,15 @@ def autoexec_bat():
         "REM IF EXIST C:\\PICOMEM\\PMMOUSE.EXE LH C:\\PICOMEM\\PMMOUSE",
         "IF EXIST C:\\WAVE86\\EXTRAS\\CTMOUSE.EXE LH C:\\WAVE86\\EXTRAS\\CTMOUSE",
         "REM The network: the card's NE2000 over Wi-Fi (wifi.txt on the SD card),",
-        "REM Crynwr's packet driver on INT 60h, then DHCP: two tries of 10 s, so a",
-        "REM boot with the Wi-Fi down reaches the menu after 20 s (Esc skips the",
-        "REM wait). PM2000 0x60 instead of the NE2000 line reads the port and IRQ",
-        "REM off the card itself.",
-        "IF EXIST C:\\PICOMEM\\NE2000.COM LH C:\\PICOMEM\\NE2000 %PKTINT% %NE_IRQ% %NE_PORT%",
+        "REM the card author's packet driver PM2000 on INT 60h (it reads the port",
+        "REM and IRQ off the card, and reads odd-sized packets right, which the",
+        "REM stock NE2000 driver under it does not - a transfer that stalls at",
+        "REM the same place every time is that), then DHCP: two tries of 10 s, so",
+        "REM a boot with the Wi-Fi down reaches the menu after 20 s (Esc skips",
+        "REM the wait). To go back to the stock driver, swap the REM below.",
+        "IF EXIST C:\\PICOMEM\\PM2000.COM LH C:\\PICOMEM\\PM2000 %PKTINT%",
+        "IF NOT EXIST C:\\PICOMEM\\PM2000.COM IF EXIST C:\\PICOMEM\\NE2000.COM LH C:\\PICOMEM\\NE2000 %PKTINT% %NE_IRQ% %NE_PORT%",
+        "REM LH C:\\PICOMEM\\NE2000 %PKTINT% %NE_IRQ% %NE_PORT%",
         "IF EXIST C:\\WAVE86\\DHCP.EXE C:\\WAVE86\\DHCP -retries 2 -timeout 10",
         "SET PKTINT=",
         "SET NE_IRQ=",
@@ -588,9 +592,12 @@ def stage_tree(work, a):
         sys.exit(f"mkimage: no DHCP.EXE in {a.mtcp}: not the mTCP client zip?")
     p = os.path.join(stage, "PICOMEM")
     copy_tree(a.picomem, p)
-    for n in ("PMINIT.EXE", "PMDFS.EXE", "NE2000.COM"):
-        if not any(x.upper() == n for x in os.listdir(p)):
-            notes.append(f"{n} is not in {a.picomem}; the AUTOEXEC line for it will be skipped")
+    have = {x.upper() for x in os.listdir(p)}
+    for n in ("PMINIT.EXE", "PMDFS.EXE", "PM2000.COM"):
+        if n not in have:
+            notes.append(f"{n} is not in {a.picomem}; the AUTOEXEC line for it will be skipped"
+                         + ((" (NE2000.COM, the stock driver, loads instead)" if "NE2000.COM" in have
+                             else " (nor is NE2000.COM: no packet driver will load)") if n == "PM2000.COM" else ""))
     if a.cdmke:
         for n in os.listdir(a.cdmke):
             if n.upper() == "CDMKE.SYS":

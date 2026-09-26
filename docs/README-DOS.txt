@@ -20,8 +20,12 @@ on the build machine writes a 512 MB FreeDOS image with the launcher, the
 card's tools, mTCP, the Gravis files and a CONFIG.SYS and AUTOEXEC.BAT
 that do everything below, for the HDD folder of the card's SD card (the
 project README says what to check). Its packet driver line is
-LH NE2000 0x60 3 0x300: the card's NE2000 defaults to IRQ 3 (BIOS Setup,
-Other menu), while its Sound Blaster and GUS take IRQ 5. Its WAVE86.INI
+LH PM2000 0x60, the card author's driver, which reads the port and IRQ
+off the card and reads odd-sized packets right (the stock NE2000 driver
+does not, the author notes: a download that stalls at the same place
+every time is that); the NE2000 line stays as a REM to swap back. The
+card's NE2000 defaults to IRQ 3 (BIOS Setup, Other menu), while its
+Sound Blaster and GUS take IRQ 5. Its WAVE86.INI
 says theme=picomem: the launcher in black and gold, after the card;
 theme=exodos or theme=wave86 there brings back the other looks.
 
@@ -49,10 +53,17 @@ type a few letters of it, Enter; F3 searches on. Left and right turn
 the page. In the games list / and F3 search, left and right page, the
 same way, and Del removes a game from the disk after a yes. M (or ?) in
 either list opens a menu of everything it does, each with its key.
-If downloads stop with "nothing from the server for 120 s",
-nettimeout=300 in WAVE86.INI makes WAVEGET wait five minutes instead
-of two; "disk stalls: N s" in that message means the drive it writes
-to stood still that long, and netwrite=512 makes the writes smaller.
+A transfer that goes silent is dropped after 30 s and carried on over
+a new connection in the same run ("connecting again to carry on");
+netreconnect= in WAVE86.INI is that wait, nettimeout=120 how long
+connections may bring nothing before WAVEGET gives up. Meanwhile it
+sends an ARP request every few seconds of silence, which wakes a card
+that holds its packets until the next interrupt. Its last message says
+what it saw: "the server sent nothing" (the reply came, the server was
+silent), "nothing reaches the card" (not one packet came), "disk
+stalls: N s" (the drive it writes to stood still; netwrite=512 makes
+the writes smaller). WAVEGET.LOG next to the program keeps a line per
+transfer with the network counters: send it along with a report.
 A game that arrived whole but "nothing in it runs": WAVE86 /diag
 shows the folder as the launcher sees it.
 A game installed from the server comes with a picture for the details

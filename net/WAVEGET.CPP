@@ -27,6 +27,7 @@
 #include <direct.h>
 #include <dos.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "types.h"
 #include "utils.h"
@@ -35,6 +36,7 @@
 #include "tcp.h"
 #include "tcpsockm.h"
 #include "timer.h"
+#include "ip.h"
 
 #define TCP_RECV_BUFFER   (16384)
 #define INBUF             (8192)
@@ -43,9 +45,43 @@
 /* How long the server may say nothing before we give up on it. It was 30
    seconds, which a server reading its games off a disk never noticed; one
    that fetches them from a swarm can stall in the middle of a file, where
-   it has no way of telling us so. nettimeout= in the INI, in seconds. */
+   it has no way of telling us so. nettimeout= in the INI, in seconds.
+   Since then the server says when it waits, and a connection that goes
+   silent has stopped for good more often than not - on the PicoMEM the
+   packets stop coming while a fresh connection works at once - so after
+   netreconnect= seconds of silence the connection is dropped and the rest
+   asked for on a new one, in this same run, as many times as it takes;
+   only nettimeout= seconds with nothing new at all end it. */
 static unsigned long idleMs = 120000ul;
 #define IDLE_TIMEOUT      (idleMs)
+static unsigned long reconnectMs = 30000ul;   /* netreconnect=0 turns it off */
+/* how the last attempt ended, for the one that decides what to say */
+static int gaveUpWaiting = 0;               /* the stream stopped for silence, not an error */
+static int connectFailed = 0;               /* ... or never started: no answer to the SYN */
+/* the kick: nothing comes and mTCP sends nothing on its own, but a NIC
+   that keeps what it received until its next interrupt (the card's, it
+   seems) is woken by any transmit - an ARP request, sixty bytes, whose
+   reply also says the way in works. Counted for the log and the words. */
+static unsigned kicks = 0, rescued = 0;     /* sent; followed by data within a second */
+static int reconnects = 0;
+static int silentArp = 0, silentRx = 0;     /* during the last silence: a reply came; any packet came */
+static int silentBad = 0;                   /* ... packets came, and failed their checksums */
+static int noHeaders = 0;                   /* ... the request got no reply at all */
+static int mayReconnect = 0;                /* doGet's loop is around the stream: silence ends an attempt, not the run */
+static int logged = 0;                      /* a WAVEGET.LOG line was written for this run */
+static int sinceProgress = 0;               /* reconnects since the note last moved */
+static char askText[80] = "";               /* what the stream shows while it asks: the reconnect words */
+static char lastLog[120] = "";              /* the last message, for the log line at the end */
+static clockTicks_t tLastW = 0;             /* when the server last said it was waiting (a W line) */
+
+/* the silence that ends an attempt with a new one to follow: only under
+   a caller that reconnects, and only when shorter than the give-up */
+static unsigned long reconnectWait(void) {
+  return (mayReconnect && reconnectMs && reconnectMs < idleMs) ? reconnectMs : 0;
+}
+static unsigned long silentSecs = 0, silentAtK = 0, slowWriteMs = 0;
+static clockTicks_t tLastData = 0;         /* when bytes last came in */
+static char silentName[16] = "";
 
 static TcpSocket *sock;
 static uint8_t inBuf[INBUF];
@@ -122,14 +158,51 @@ static void pump(void) {
   mus_poll();                       /* IMF: only the playlist, no mixing */
 }
 
+/* the connection, closed and let go of. isCloseDone() is what frees the
+   socket's buffers (isClosed() never comes true when we close first):
+   it waits for the other side's FIN up to TCP_CLOSE_TIMEOUT, five
+   seconds in WAVEGET.CFG, then forces it. */
+static void dropSocket(void) {
+  if (!sock) return;
+  sock->closeNonblocking();
+  clockTicks_t t0 = TIMER_GET_CURRENT();
+  while (!sock->isCloseDone() && Timer_diff(t0, TIMER_GET_CURRENT()) < TIMER_MS_TO_TICKS(20000)) pump();
+  TcpSocketMgr::freeSocket(sock);
+  sock = NULL;
+}
+
+/* whom to ARP for the kick: the server when it is on our network, else
+   the gateway (the same choice the stack makes for every packet) */
+static void kickTarget(IpAddr_t target) {
+  int i, same = 1;
+  for (i = 0; i < 4; i++)
+    if ((MyIpAddr[i] & Netmask[i]) != (sock->dstHost[i] & Netmask[i])) same = 0;
+  memcpy(target, same ? sock->dstHost : Gateway, sizeof(IpAddr_t));
+}
+
+/* WAVEGET.LOG next to the program: one line per transfer that ended,
+   with the stack's counters, for a stall to be understood later */
+static void logLine(const char *what) {
+  char path[100];
+  FILE *f;
+  time_t now = time(NULL);
+  struct tm *tm = localtime(&now);
+  sprintf(path, "%sWAVEGET.LOG", home_dir);
+  f = fopen(path, "a");
+  if (!f) return;
+  fprintf(f, "%02d-%02d %02d:%02d %s | in %lu out %lu dropped %lu lowbuf %u | tcp in %lu seqerr %lu nospace %lu badsum %lu (ip %lu) | arp req %lu rep %lu | kicks %u woke %u reconnects %d | last silence: arp %d rx %d bad %d\n",
+          tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, what,
+          (unsigned long)Packets_received, (unsigned long)Packets_sent, (unsigned long)Packets_dropped, (unsigned)Buffer_lowFreeCount,
+          (unsigned long)Tcp::Packets_Received, (unsigned long)Tcp::Packets_SeqOrAckError, (unsigned long)Tcp::Packets_DroppedNoSpace,
+          (unsigned long)Tcp::ChecksumErrors, (unsigned long)Ip::badChecksum,
+          (unsigned long)Arp::RequestsSent, (unsigned long)Arp::RepliesReceived, kicks, rescued, reconnects,
+          silentArp, silentRx, silentBad);
+  fclose(f);
+  logged = 1;
+}
+
 static void netShutdown(int rc) {
-  if (sock) {
-    sock->closeNonblocking();
-    clockTicks_t t0 = TIMER_GET_CURRENT();
-    while (!sock->isClosed() && Timer_diff(t0, TIMER_GET_CURRENT()) < TIMER_MS_TO_TICKS(2000)) pump();
-    TcpSocketMgr::freeSocket(sock);
-    sock = NULL;
-  }
+  dropSocket();
   Utils::endStack();
   exit(rc);
 }
@@ -149,7 +222,12 @@ static int connectTo(IpAddr_t addr, uint16_t port) {
      row reuse the same four-tuple while the server's side is still in
      TIME_WAIT and the SYN is quietly dropped - which is precisely what a
      queue does. Seeded from the BIOS tick in main(). */
-  if (sock->connectNonBlocking(localPort, addr, port)) { msg("WAVEGET: connect failed"); return -1; }
+  /* and a fresh one for every connection within a run too: a reconnect
+     on the port the stalled connection still holds at the server's end
+     gets no SYN-ACK, only its ten seconds of silence */
+  localPort = (uint16_t)(localPort >= 65000u ? 4096u : localPort + 1u);
+  connectFailed = 0;
+  if (sock->connectNonBlocking(localPort, addr, port)) { msg("WAVEGET: connect failed"); connectFailed = 1; return -1; }
   clockTicks_t t0 = TIMER_GET_CURRENT();
   while (1) {
     if (userWantsOut()) return -2;
@@ -157,6 +235,7 @@ static int connectTo(IpAddr_t addr, uint16_t port) {
     if (sock->isConnectComplete()) return 0;
     if (sock->isClosed() || Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(CONNECT_TIMEOUT)) {
       msg("WAVEGET: no answer from the server");
+      connectFailed = 1;
       return -1;
     }
   }
@@ -202,7 +281,16 @@ static int httpGet(IpAddr_t addr, uint16_t port, const char *path, int16_t *n, u
     if (got == -2) return 2;
     if (got == -1) { msg("WAVEGET: connection closed before the headers came"); return 1; }
     if (got == 0) {
-      if (Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(IDLE_TIMEOUT)) { msg("WAVEGET: timeout"); return 1; }
+      unsigned long silence = reconnectWait() ? reconnectWait() : IDLE_TIMEOUT;
+      if (Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(silence)) {
+        /* no reply at all: silence like any other for a caller that
+           reconnects to weigh, said here for the others */
+        gaveUpWaiting = 1;
+        noHeaders = 1;
+        silentSecs = Timer_diff(t0, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;
+        if (!mayReconnect) msg("WAVEGET: timeout: no reply to the request");
+        return 1;
+      }
       continue;
     }
     t0 = TIMER_GET_CURRENT();
@@ -321,6 +409,8 @@ static void uiStatus(const char *text) {
 
 /* what WAVEGET has to say, wherever it can be read */
 static void msg(const char *m) {
+  strncpy(lastLog, m, sizeof(lastLog) - 1);
+  lastLog[sizeof(lastLog) - 1] = 0;
   if (screenOn) {
     strncpy(lastMsg, m, sizeof(lastMsg) - 1);
     lastMsg[sizeof(lastMsg) - 1] = 0;
@@ -328,6 +418,12 @@ static void msg(const char *m) {
   } else {
     puts(m);
   }
+}
+
+/* the log line for a run that ended without one: whatever was last said */
+static void logLast(int rc) {
+  if (logged) return;
+  logLine(lastLog[0] ? (strncmp(lastLog, "WAVEGET: ", 9) == 0 ? lastLog + 9 : lastLog) : (rc ? "ended" : "ready"));
 }
 
 static void uiOpen(const char *title, const char *host) {
@@ -539,6 +635,10 @@ static void musicStart(const char *exePath) {
       else if (strnicmp(buf, "nettimeout=", 11) == 0) {
         unsigned long secs = strtoul(buf + 11, NULL, 10);
         if (secs >= 5 && secs <= 3600) idleMs = secs * 1000ul;
+      }
+      else if (strnicmp(buf, "netreconnect=", 13) == 0) {
+        unsigned long secs = strtoul(buf + 13, NULL, 10);
+        reconnectMs = secs == 0 ? 0 : (secs < 5 ? 5000ul : secs > 3600 ? 3600000ul : secs * 1000ul);
       }
       else if (strnicmp(buf, "adlib=", 6) == 0) cfg_adlib = atoi(buf + 6);
     }
@@ -834,9 +934,12 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
                       unsigned long kbTotal, int safe) {
   int16_t n; uint16_t pos;
   int rc;
-  uiStatus("asking the server ...");
+  uiStatus(askText[0] ? askText : "asking the server ...");   /* a reconnect says why */
+  askText[0] = 0;
+  gaveUpWaiting = 0;
   rc = httpGet(addr, port, path, &n, &pos);
   if (rc) return rc;
+  noHeaders = 0;
   uiStatus("");
 
   char line[200]; uint16_t lineLen = 0;
@@ -847,14 +950,22 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   int pendingRename = 0;            /* a whole file in its .TMP name, waiting for its C line */
   unsigned long crc = 0xFFFFFFFFUL, lastCrc = 0, lastCheckpoint = 0;
   clockTicks_t t0 = TIMER_GET_CURRENT(), tStart = t0, tShow = t0, tWait = t0, tIdle = t0;
-  unsigned long slowWriteMs = 0;    /* the longest one write to the disk took */
+  /* silence ends the attempt after netreconnect= seconds when there is
+     a next attempt, else after nettimeout= */
+  unsigned long silence = reconnectWait() ? reconnectWait() : IDLE_TIMEOUT;
   int idleShown = 0;                /* the "nothing from the server" line is up */
+  int kickJustNow = 0;              /* bytes came within a second of a kick: what were they? */
   int finished = 0;
+  clockTicks_t tKick = t0;          /* the last kick, or the last data */
+  int kickPending = 0, kickedThisSilence = 0;
+  uint32_t arpAt = 0, rxAt = 0, badAt = 0;   /* the counters when the silence began */
+  tLastData = t0;
 
   while (!finished) {
     while (pos < (uint16_t)n) {
       if (cur) {                                   /* file data */
         uint16_t chunk = n - pos;
+        if (kickJustNow) { rescued++; kickJustNow = 0; }   /* it was data: the kick woke the way in */
         if ((unsigned long)chunk > remain) chunk = (uint16_t)remain;
         if (writeMax && chunk > writeMax) chunk = writeMax;   /* netwrite= */
         _doserrno = 0;
@@ -900,6 +1011,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
         char c = inBuf[pos++];
         if (c != '\n') { if (lineLen < sizeof(line) - 1) line[lineLen++] = c; continue; }
         line[lineLen] = 0; lineLen = 0;
+        if (kickJustNow) { if (line[0] != 'W') rescued++; kickJustNow = 0; }   /* a W line was coming anyway */
         if (pendingRename && line[0] != 'C') {   /* no checksum for it: into place as it came */
           remove(full); rename(tmp, full); pendingRename = 0;
         }
@@ -918,6 +1030,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
             sprintf(m, "WAVEGET: %.40s came through damaged - fetch it again", curName);
             files--; doneFiles = files;   /* so the next run starts at it */
             partBytes = 0;                /* ... from its first byte */
+            if (doneFiles <= 0 && rsmKey) remove(rsmPath);   /* nothing before it: no note, a clean request */
             msg(m);
             return 1;
           } else
@@ -933,6 +1046,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
           else printf("\r%-70.70s", sp ? sp + 1 : "the server is fetching it");
           if (!waited) tWait = TIMER_GET_CURRENT();
           waited = 1;
+          tLastW = TIMER_GET_CURRENT();
           continue;
         }
         if (line[0] == 'T') {           /* what the pack really holds, in bytes */
@@ -984,6 +1098,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
           crc = resumeCrcKnown ? resumeCrc : 0xFFFFFFFFUL;
           unverified = !resumeCrcKnown;  /* the start was never checksummed */
           partBytes = at; partCrc = crc; lastCheckpoint = at;
+          partCrcKnown = crcWanted && resumeCrcKnown;   /* a note written before the first byte says the truth */
           sprintf(m, "carrying on %luK into %.40s", at / 1024, rel);
           uiStatus(m);
           if (remain == 0) {
@@ -1040,31 +1155,66 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
       if (idle >= 3 && Timer_diff(tIdle, now) > TIMER_MS_TO_TICKS(1000)) {
         char m[80];
         tIdle = now;
-        sprintf(m, "nothing from the server for %lu s (gives up at %lu)", idle, IDLE_TIMEOUT / 1000);
+        sprintf(m, "nothing from the server for %lu s (%s at %lu)", idle,
+                reconnectWait() ? "connects again" : "gives up", silence / 1000);
         if (screenOn) uiStatus(m); else printf("\r%-70.70s", m);
         idleShown = 1;
       }
-      if (Timer_diff(t0, now) > TIMER_MS_TO_TICKS(IDLE_TIMEOUT)) {
-        char m[120];
-        if (slowWriteMs >= 2000)
-          sprintf(m, "WAVEGET: no data for %lu s at %luK of %.12s; disk stalls: %lu s", idle, (curSize - remain) / 1024, curName, slowWriteMs / 1000);
-        else
-          sprintf(m, "WAVEGET: nothing from the server for %lu s, %luK into %.12s", idle, (curSize - remain) / 1024, curName);
-        msg(m);
+      /* the kick: at three seconds of silence (seven while the server was
+         sending its wait lines, which come every three), then every six,
+         so data that follows one within a second is unlikely to be chance */
+      if (idle >= (waited ? 7 : 3) && Timer_diff(tKick, now) >= TIMER_MS_TO_TICKS(kickedThisSilence ? 6000 : 3000)) {
+        IpAddr_t target;
+        if (!kickedThisSilence) {
+          arpAt = Arp::RepliesReceived; rxAt = Packets_received; badAt = Tcp::ChecksumErrors + Ip::badChecksum;
+          silentArp = silentRx = silentBad = 0;
+        }
+        kickTarget(target);
+        Arp::sendArpRequestPacket(target);
+        kicks++; tKick = now; kickPending = 1; kickedThisSilence = 1;
+      }
+      if (kickedThisSilence) {
+        if (Arp::RepliesReceived != arpAt) silentArp = 1;
+        if (Packets_received != rxAt) silentRx = 1;
+        if (Tcp::ChecksumErrors + Ip::badChecksum != badAt) silentBad = 1;
+      }
+      if (Timer_diff(t0, now) > TIMER_MS_TO_TICKS(silence)) {
+        /* the caller decides whether that is the end or a new connection,
+           and says so: what it needs is kept here */
+        gaveUpWaiting = 1;
+        noHeaders = 0;
+        silentSecs = idle;
+        if (curName[0]) {               /* else the last known place stands */
+          silentAtK = (curSize - remain) / 1024;
+          strncpy(silentName, curName, sizeof(silentName) - 1);
+          silentName[sizeof(silentName) - 1] = 0;
+        }
         if (cur) fclose(cur);
         return 1;
       }
       n = 0; continue;
     }
     if (idleShown) { idleShown = 0; if (screenOn) uiStatus(""); else printf("\r%-70s\r", ""); }
-    t0 = TIMER_GET_CURRENT();
+    t0 = tLastData = TIMER_GET_CURRENT();
+    if (kickPending) {                /* bytes right after a kick: counted once seen for what they are */
+      kickPending = 0;
+      if (Timer_diff(tKick, t0) < TIMER_MS_TO_TICKS(1000)) kickJustNow = 1;
+    }
+    kickedThisSilence = 0;
+    tKick = t0;
   }
   unsigned long secs = Timer_diff(tStart, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;
   char done_line[120];
   sprintf(done_line, "WAVEGET: %s ready: %d files, %luK in %lu s%s", what, files, done / 1024, secs,
           checked && checked >= files - skipped ? ", checksums good" : "");
+  if (reconnects || rescued) {
+    char extra[60];
+    sprintf(extra, "%s%s", reconnects ? " after reconnecting" : "", rescued ? " (stalls kicked awake)" : "");
+    if (strlen(done_line) + strlen(extra) < sizeof(done_line)) strcat(done_line, extra);
+  }
   if (screenOn) { uiProgress(curName, done, kbTotal, secs ? (done / 1024) / secs : 0, secs); msg(done_line); }
   else printf("\r%-70s\n", done_line);
+  logLine(done_line + 9);
   return 0;
 }
 
@@ -1083,21 +1233,14 @@ static int doStream(IpAddr_t addr, uint16_t port, const char *path, const char *
   return rc;
 }
 
-static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal, const char *key) {
-  char path[160];
-  const char *k = key ? key : dir;
-  int from;
-  sprintf(gameRoot, "%s\\%s", gamesdir, dir);
-  mkdir(gamesdir);
-  mkdir(gameRoot);
-  sprintf(rsmPath, "%s\\WAVE86.RSM", gameRoot);
-  rsmKey = k;
-  from = resumeRead();
-  sprintf(path, "/pack/%s", k);
-  if (from || resumeAt)
+/* the request for a game: the whole of it, or the rest after what the
+   note says is here (from= files and at= bytes of the next) */
+static void packPath(char *path, const char *k, int from, unsigned long at) {
+  sprintf(path, "/pack/%s", k);         /* the key may carry ?cd=... already */
+  if (from || at)
     sprintf(path + strlen(path), "%cfrom=%d", strchr(path, '?') ? '&' : '?', from);
-  if (resumeAt)
-    sprintf(path + strlen(path), "&at=%lu", resumeAt);
+  if (at)
+    sprintf(path + strlen(path), "&at=%lu", at);
   if (crcWanted)
     sprintf(path + strlen(path), "%ccrc=1", strchr(path, '?') ? '&' : '?');
   /* wait=1: we know W, T and X lines - a server that fetches the game from
@@ -1106,8 +1249,99 @@ static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *game
   /* and a picture of it for the details pane, unless netart=0 */
   if (artKind[0] && stricmp(artKind, "0") != 0 && stricmp(artKind, "none") != 0)
     sprintf(path + strlen(path), "&art=%s&theme=%s&thumb=36x10", artKind, themeName[0] ? themeName : "exodos");
+}
+
+static int doGet(IpAddr_t addr, uint16_t port, const char *dir, const char *gamesdir, unsigned long kbTotal, const char *key) {
+  char path[160];
+  const char *k = key ? key : dir;
+  int from, rc, tries = 0;
+  clockTicks_t tProgress;
+  sprintf(gameRoot, "%s\\%s", gamesdir, dir);
+  mkdir(gamesdir);
+  mkdir(gameRoot);
+  sprintf(rsmPath, "%s\\WAVE86.RSM", gameRoot);
+  rsmKey = k;
+  from = resumeRead();
+  packPath(path, k, from, resumeAt);
   uiOpen(dir, serverText);
-  int rc = doStream(addr, port, path, dir, kbTotal, 0);
+  /* The stream, again while silence ends it and the connections bring
+     something: each new one asks for the rest, from the note the last
+     left behind. Connections that bring nothing new for nettimeout=
+     seconds in all end it, with a message that says what stood still. */
+  slowWriteMs = 0;
+  kicks = rescued = 0; reconnects = sinceProgress = 0;
+  logged = 0; lastLog[0] = 0; tLastW = 0; silentName[0] = 0; silentAtK = 0;
+  mayReconnect = 1;
+  tProgress = TIMER_GET_CURRENT();
+  for (;;) {
+    int fromBefore = from;
+    unsigned long atBefore = resumeAt, quiet;
+    clockTicks_t now;
+    rc = doStream(addr, port, path, dir, kbTotal, 0);
+    if (rc != 1) break;                       /* done, or aborted */
+    /* silence ends an attempt; so does a reconnect that got no answer
+       (the server may be a moment away): anything else was an error
+       already said, and is the end */
+    if (!gaveUpWaiting && !(tries && connectFailed)) break;
+    quiet = Timer_diff(tLastData, TIMER_GET_CURRENT()) * TIMER_TICK_LEN / 1000;   /* before the close wait */
+    dropSocket();                             /* the old one, before its successor */
+    {
+      unsigned long crcBefore = resumeCrc;
+      int crcKnownBefore = resumeCrcKnown;
+      from = resumeRead();                    /* what the attempt left behind */
+      /* silence between the S line and the P line leaves a note without
+         the bytes of the file that was on its way: the last note knew */
+      if (from == fromBefore && resumeAt == 0 && atBefore) {
+        resumeAt = atBefore; resumeCrc = crcBefore; resumeCrcKnown = crcKnownBefore;
+        resumeWrite(from, resumeAt, resumeCrc, resumeCrcKnown);
+      }
+    }
+    now = TIMER_GET_CURRENT();
+    if (from != fromBefore || resumeAt != atBefore) { tProgress = now; sinceProgress = 0; }
+    /* the server saying it was waiting (W lines) is not nothing: a wait
+       of its own, of any length, keeps the run alive as it always has */
+    if (tLastW && Timer_diff(tProgress, tLastW) < 0x80000000ul) tProgress = tLastW;
+    if (!reconnectWait() || Timer_diff(tProgress, now) > TIMER_MS_TO_TICKS(IDLE_TIMEOUT)) {
+      char m[120], where[40] = "";
+      const char *saw;
+      unsigned long secs = tries ? Timer_diff(tProgress, now) * TIMER_TICK_LEN / 1000 : quiet;
+      if (silentName[0]) sprintf(where, ", %luK into %.12s", silentAtK, silentName);
+      /* what the silence looked like from here decides the words: the
+         ARP reply that came back means the way in works and the server
+         sent nothing; none, and no packet at all, means nothing reaches
+         the card; frames failing their sums were read wrong off it -
+         and the log has the counters either way */
+      if (noHeaders && !tries)      saw = "no reply to the request in";
+      else if (kicks && silentBad)  saw = "packets came in damaged for";
+      else if (kicks && !silentArp && !silentRx) saw = "nothing reaches the card for";
+      else if (kicks && silentArp)  saw = "the server sent nothing for";
+      else                          saw = "nothing from the server for";
+      if (slowWriteMs >= 2000)
+        sprintf(m, "WAVEGET: no data for %lu s%s; disk stalls: %lu s", secs, where, slowWriteMs / 1000);
+      else if (tries)
+        sprintf(m, "WAVEGET: %s %lu s over %d connections%s", saw, secs, sinceProgress + 1, where);
+      else
+        sprintf(m, "WAVEGET: %s %lu s%s", saw, secs, where);
+      msg(m);
+      logLine(m + 9);
+      break;
+    }
+    tries++; sinceProgress++;
+    reconnects = tries;
+    /* the words the next attempt shows while it asks: why there is one */
+    if (connectFailed)
+      sprintf(askText, "connecting again (%d): no answer last time", tries);
+    else if (noHeaders)
+      sprintf(askText, "connecting again (%d): no reply for %lu s", tries, silentSecs);
+    else if (silentName[0])
+      sprintf(askText, "connecting again (%d): silent %lu s at %luK of %.12s", tries, silentSecs, silentAtK, silentName);
+    else
+      sprintf(askText, "connecting again (%d): silent %lu s", tries, silentSecs);
+    if (!screenOn) printf("\r%-70.70s\n", askText);
+    packPath(path, k, from, resumeAt);
+  }
+  mayReconnect = 0;
+  logLast(rc);
   uiClose();
   return rc;
 }
@@ -1222,11 +1456,19 @@ static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
   rsmKey = NULL;
   uiOpen("WAVE86 ITSELF", serverText);
   if (!screenOn) printf("WAVEGET: updating WAVE86 in %s\n", gameRoot);
+  logged = 0; lastLog[0] = 0;
   int rc = doStream(addr, port, crcWanted ? "/update?crc=1" : "/update", "update", 0, 1);
   if (rc == 3) {                    /* a server too old to know the query */
     crcWanted = 0;
+    dropSocket();                   /* the one socket there is, before the next connect */
     rc = doStream(addr, port, "/update", "update", 0, 1);
   }
+  if (rc == 1 && gaveUpWaiting && !noHeaders) {   /* the stream leaves the words to its caller */
+    char m[100];
+    sprintf(m, "WAVEGET: nothing from the server for %lu s", silentSecs);
+    msg(m);
+  }
+  logLast(rc);
   if (rc == 0 && screenOn) {        /* it takes a second: hold it long
                                        enough to be read (a key skips) */
     clockTicks_t t0 = TIMER_GET_CURRENT(), tv = t0;
