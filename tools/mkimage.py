@@ -209,19 +209,31 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
     if flavour in ("msdos", "pcdos", "dos"):
         return config_sys_dos(have_cdmke, fourdos, flavour)
     menu = flavour == "fdos"            # EDR-DOS's kernel has no MENU lines
-    p1, p2, p3, p12, p23 = ("1?", "2?", "3?", "12?", "23?") if menu else ("", "", "", "", "")
+
+    def P(*items):                      # the prefix that gives a line to those menu items
+        return "".join(str(n) for n in items) + "?" if menu else ""
+
     c = [f"; {FLAVOURS[flavour]} on a PicoMem 2 - written by make picomem-image (tools/mkimage.py)"]
     if menu:
-        c += ["; A menu: five seconds, then 1. 1 is the setup meant for the card; 2 and 3",
-              "; are for finding out what a JemmEx exception or a hang is about, one",
-              "; piece at a time - 2 keeps JEMMEX but with no EMS and nothing in upper",
-              "; memory, and 4DOS neither swapping nor loading high (C:\\4DOS\\NOSWAP.INI);",
-              "; 3 has no memory manager at all and FreeCOM for the shell. The lines",
-              "; that start with digits belong to those choices; F8 still steps.",
+        c += ["; A menu: five seconds, then 1. 1 is the setup meant for the card; the",
+              "; others are for finding out what a JemmEx exception or a hang is about,",
+              "; one piece at a time. 2 keeps JEMMEX but with no EMS, nothing in upper",
+              "; memory and its own code low, and 4DOS neither swapping nor loading",
+              "; high (C:\\4DOS\\NOSWAP.INI); 3 has no memory manager at all and FreeCOM",
+              "; for the shell; 4 has HIMEMX, XMS and the HMA without V86 mode (no EMS,",
+              "; no upper memory). 5 to 8 take 1 apart: 5 hands out no upper memory,",
+              "; 6 no EMS, 7 is 2's JEMMEX with 4DOS as in 1, 8 keeps the whole C and D",
+              "; segments off limits. The lines that start with digits belong to those",
+              "; choices; F8 still steps.",
               "MENU",
-              "MENU  1 - JEMMEX: XMS, EMS, upper memory; 4DOS swapping to XMS",
-              "MENU  2 - JEMMEX with NOEMS, nothing in upper memory; 4DOS not swapping",
+              "MENU  1 - JEMMEX X=D000-D7FF: XMS, EMS, upper memory; 4DOS swapping to XMS",
+              "MENU  2 - JEMMEX X=A000-FFFF NOEMS NOHI NOINVLPG; 4DOS not swapping, low",
               "MENU  3 - no memory manager; FreeCOM as the shell",
+              "MENU  4 - HIMEMX: XMS only, no V86 mode; 4DOS swapping to XMS",
+              "MENU  5 - JEMMEX X=A000-FFFF: EMS, no upper memory; 4DOS as in 1",
+              "MENU  6 - JEMMEX X=D000-D7FF NOEMS: upper memory, no EMS; 4DOS as in 1",
+              "MENU  7 - JEMMEX as in 2; 4DOS as in 1",
+              "MENU  8 - JEMMEX X=C000-DFFF NOEMS: upper memory at E000 only; 4DOS as in 1",
               "MENU",
               "MENUDEFAULT=1,5"]
     c += ["; JEMMEX: XMS, EMS and upper memory, so DOS, the drivers and the TSRs go",
@@ -233,18 +245,23 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
           "; that EMM386 breaks the Sound Blaster of a PicoMem 1, whose DMA was done",
           "; in software; the 2 has real DMA. If sound fails here, try NOEMS after",
           "; X=, then the line without JEMMEX at all - DOS=HIGH,UMB goes with it.)",
-          p1 + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF"]
+          P(1) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF"]
     if menu:
-        c.append(p2 + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF NOEMS NOHI NOINVLPG")
-    c += [p12 + "DOS=HIGH,UMB",
+        c += [P(2, 7) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF NOEMS NOHI NOINVLPG",
+              P(5) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF",
+              P(6) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF NOEMS",
+              P(8) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=C000-DFFF NOEMS",
+              P(4) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
+              P(4) + "DOS=HIGH"]
+    c += [P(1, 2, 5, 6, 7, 8) + "DOS=HIGH,UMB",
           "FILES=30",
           "BUFFERS=20",
           "LASTDRIVE=Z",
           "; mTCP NetDrive reserves D: and E:; AUTOEXEC.BAT frees D: for the disc",
           "; (DRVOFF D:), so discs kept on the server come in on E:",
-          p1 + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
+          P(1, 6, 8) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
     if menu:
-        c.append(p23 + "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")
+        c.append(P(2, 3, 4, 5, 7) + "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")
     c += ["; the PicoMem 2's emulated CD-ROM drive: a Panasonic/MKE interface on",
           "; port 250 (no IRQ, no DMA), device MSCD000; SHSUCDX in AUTOEXEC.BAT",
           "; gives it D:. /Q: no Abort/Retry prompt when there is no drive - and",
@@ -263,10 +280,10 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
         c += ["; 4DOS 8.00 is the shell, from C:\\4DOS (its 4DOS.INI puts it in upper memory);",
               "; /P runs C:\\AUTOEXEC.BAT. COMMAND.COM stays in the root as a fallback:",
               "; SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT",
-              p1 + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
+              P(1, 4, 5, 6, 7, 8) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
         if menu:
-            c += [p2 + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\NOSWAP.INI /E:2048 /P",
-                  p3 + "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT"]
+            c += [P(2) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\NOSWAP.INI /E:2048 /P",
+                  P(3) + "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT"]
     else:
         c.append("SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT")
     return bat(c)

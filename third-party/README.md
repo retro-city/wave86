@@ -18,7 +18,7 @@ repository.
     netdrive/   his mTCP NetDrive server, every platform in one zip
     cdmke/      CDMKE.SYS, the Panasonic/MKE CD-ROM driver (the PicoGUS copy)
     dosutils/   FreeDOS 1.3 packages: EDIT, MEM, MORE, XCOPY, DELTREE, ATTRIB,
-                FIND, TREE, LABEL
+                FIND, TREE, LABEL, HIMEMX
     4dos/       4DOS 8.00, the official package
     edrdos/     the EDR-DOS kernel, SvarDOS's release zip
     slowdown/   SLOWDOWN 3.10, the COM and its DOC, from the FreeDOS package
