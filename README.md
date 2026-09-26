@@ -56,7 +56,7 @@ ready-made disk for the card, on FreeDOS, EDR-DOS or a DOS of your own.
 | + / - | volume |
 | < / > | previous / next track |
 | R | rescan the games folder |
-| N | the games on the server: Space puts the game under the bar in the install queue (or takes it out), Enter (or I) fetches the queue - or, with nothing queued, installs the game under the bar - P plays it off the server, Q shows the queue in a box (Enter there fetches it too, Del takes one out), / or S finds a title; and in the menu (M): L refreshes the list, C picks the disc with the game or on the server, U updates WAVE86 itself |
+| N | the games on the server (with no `server=` in the INI, N asks for the address first, adds port 8086 when none is typed, and writes it into the INI): Space puts the game under the bar in the install queue (or takes it out), Enter (or I) fetches the queue - or, with nothing queued, installs the game under the bar - P plays it off the server, Q shows the queue in a box (Enter there fetches it too, Del takes one out), / or S finds a title; and in the menu (M): L refreshes the list, C picks the disc with the game or on the server, U updates WAVE86 itself |
 | Esc | back to DOS |
 
 ## Putting it on the DOS machine
@@ -532,7 +532,9 @@ nothing to run, the launcher says so on the status line instead of
 listing an empty folder. The server re-indexes every five minutes.
 
 On the DOS machine, copy `WAVEGET.EXE`, `DHCP.EXE` and `MTCP.CFG` from
-`build/` next to the launcher, put the server's address in the INI:
+`build/` next to the launcher, put the server's address in the INI - or
+leave it empty and press N in the launcher, which asks for it and writes
+it there:
 
     server=192.168.1.10:8086
 

@@ -291,6 +291,54 @@ int ini_write_key(const char *dir, const char *key, const char *name)
     return 0;
 }
 
+/* N with no server=: a key set, or added, in the global part above the
+   first [section], every other line kept; streamed like ini_write_key */
+int ini_write_global(const char *key, const char *value)
+{
+    char tmp[PATH_LEN + 4], buf[LINE_LEN], line[LINE_LEN], keyeq[24];
+    FILE *in, *out;
+    int done = 0;
+    unsigned kl;
+    char *dot;
+
+    sprintf(keyeq, "%s=", key);
+    kl = strlen(keyeq);
+    strcpy(tmp, ini_path);
+    dot = strrchr(tmp, '.');
+    if (dot && !strchr(dot, '\\'))
+        *dot = 0;
+    strcat(tmp, ".TMP");
+    out = fopen(tmp, "w");
+    if (!out)
+        return 1;
+    in = fopen(ini_path, "r");
+    if (in) {
+        while (fgets(buf, sizeof(buf), in)) {
+            char *t;
+            strcpy(line, buf);
+            t = trim(line);
+            if (!done && t[0] == '[') {         /* the sections start: it goes above them */
+                fprintf(out, "%s%s\n\n", keyeq, value);
+                done = 1;
+            } else if (!done && strnicmp(t, keyeq, kl) == 0) {
+                fprintf(out, "%s%s\n", keyeq, value);      /* replace */
+                done = 1;
+                continue;
+            }
+            fputs(buf, out);
+        }
+        fclose(in);
+    }
+    if (!done)
+        fprintf(out, "%s%s\n", keyeq, value);
+    fclose(out);
+    remove(ini_path);
+    if (rename(tmp, ini_path) != 0)
+        return 1;
+    ini_load(ini_path);
+    return 0;
+}
+
 /* Del in the games list: the section goes with the folder, or the file
    fills up with games that are not there. Its keys go, and the blank line
    after them; a comment between that and the next [section] introduces

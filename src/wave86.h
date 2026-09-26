@@ -80,6 +80,7 @@ void ini_load(const char *fname);   /* reads gamedir= */
 void ini_apply(void);               /* per-game [sections] onto games[] */
 int ini_write_name(const char *dir, const char *name); /* set/add name= */
 int ini_write_key(const char *dir, const char *key, const char *value);
+int ini_write_global(const char *key, const char *value); /* set/add a key above the sections */
 int ini_remove_section(const char *dir);
 int ini_remove_key(const char *dir, const char *key);          /* one line out of a section */
 const char *ini_game(const char *dir, const char *key);        /* a game's own value, or NULL */

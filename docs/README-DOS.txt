@@ -40,6 +40,7 @@ On the DOS machine, in AUTOEXEC.BAT:
     C:\WAVE86\DHCP
 and in WAVE86.INI:
     server=192.168.1.10:8086        (the machine running waveserve.py)
+(or leave server= empty: N asks for the address and writes it there).
 Then N in the menu lists the games there. Space queues the one under
 the bar; Enter (or I) fetches the queue, or installs the one under the
 bar when nothing is queued; Q shows the queue (Del takes one out); P

@@ -132,7 +132,7 @@ void ui_keybar(const Game *sel)
     (void)updown;
     keychip(&x, "ENTER", "RUN", game_count == 0);
     keychip(&x, "S", "SETUP", !sel || !sel->setup[0]);
-    keychip(&x, "N", "NET", !cfg_server[0]);      /* R (rescan) still works */
+    keychip(&x, "N", "NET", 0);                  /* with no server= it asks; R (rescan) still works */
     keychip(&x, "F2", "NAME", game_count == 0);
     keychip(&x, "/", "SEARCH", game_count == 0);
     keychip(&x, "DEL", "REMOVE", game_count == 0);

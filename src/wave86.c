@@ -767,6 +767,41 @@ static void redraw(int sel, int top);
  */
 static char find_text[20];      /* in capitals; kept for F3 */
 
+/*
+ * N with no server= in the INI: ask for the address on the bottom line,
+ * :8086 (waveserve's port) added when none is typed, and keep it in
+ * WAVE86.INI's global part. 1 when there is a server now, 0 on Esc.
+ */
+static int ask_server(void)
+{
+    char buf[32];
+    unsigned len = 0;
+
+    buf[0] = 0;
+    for (;;) {
+        unsigned k;
+        ui_prompt("SERVER (ADDRESS:PORT):", buf);
+        k = getkey();
+        if (k == 0x1B) return 0;
+        if (k == 0x0D) break;
+        if (k == 0x08) {
+            if (len) buf[--len] = 0;
+        } else if (k > 32 && k < 127 && len < sizeof(buf) - 6) {   /* room for :8086 */
+            buf[len++] = (char)k;
+            buf[len] = 0;
+        }
+    }
+    if (!buf[0]) return 0;
+    if (!strchr(buf, ':')) strcat(buf, ":8086");
+    strncpy(cfg_server, buf, sizeof(cfg_server) - 1);
+    cfg_server[sizeof(cfg_server) - 1] = 0;
+    if (ini_write_global("server", cfg_server) == 0)
+        ui_status("SERVER= WRITTEN TO WAVE86.INI.");
+    else
+        ui_status("COULD NOT WRITE WAVE86.INI: THE SERVER IS KEPT FOR THIS RUN.");
+    return 1;
+}
+
 static int find_title(int net, int from, int again)
 {
     char buf[20], msg[60];
@@ -872,7 +907,6 @@ static unsigned menu_pick(int net, int cur)
             else if (c == 0x0D || c == ' ' || c == '/' || c == K_F3) d = !net_count;
         } else {
             if (c == 's') d = !game_count || !games[cur].setup[0];
-            else if (c == 'n') d = !cfg_server[0];
             else if (c != 'r' && c != 0x1B && c != 'p' && c != 'n') d = !game_count;
         }
         dim[i] = (unsigned char)d;
@@ -1975,6 +2009,10 @@ int main(int argc, char **argv)
             redraw(sel, top);
             break;
         case 'n': case 'N':             /* the eXoDOS list */
+            if (!cfg_server[0] && !ask_server()) {
+                redraw(sel, top);
+                break;
+            }
             view = 1;
             if (net_load() == 0 && cfg_server[0])
                 net_fetch_list();
