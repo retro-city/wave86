@@ -11,7 +11,9 @@ repository.
                 card's DOS tools in PICOMEM/, example CONFIG.SYS and
                 AUTOEXEC.BAT, a DOSDRV/ folder of drivers and setup programs);
                 drivers/, the card repository's drivers folder, whole (the
-                tools, the Gravis UltraSound zip, SBCD/, TEST/)
+                tools, the Gravis UltraSound zip, SBCD/, TEST/); a program
+                put straight into picomem/ (PMDFS.EXE, a fix from the author)
+                replaces the package's copy of that name on the image
     mtcp/       Michael Brutman's mTCP client programs, the zip as released
     netdrive/   his mTCP NetDrive server, every platform in one zip
     cdmke/      CDMKE.SYS, the Panasonic/MKE CD-ROM driver (the PicoGUS copy)

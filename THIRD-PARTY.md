@@ -59,6 +59,12 @@ listed as the files state them.
   USE!UMBS.SYS ("Version 2.2"), USMP.EXE, TEST!UMB.EXE, MAKELIST.BAT,
   FILE_ID.DIZ: no author or licence line was found inside these.
 
+`PMDFS.EXE`, straight in `third-party/picomem/`: a bug-fixed build of the
+driver from FreddyV, received on 2026-09-26 outside the repository; it
+replaces the D6 package's copy on the image (banner "PicoMEM DFS Driver for
+SD/USB access by FreddyV (DOS 4+)", "Based on EtherDFS v0.8.2 / Copyright
+(C) 2017,2018 Mateusz Viste").
+
 `drivers/`, the card repository's folder on `main` (fetched 2026-09-26):
 
 - FreddyV's programs: PMINIT.EXE ("Rev 1.0.2 by FreddyV, 06/2026"), PMDFS.EXE

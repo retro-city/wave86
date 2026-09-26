@@ -280,11 +280,15 @@ picomem-folders:
 	@for d in $(filter-out $(PICOMEM_FETCH),$(PICOMEM_INPUTS)); do \
 	  test -d "$$d" || { echo "picomem-image: no folder $$d (PICOMEM_DIR, MTCP_TOOLS, CDMKE_DIR, GUS_DIR, DOS_DIR, FOURDOS_DIR or EDR_DIR)"; exit 1; }; done
 
-# C:\PICOMEM: the D6 package's PICOMEM folder, and the packet driver
-build/picomem: $(PICOMEM_D6) $(TP)/picomem/drivers/NE2000.COM
+# C:\PICOMEM: the D6 package's PICOMEM folder, the packet driver, and any
+# program put straight into third-party/picomem (a fix from the author, as
+# PMDFS.EXE is), which replaces the package's copy of the same name
+PICOMEM_FIXES = $(wildcard $(TP)/picomem/*.EXE $(TP)/picomem/*.COM $(TP)/picomem/*.SYS)
+build/picomem: $(PICOMEM_D6) $(TP)/picomem/drivers/NE2000.COM $(PICOMEM_FIXES)
 	@rm -rf build/picomem.part && mkdir -p build/picomem.part
 	cd build/picomem.part && unzip -q -o -j $(abspath $(PICOMEM_D6)) 'PM_D6_CONFIG/PICOMEM/*'
 	cp $(TP)/picomem/drivers/NE2000.COM build/picomem.part/
+	$(if $(PICOMEM_FIXES),cp $(PICOMEM_FIXES) build/picomem.part/,@echo "  (no fixes in $(TP)/picomem)")
 	@rm -rf build/picomem && mv build/picomem.part build/picomem && ls build/picomem | tr '\n' ' ' && echo
 
 # the pieces, unpacked from third-party/ into build/; a newer archive there

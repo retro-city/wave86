@@ -16,6 +16,7 @@ third-party/dosutils/xcopy.zip	33c43434964d2ae08cf868d5ea54760300588c9c2ea5e50e7
 third-party/edrdos/edrdos_20260309.zip	e1582a8a6046e57937ea87360df31b67f3288fc09257747d0734389262483796	2026-09-26	https://github.com/SvarDOS/edrdos/releases/download/v20260309/edrdos_20260309.zip
 third-party/mtcp/mTCP_2025-01-10.zip	31fdde92db0b2c390a84f17c04750eb8927afa79321e156f25afb50b4f0214a5	2026-09-26	https://www.brutman.com/mTCP/download/mTCP_2025-01-10.zip
 third-party/netdrive/mTCP_NetDrive_server-bin_2025-01-10.zip	f314681fa724d2d076553122e27fe86760f1a60243f24fbe1f1011d6bd8327f8	2026-09-26	https://www.brutman.com/mTCP/download/mTCP_NetDrive_server-bin_2025-01-10.zip
+third-party/picomem/PMDFS.EXE	c5e0657107d4457ca0a3d08682d04e51ffd368906c1472dccc7aa86f19ecf9f2	2026-09-26	PMDFS, a bug-fixed build from FreddyV (the author), received 2026-09-26 outside the repository; put here by hand, replaces the D6 package's copy on the image
 third-party/picomem/PM_D6_CONFIG.zip	69caec06f1d8fc198ad827568848a8c322d4262752cd2c5c72ae6c1bc9fb0a5b	2026-09-26	PicoMEM D6 release package (FreddyV, 2026-09-21), whole, as downloaded from the card's release channel; put here by hand
 third-party/picomem/drivers/ASTCLOCK.COM	ce798d4ea95322b913ed567b2502fb8d675e256845126b12f8e43bc6ac823b8f	2026-09-26	https://raw.githubusercontent.com/FreddyVRetro/ISA-PicoMEM/main/drivers/ASTCLOCK.COM
 third-party/picomem/drivers/NE2000.COM	735f1235d1875a3831f450fc77c6b1316f712a6189245688d7ec3cc6f9e1ca7d	2026-09-26	https://raw.githubusercontent.com/FreddyVRetro/ISA-PicoMEM/main/drivers/NE2000.COM
