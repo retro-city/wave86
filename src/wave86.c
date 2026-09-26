@@ -1818,6 +1818,11 @@ int main(int argc, char **argv)
     vid_text_mode();
     vid_set_palette();
     if (view) net_redraw(nsel0, nsel0 > 13 ? nsel0 - 13 : 0); else redraw(sel, top);
+    if (ini_moved) {                    /* the sections went to GAMES.INI just now: say so once */
+        char m[PATH_LEN + 40];
+        sprintf(m, "THE GAMES' SETTINGS NOW LIVE IN %s", ini_games_path());
+        ui_status(m);
+    }
     if (i == -2) net_arrived_notice();
     {   /* the SETs a game batch makes have to fit somewhere */
         unsigned used, size;
@@ -1867,12 +1872,6 @@ int main(int argc, char **argv)
                 view = 0;
                 net_free();
                 redraw(sel, top);
-    if (ini_moved) {
-        char m[PATH_LEN + 40];
-        sprintf(m, "THE GAMES' SETTINGS NOW LIVE IN %s", ini_games_path());
-        ui_status(m);
-        ini_moved = 0;
-    }
                 continue;
             case 'l': case 'L':
                 net_fetch_list();
