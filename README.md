@@ -131,28 +131,30 @@ card's drive that letter once the firmware has one). When the card gets
 a load command, `cdmount_picomem=` in the INI is the switch and the
 prompt goes away.
 
-What comes down, once, into `build/`: the card's tools from the PicoMEM
-repository (github.com/FreddyVRetro/ISA-PicoMEM has no release zips;
-they are plain files under `drivers/` on `main`, `PICOMEM_REF=` pins a
-commit and `PICOMEM_DIR=` uses a folder of your own), mTCP's client zip
-(`MTCP_VER=2025-01-10`, `MTCP_TOOLS=` for your own), CDMKE.SYS from the
-PicoGUS project's copy (`CDMKE_URL=` empty leaves it out, and the
-CONFIG.SYS line becomes a comment; `CDMKE_DIR=` for your own), and the
-Gravis UltraSound software from the same `drivers/` folder, the
-`ultrasnd.zip` the PicoMEM wiki points at (`GUS_URL=` empty leaves it
-out, then C:\ULTRASND is empty and the GUS lines stay off; `GUS_DIR=`
-points at an unzipped copy of your own), and the FreeDOS utilities as
-the 1.3 packages from ibiblio (`DOS_PKGS=` is the list, `DOS_DIR=` a
-folder of your own, `DOS_PKGS=` empty leaves C:\DOS out), and 4DOS 8.00
-from ibiblio's copy of the official package, with its LICENSE.TXT, which
-its licence says must travel with it (`FOURDOS_URL=` empty keeps
-FreeCOM as the shell; `FOURDOS_DIR=` a folder of your own). Gravis's, Matsushita's and
-Creative's files are theirs, so none of them is in this repository, only
-fetched at build time. `IMAGE=` and `IMAGE_MB=` change the file and its
-size; the work files stay in `build/<name>-work/` wherever the image
-goes, so `IMAGE=/Volumes/SD/HDD/PMWAVE.IMG` writes nothing else to the
-card. A folder given by hand that does not exist fails before anything
-is built.
+The pieces are in the repository, under `third-party/` (its README
+says what is where; `THIRD-PARTY.md` whose it is), because retro
+download sites come and go: the card's tools from the PicoMEM D6
+release package plus the NE2000 packet driver from the card's
+repository (`PICOMEM_DIR=` uses a folder of your own), mTCP's client
+zip (`MTCP_TOOLS=` for your own), CDMKE.SYS, the PicoGUS project's copy
+(`CDMKE_DIR=` empty leaves it out, and the CONFIG.SYS line becomes a
+comment), the Gravis UltraSound software, the `ultrasnd.zip` the PicoMEM
+wiki points at (`GUS_DIR=` empty leaves it out, then C:\ULTRASND is
+empty and the GUS lines stay off; `GUS_DIR=` also takes an unzipped copy
+of your own), the FreeDOS utilities as the 1.3 packages from ibiblio
+(`DOS_PKGS=` is the list, `DOS_DIR=` a folder of your own, `DOS_DIR=`
+empty leaves C:\DOS out), and 4DOS 8.00 as the official package, with
+its LICENSE.TXT, which its licence says must travel with it
+(`FOURDOS_DIR=` empty keeps FreeCOM as the shell). The Makefile unpacks
+each into `build/` on first use. `make update-third-party` (or
+`update-mtcp`, `update-picomem`, `update-gus`... one at a time) fetches
+them afresh from where they came, says what changed, and leaves them for
+you to commit; `make check-third-party`, which CI runs, says whether
+every file is the one recorded in `third-party/SOURCES.txt`. `IMAGE=`
+and `IMAGE_MB=` change the file and its size; the work files stay in
+`build/<name>-work/` wherever the image goes, so
+`IMAGE=/Volumes/SD/HDD/PMWAVE.IMG` writes nothing else to the card. A
+folder given by hand that does not exist fails before anything is built.
 
 #### Other kernels, and a DOS of your own
 
@@ -162,11 +164,12 @@ cache - does not care which DOS is under it, so the builder takes three:
 - `make picomem-image` - the FreeDOS kernel, as above: `pmwave-fdos.img`.
 - `make picomem-image KERNEL=edrdos` - the EDR-DOS kernel (Enhanced
   DR-DOS, the one SvarDOS boots), a drop-in for KERNEL.SYS under the same
-  boot sector, fetched from its GitHub release (`EDR_URL=`, `EDR_DIR=`):
-  `pmwave-edrdos.img`. Its licence is a grey area - a 2022 grant from
-  DRDOS, Inc. in the repository, Caldera's 1997 non-commercial terms still
-  in the tree - fine for this repo, not for anything commercial, so it is
-  fetched, never vendored. Reports itself as DR DOS 7.01; 4DOS runs on it.
+  boot sector, from its release zip in `third-party/edrdos` (`EDR_VER=`,
+  `EDR_DIR=` for a folder of your own): `pmwave-edrdos.img`. Its licence
+  is a grey area - a 2022 grant from DRDOS, Inc. in the repository,
+  Caldera's 1997 non-commercial terms still in the tree - fine for this
+  repo, not for anything commercial. Reports itself as DR DOS 7.01; 4DOS
+  runs on it.
 - `make picomem-image DOS_DISKS="~/dos/Disk1.img ~/dos/Disk2.img"` - your
   own licensed DOS, from its setup floppies (the bootable one first, with
   SYS.COM and EXPAND.EXE on it). Nothing of it enters the repo: the builder
@@ -290,9 +293,12 @@ game may see, keeps the handles in `MEMLIM.DAT` next to itself, and
 each XMS request against the largest free block with a signed 16-bit
 jump, so anything from 32768 KB up fails it - 31 MB works, 36 does not;
 eXoDOS runs it with `memsize=16`. `SLOWDOWN` is Bret Johnson's (freeware,
-the COM and its DOC together, unmodified; `make slowdown` fetches them
-from the FreeDOS package, `make waveserve` does too, and `U` sends them
-to the DOS machine). Its eras are its own model of a 486's speed, not a
+the COM and its DOC together, unmodified, in `third-party/slowdown` from
+the FreeDOS package; `make update-slowdown` refreshes them, `make dist`
+on your own machine and `U` carry them to the DOS machine, and the
+release zips go without them, since the author asks to be asked before
+SLOWDOWN travels as a companion to another program). Its eras are its
+own model of a 486's speed, not a
 measurement of yours: `slow_486=` and friends in the global section
 replace what an era means when the presets feel wrong, `slowcache=0`
 keeps it off the CPU cache (MS-DOS 6.22's HIMEM/EMM386 crash when
@@ -376,11 +382,13 @@ has one. `adlib=` and `modrate=` in the INI override all of this.
 
 ## Building
 
-You need Open Watcom V2 in `toolchain/` (it is not in git). Download
-`ow-snapshot.tar.xz` from the `Current-build` release of
-github.com/open-watcom/open-watcom-v2 and extract the host tools for
-your machine (`armo64` on an Apple silicon Mac, `bino64` on an Intel
-one, `binl64` on Linux) plus `h` and `lib286` into `toolchain/`.
+You need Open Watcom V2 in `toolchain/` (it is not in git: 50 MB of
+compilers). `make toolchain` fetches it - `ow-snapshot.tar.xz` from a
+dated release of github.com/open-watcom/open-watcom-v2 (`OW_TAG=` in
+the Makefile; CI uses the same one, so both build with the same
+compiler) - and extracts the host tools for your machine (`armo64` on an
+Apple silicon Mac, `bino64` on an Intel one, `binl64` on Linux) plus `h`
+and `lib286`. By hand, the same three folders into `toolchain/` will do.
 
     make          builds build/WAVE86.EXE and copies WAVE.BAT, the INI and MUSIC\
     make run      opens it in dosbox-x, with sound and networking (see below), at
@@ -463,9 +471,9 @@ On the machine with the collection (Mac, Linux, a NAS with Python):
     make waveserve TORRENT=eXoDOS.torrent
 
 `make waveserve` builds first, since the server hands `build/` to WAVEGET
-UPDATE, fetches the NetDrive server binary if `build/netdrive` is not
-there yet (only then - it is a file target, so `make clean` is what makes
-it download again), and starts `tools/waveserve.py` with its console.
+UPDATE, unpacks the NetDrive server for this machine from
+`third-party/netdrive` if `build/netdrive` is not there yet, and starts
+`tools/waveserve.py` with its console.
 `q` in the console stops it and returns to the prompt.
 
 The settings are in `waveserve.ini`, next to the Makefile: one per line,
@@ -657,8 +665,9 @@ A 300 MB disc does not have to travel to the DOS disk at all. With
 the server wraps each game's ISO in a FAT volume under `~/wave86-cd`
 (built once, at index time) and runs Michael Brutman's mTCP NetDrive
 server on UDP port 2002 to hand those volumes out. `make netdrive`
-fetches his official build of that server for this machine into
-`build/netdrive`. On the DOS side the game's `IMGMOUNT.BAT` attaches
+unpacks his official build of that server for this machine from
+`third-party/netdrive` into `build/netdrive` (`make update-netdrive`
+fetches a fresh one). On the DOS side the game's `IMGMOUNT.BAT` attaches
 the volume as a drive with NetDrive, points SHSUCDHD at the ISO on it
 and lets SHSUCDX give the disc a letter. Brutman measured this stack on
 a 386DX-40 at the same speed as NetDrive alone, around 370 KB/s.
@@ -982,6 +991,7 @@ list fetch from a waveserve here, the chain the 486 uses. Needs mtools
     src/memlim.c   MEMLIM.EXE: hides extended memory from a game that wants less
     net/           WAVEGET.CPP, MTCP.CFG, mTCP's library and DHCP (GPL)
     cdrom/         SHSUCDHD and SHSUCDX, the CD image drivers for real DOS
+    third-party/   the other programs the build needs, kept here with their origins (make update-third-party)
     dos/           FreeDOS boot floppy for make dostest, the FAT16 boot sector for make picomem-image
     tools/         waveserve.py, its torrent reader and console, the disk-image builder, composers, converters, renderers (host side)
     waveserve.ini  the server's settings

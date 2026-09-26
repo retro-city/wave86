@@ -1,0 +1,30 @@
+# What third-party/ holds and where each file came from: path, SHA-256,
+# the day it was fetched, the URL (or a note, for a file put there by hand).
+# tools/thirdparty.py keeps this file; make update-third-party refreshes the
+# pieces, make check-third-party verifies them. THIRD-PARTY.md has the terms.
+third-party/4dos/4dos800.zip	5c3337ac4f344ec17b844a1426428d9feecb3693f00015972344faa5e9b3bb13	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/util/user/4dos/4dos800.zip
+third-party/cdmke/cdmke.zip	2ea749b1309aa5fcf16aa8cb2ccad8745ae31b7b5b5b88bb76ecf3507376c488	2026-09-26	https://picogus.com/drivers/cdmke.zip
+third-party/dosutils/attrib.zip	546437f0abab7680ff36a792547497abbd76bab5cf14a2d7ffd4641182c72c6c	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/attrib.zip
+third-party/dosutils/deltree.zip	63734a3570e4a4eb355d2c0cc6e986fa413a5ba2904bbea8b1db2f720a71583b	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/deltree.zip
+third-party/dosutils/edit.zip	582729981a967493f59f38b7d4464c1b1a6caa25f71c0a2fbf6dd9e3b782037b	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/edit.zip
+third-party/dosutils/find.zip	0cefc8f61bcaf2fdf1ecaac8c991adef3dc958cb6966b0ad5be1519079d96f9c	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/find.zip
+third-party/dosutils/label.zip	fb06d41f1bae8ea2a7c87717ddf3c5978cbd11a5dc0897af8bd38a73d33f0945	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/label.zip
+third-party/dosutils/lbacache.zip	5ea73f5ccf4462487557273752482e86ac74f8c33c820a854bf94240a188afc6	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/lbacache.zip
+third-party/dosutils/mem.zip	4090eb3b08a283cf3fc974c72ab6eb5105bf2b5f27e6bd8dfe6682bd0c3605d1	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/mem.zip
+third-party/dosutils/more.zip	60bf30233f0ae5dafbcf26400faeb5bf00ac1d3182a293aa26df2959e64378fa	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/more.zip
+third-party/dosutils/tree.zip	418c8700c9ab0ed79e0eed094140e7e4b08fd281bcca60a2b0cec3c90d1e83d3	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/tree.zip
+third-party/dosutils/xcopy.zip	33c43434964d2ae08cf868d5ea54760300588c9c2ea5e50e7936cecebf60fe52	2026-09-26	https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base/xcopy.zip
+third-party/edrdos/edrdos_20260309.zip	e1582a8a6046e57937ea87360df31b67f3288fc09257747d0734389262483796	2026-09-26	https://github.com/SvarDOS/edrdos/releases/download/v20260309/edrdos_20260309.zip
+third-party/mtcp/mTCP_2025-01-10.zip	31fdde92db0b2c390a84f17c04750eb8927afa79321e156f25afb50b4f0214a5	2026-09-26	https://www.brutman.com/mTCP/download/mTCP_2025-01-10.zip
+third-party/netdrive/mTCP_NetDrive_server-bin_2025-01-10.zip	f314681fa724d2d076553122e27fe86760f1a60243f24fbe1f1011d6bd8327f8	2026-09-26	https://www.brutman.com/mTCP/download/mTCP_NetDrive_server-bin_2025-01-10.zip
+third-party/picomem/NE2000.COM	735f1235d1875a3831f450fc77c6b1316f712a6189245688d7ec3cc6f9e1ca7d	2026-09-26	https://raw.githubusercontent.com/FreddyVRetro/ISA-PicoMEM/main/drivers/NE2000.COM
+third-party/picomem/PM2000.COM	205eebe69e5e93697bfafc46c8b7f0556faa088eef8a8b1ac1ce2a538f06d2ee	2026-09-26	PicoMEM D6 release package PM_D6_CONFIG.zip (FreddyV, 2026-09-21), its PICOMEM folder; put here by hand
+third-party/picomem/PMDFS.EXE	047f5d6d80fcc3e1ef7f0c9048000acc2413033d5acc1774a26db8c6a717e055	2026-09-26	PicoMEM D6 release package PM_D6_CONFIG.zip (FreddyV, 2026-09-21), its PICOMEM folder; put here by hand
+third-party/picomem/PMEMM.EXE	5079c6d0709eac4a7a70c7bf410289427d6bd6f7963c61d420d34a70fb764d92	2026-09-26	PicoMEM D6 release package PM_D6_CONFIG.zip (FreddyV, 2026-09-21), its PICOMEM folder; put here by hand
+third-party/picomem/PMINIT.EXE	c6d34c3b81fd6d715eac85237621d026bf96fcbda706386de2def8b733cd044d	2026-09-26	PicoMEM D6 release package PM_D6_CONFIG.zip (FreddyV, 2026-09-21), its PICOMEM folder; put here by hand
+third-party/picomem/PMMOUSE.EXE	403e36ad6513720b6d2b495dc444ddcb4ffe91a7351ca38f23008e49d68161b5	2026-09-26	PicoMEM D6 release package PM_D6_CONFIG.zip (FreddyV, 2026-09-21), its PICOMEM folder; put here by hand
+third-party/picomem/PMTEST.EXE	09cd8883daccbd2dfe3fc12bf183b0b5a4eea61b9e9a610d72aa81f257499ae8	2026-09-26	PicoMEM D6 release package PM_D6_CONFIG.zip (FreddyV, 2026-09-21), its PICOMEM folder; put here by hand
+third-party/picomem/readme.txt	6c40c0a52cc21a824d2f369a8e160b543e17aaa8bd25c8cfb15d348e95d36187	2026-09-26	PicoMEM D6 release package PM_D6_CONFIG.zip (FreddyV, 2026-09-21), its PICOMEM folder; put here by hand
+third-party/slowdown/SLOWDOWN.COM	8fcf024e497a5b14cbed622d26ed6d9bfb3be137ef4070512f85306c4204c61c	2026-09-26	https://gitlab.com/FreeDOS/util/slowdown/-/raw/master/BIN/SLOWDOWN.COM
+third-party/slowdown/SLOWDOWN.DOC	8c5160b33360032e60014b8debfc46adeac37044d0ee280128cd1aaebf915955	2026-09-26	https://gitlab.com/FreeDOS/util/slowdown/-/raw/master/DOC/SLOWDOWN/SLOWDOWN.DOC
+third-party/ultrasnd/ultrasnd.zip	47021e74beba70d02739f439cfecd0b880e3985931d78b6de3b40057fcb441a4	2026-09-26	https://raw.githubusercontent.com/FreddyVRetro/ISA-PicoMEM/main/drivers/ultrasnd.zip

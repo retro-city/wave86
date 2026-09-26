@@ -12,14 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Open Watcom V2 (host tools for Linux)
-        run: |
-          curl -sL -o ow.tar.xz https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/ow-snapshot.tar.xz
-          mkdir -p toolchain
-          tar -xJf ow.tar.xz -C toolchain ./binl64 ./h ./lib286
+      - name: The third-party pieces are what the repository says they are
+        run: make check-third-party
 
-      - name: Build the DOS side
-        run: make dist
+      - name: Open Watcom V2 (host tools for Linux, the release the Makefile pins)
+        run: make toolchain
+
+      - name: Build the DOS side (the zip without SLOWDOWN, whose author asks first)
+        run: make dist SLOWDOWN_IN_DIST=0
 
       - name: Test the server's torrent reader
         run: python3 tools/test_torrentfs.py

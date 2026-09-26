@@ -2,9 +2,9 @@
 """A bootable hard-disk image for a PicoMem 2: FreeDOS, the launcher, the
 card's DOS tools, mTCP, booting straight into WAVE86.
 
-    make picomem-image                  (fetches the tools, then runs this)
-    python3 tools/mkimage.py --dist dist/wave86 --picomem build/picomem \\
-        --mtcp build/mtcp --cdmke build/cdmke --gus build/ultrasnd -o build/pmwave.img
+    make picomem-image                  (unpacks the pieces from third-party/, then runs this)
+    python3 tools/mkimage.py --dist dist/wave86 --picomem third-party/picomem \\
+        --mtcp build/mtcp --cdmke build/cdmke --gus build/ultrasnd -o build/pmwave-fdos.img
 
 The image is a raw disk with an MBR and one active FAT16 partition, in the
 shape the PicoMem's BIOS assumes: 16 heads, 63 sectors, the cylinders from
@@ -231,8 +231,8 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
         c.append(line)
     else:
         c += ["; CDMKE.SYS was not there when this image was made (make picomem-image",
-              "; fetches it from the PicoGUS project unless CDMKE_URL= is empty). Put",
-              "; it in C:\\PICOMEM and take the semicolon off:",
+              "; takes it from third-party/cdmke unless CDMKE_DIR= is empty). Put it",
+              "; in C:\\PICOMEM and take the semicolon off:",
               "; " + line]
     if fourdos:
         c += ["; 4DOS 8.00 is the shell, from C:\\4DOS (its 4DOS.INI puts it in upper memory);",
@@ -538,7 +538,7 @@ def stage_tree(work, a):
                          " setting ULTRASND/ULTRADIR: the GUS stays off until it is there")
     else:
         os.makedirs(g)
-        notes.append("C:\\ULTRASND is empty (no --gus folder: GUS_URL= was empty, or GUS_DIR= names"
+        notes.append("C:\\ULTRASND is empty (no --gus folder: GUS_DIR= was empty or names"
                      " nothing); the GUS stays off until ULTRASND.INI and the rest are copied there")
     if a.dos and not a.dos_disks:       # a licensed DOS brings its own utilities
         copy_tree(a.dos, os.path.join(stage, "DOS"))

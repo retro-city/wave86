@@ -605,7 +605,7 @@ static int debug_mode(void)
 
 /*
  * slowdown= and memlimit= from a game's section: SLOWDOWN.COM (Bret
- * Johnson's; make slowdown fetches it) and MEMLIM.EXE (ours) run before
+ * Johnson's, in third-party/; make slowdown copies it in) and MEMLIM.EXE (ours) run before
  * the game and are undone after it - and undone at the top of every
  * batch too, for a game that never got to its own end. Only when the
  * program is next to the launcher: a folder without it changes nothing.

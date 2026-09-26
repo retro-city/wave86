@@ -14,6 +14,8 @@ endif
 export PATH := $(WATCOM)/$(WATCOM_BIN):$(PATH)
 export INCLUDE := $(WATCOM)/h
 VERSION := $(shell sed -n 's/.*VERSION_STR *"\([^"]*\)".*/\1/p' src/wave86.h)
+# other people's programs the build needs, kept in the repository (THIRD-PARTY.md)
+TP = third-party
 
 # -0: 8086 instructions only  -ms: small model  -os: optimize for size
 CFLAGS = -q -bcl=dos -0 -ms -os -wx
@@ -40,17 +42,13 @@ build/MEMLIM.EXE: src/memlim.c
 
 # SLOWDOWN (Bret Johnson, freeware: the COM and its DOC travel together,
 # unmodified) slows the machine for a game that runs too fast; the launcher
-# runs it for a game whose section says slowdown=. Fetched from the FreeDOS
-# package rather than kept here - the author's terms ask for a word before
-# it is bundled with another program.
+# runs it for a game whose section says slowdown=. Kept in third-party/
+# from the FreeDOS package; make update-slowdown refreshes it.
 SLOWDOWN_RAW ?= https://gitlab.com/FreeDOS/util/slowdown/-/raw/master
 slowdown: build/SLOWDOWN.COM
-build/SLOWDOWN.COM:
+build/SLOWDOWN.COM: $(TP)/slowdown/SLOWDOWN.COM $(TP)/slowdown/SLOWDOWN.DOC
 	@mkdir -p build
-	curl -sSfL -o build/SLOWDOWN.COM.part $(SLOWDOWN_RAW)/BIN/SLOWDOWN.COM
-	curl -sSfL -o build/SLOWDOWN.DOC.part $(SLOWDOWN_RAW)/DOC/SLOWDOWN/SLOWDOWN.DOC
-	mv build/SLOWDOWN.DOC.part build/SLOWDOWN.DOC && mv build/SLOWDOWN.COM.part build/SLOWDOWN.COM
-	@ls -la build/SLOWDOWN.COM build/SLOWDOWN.DOC
+	cp $(TP)/slowdown/SLOWDOWN.COM $(TP)/slowdown/SLOWDOWN.DOC build/
 
 build/WAVE86.EXE: $(SRCS) src/wave86.h
 	@mkdir -p build
@@ -75,16 +73,18 @@ music-files: $(MUSIC)
 	@if [ -n "$(MUSIC)" ]; then cp $(MUSIC) build/MUSIC/; fi
 
 # the mTCP NetDrive server for this machine (Go, GPL; Michael Brutman's
-# official build) into build/netdrive, so waveserve can keep CD images
-# on this side of the wire. Only needed for waveserve --netdrive.
+# official build, every platform in one zip under third-party/netdrive,
+# make update-netdrive refreshes it) into build/netdrive, so waveserve can
+# keep CD images on this side of the wire. Only needed for waveserve --netdrive.
 ND_VER = 2025-01-10
+ND_URL = https://www.brutman.com/mTCP/download/mTCP_NetDrive_server-bin_$(ND_VER).zip
+ND_ZIP = $(TP)/netdrive/mTCP_NetDrive_server-bin_$(ND_VER).zip
 # (pattern) with both parentheses: a bare pattern) would close the $(shell
 ND_BIN = $(shell case "$$(uname -s)-$$(uname -m)" in (Darwin-arm64) echo netdrive_darwin_arm64;; (Linux-x86_64) echo netdrive_linux_amd64;; (Linux-aarch64) echo netdrive_linux_arm64;; (*) echo unknown;; esac)
 netdrive: build/netdrive
-build/netdrive:
+build/netdrive: $(ND_ZIP)
 	@mkdir -p build
-	curl -sL -o build/netdrive-server.zip https://www.brutman.com/mTCP/download/mTCP_NetDrive_server-bin_$(ND_VER).zip
-	cd build && unzip -q -o -j netdrive-server.zip "mTCP_NetDrive_server-bin_$(ND_VER)/$(ND_BIN)" "mTCP_NetDrive_server-bin_$(ND_VER)/copying.txt" && mv $(ND_BIN) netdrive && chmod +x netdrive && rm netdrive-server.zip
+	cd build && unzip -q -o -j $(abspath $(ND_ZIP)) "mTCP_NetDrive_server-bin_$(ND_VER)/$(ND_BIN)" "mTCP_NetDrive_server-bin_$(ND_VER)/copying.txt" && mv $(ND_BIN) netdrive && chmod +x netdrive
 	@xattr -d com.apple.quarantine build/netdrive 2>/dev/null || true
 	@./build/netdrive 2>&1 | head -1
 
@@ -93,14 +93,12 @@ build/netdrive:
 # things are kept - are in waveserve.ini, next to this file; a variable on
 # the command line overrides the file for one run. It serves build/ to
 # WAVEGET UPDATE, so it depends on all: a fresh build is what goes out.
-# SLOWDOWN is fetched on the way so the update can carry it, but the
-# server does not need it, so a failed download is only reported.
+# SLOWDOWN comes along (build/SLOWDOWN.COM) so the update can carry it.
 #   make waveserve
 #   make waveserve EXODOS=/Volumes/Games/eXoDOS PORT=8086
 #   make waveserve TORRENT=eXoDOS.torrent WAVESERVE_ARGS="--log serve.log"
 WAVESERVE_ARGS ?=
-waveserve: all build/netdrive
-	@$(MAKE) -s build/SLOWDOWN.COM || echo "  (no SLOWDOWN.COM: the update will not carry it)"
+waveserve: all build/netdrive build/SLOWDOWN.COM
 	python3 tools/waveserve.py $(if $(EXODOS),$(EXODOS)) $(if $(TDC),--tdc $(TDC)) $(if $(TORRENT),--torrent $(TORRENT)) $(if $(CACHE),--cache $(CACHE)) $(if $(PORT),--port $(PORT)) $(if $(MAX_MB),--max-mb $(MAX_MB)) $(if $(NETDRIVE_DIR),--netdrive $(NETDRIVE_DIR)) $(if $(THUMBS_DIR),--thumbs $(THUMBS_DIR)) $(WAVESERVE_ARGS)
 
 # CD image drivers for real DOS (cdrom/README.md)
@@ -174,15 +172,20 @@ build/DHCP.EXE: net/dhcp/DHCP.CPP net/dhcp/DHCP.CFG $(MTCP_SRC) build/mtcp-inc/.
 
 
 # the DOS side, zipped: everything that goes next to the launcher on the
-# DOS machine, only our own tunes, the FreeDOS extras, the licences
-dist: all
+# DOS machine, only our own tunes, the FreeDOS extras, the licences.
+# SLOWDOWN comes along for a build of your own (U carries it to the DOS
+# machine); SLOWDOWN_IN_DIST=0, which CI uses for the release zips, leaves
+# it out, since its author asks to be asked before it is distributed as a
+# companion to another program (SLOWDOWN.DOC, "A word from the sponsor").
+SLOWDOWN_IN_DIST ?= 1
+dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 	rm -rf dist/wave86 && mkdir -p dist/wave86/MUSIC dist/wave86/THUMBS dist/wave86/EXTRAS
 	cp build/WAVE86.EXE build/WAVE.BAT WAVE86.INI build/WAVE86.DEF dist/wave86/
 	cp $$(git ls-files music) dist/wave86/MUSIC/
 	cp -R THUMBS/. dist/wave86/THUMBS/
 	cp build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM build/NETDRIVE.SYS build/NETDRIVE.EXE build/DRVOFF.EXE dist/wave86/
 	cp build/SHCDX86.COM build/SHCDHD86.EXE build/MEMLIM.EXE dist/wave86/
-	@if [ -f build/SLOWDOWN.COM ] && [ -f build/SLOWDOWN.DOC ]; then cp build/SLOWDOWN.COM build/SLOWDOWN.DOC dist/wave86/; else echo "  (no build/SLOWDOWN.COM and .DOC: make slowdown fetches them)"; fi
+	$(if $(filter 1,$(SLOWDOWN_IN_DIST)),cp build/SLOWDOWN.COM build/SLOWDOWN.DOC dist/wave86/,@echo "  (SLOWDOWN_IN_DIST=0: the zip goes without SLOWDOWN)")
 	cp dos/CHOICE.EXE dos/CTMOUSE.EXE dos/JEMMEX.EXE dist/wave86/EXTRAS/
 	sed 's/$$/\r/' docs/README-DOS.txt > dist/wave86/README.TXT
 	sed 's/$$/\r/' LICENSE > dist/wave86/LICENSE.TXT
@@ -194,60 +197,74 @@ dist: all
 # A ready-made disk for a PicoMem 2 (tools/mkimage.py): FreeDOS, the
 # launcher in C:\WAVE86, the card's DOS tools in C:\PICOMEM, mTCP in
 # C:\MTCP, the Gravis UltraSound files in C:\ULTRASND, booting into WAVE86
-# with the SD card on W:. The pieces come down once, like build/netdrive:
-# the PicoMEM repository has no release zips, its DOS tools and its copy
-# of the Gravis zip are plain files on a branch (PICOMEM_REF), fetched one
-# by one; mTCP's client zip is Michael Brutman's; CDMKE.SYS, the
-# Panasonic/MKE CD-ROM driver the card's wiki names, is the PicoGUS
-# project's copy. An empty URL (CDMKE_URL=, GUS_URL=) leaves that piece
-# out; a folder of your own (PICOMEM_DIR=, MTCP_TOOLS=, CDMKE_DIR=,
-# GUS_DIR=) is used instead of a download. The image boots in dosbox-x
-# before it is declared done - twice, LBA and then CHS, with the FreeDOS
-# boot sector (KERNEL=edrdos shares it), once with a DOS_DISKS image, whose
-# own boot sector the CHS patch does not know; the work files stay in
-# build/ whatever IMAGE says, so the image can go straight to the SD card.
+# with the SD card on W:. The pieces are in third-party/ (its README and
+# THIRD-PARTY.md say what and whose): the card's tools from the PicoMEM D6
+# release package, mTCP's client zip, CDMKE.SYS (the Panasonic/MKE CD-ROM
+# driver, the PicoGUS project's copy), the Gravis zip the PicoMEM wiki
+# points at, the FreeDOS utilities, 4DOS and the EDR-DOS kernel, each
+# unpacked into build/ on first use; make update-third-party refreshes them
+# from where they came (the *_URL, *_VER and *_REF variables say where).
+# An empty folder variable (CDMKE_DIR=, GUS_DIR=, DOS_DIR=, FOURDOS_DIR=)
+# leaves that piece out; a folder of your own (PICOMEM_DIR=, MTCP_TOOLS=,
+# CDMKE_DIR=, GUS_DIR=, DOS_DIR=, FOURDOS_DIR=, EDR_DIR=) is used instead
+# of the unpacked one. The image boots in dosbox-x before it is declared
+# done - twice, LBA and then CHS, with the FreeDOS boot sector
+# (KERNEL=edrdos shares it), once with a DOS_DISKS image, whose own boot
+# sector the CHS patch does not know; the work files stay in build/
+# whatever IMAGE says, so the image can go straight to the SD card.
 #   make picomem-image
 #   make picomem-image IMAGE=/Volumes/SD/HDD/PMWAVE.IMG IMAGE_MB=500
-#   make picomem-image PICOMEM_DIR=$$HOME/picomem-drivers GUS_DIR=$$HOME/ultrasnd CDMKE_URL=
+#   make picomem-image PICOMEM_DIR=$$HOME/picomem-drivers GUS_DIR=$$HOME/ultrasnd CDMKE_DIR=
 IMAGE ?=
 # KERNEL=edrdos boots the EDR-DOS (SvarDOS) kernel under the FreeDOS boot
-# sector, fetched from its GitHub release (a grey-area licence: fine for this
-# repo, not for anything commercial - THIRD-PARTY.md); DOS_DISKS="disk1.img
-# disk2.img" builds with your own licensed DOS instead, its own SYS and its
-# own tools (the disks are only read; the list is split on spaces, so no
-# path in it can have one). The image is named after what it runs:
-# build/pmwave-fdos.img, -edrdos, -msdos, -pcdos; IMAGE= overrides that.
+# sector, from its release zip in third-party/edrdos (a grey-area licence:
+# fine for this repo, not for anything commercial - THIRD-PARTY.md);
+# DOS_DISKS="disk1.img disk2.img" builds with your own licensed DOS instead,
+# its own SYS and its own tools (the disks are only read; the list is split
+# on spaces, so no path in it can have one). The image is named after what
+# it runs: build/pmwave-fdos.img, -edrdos, -msdos, -pcdos; IMAGE= overrides.
 KERNEL ?= freedos
-EDR_URL ?= https://github.com/SvarDOS/edrdos/releases/download/v20260309/edrdos_20260309.zip
-EDR_DIR ?= $(if $(EDR_URL),build/edrdos)
+EDR_VER ?= 20260309
+EDR_URL ?= https://github.com/SvarDOS/edrdos/releases/download/v$(EDR_VER)/edrdos_$(EDR_VER).zip
+EDR_ZIP = $(TP)/edrdos/edrdos_$(EDR_VER).zip
+EDR_DIR ?= build/edrdos
 DOS_DISKS ?=
 IMAGE_MB ?= 512
+# the card's tools: third-party/picomem is the PicoMEM D6 release package's
+# PICOMEM folder plus the NE2000 packet driver from the repository; make
+# update-picomem takes the repository's drivers/ folder (PICOMEM_REF pins a
+# branch or commit), which can be ahead of what the firmware release ships
 PICOMEM_REF ?= main
 PICOMEM_URL = https://raw.githubusercontent.com/FreddyVRetro/ISA-PicoMEM/$(PICOMEM_REF)/drivers
-PICOMEM_FILES = PMINIT.EXE PMDFS.EXE PMDFS3.EXE PMMOUSE.EXE PMEMM.EXE PM2000.COM NE2000.COM ASTCLOCK.COM PICOMEM.EXE README.md
-PICOMEM_DIR ?= build/picomem
+PICOMEM_FILES = PMINIT.EXE PMDFS.EXE PMMOUSE.EXE PMEMM.EXE PM2000.COM NE2000.COM
+PICOMEM_DIR ?= $(TP)/picomem
 MTCP_VER ?= 2025-01-10
+MTCP_URL = https://www.brutman.com/mTCP/download/mTCP_$(MTCP_VER).zip
+MTCP_ZIP = $(TP)/mtcp/mTCP_$(MTCP_VER).zip
 MTCP_TOOLS ?= build/mtcp
 CDMKE_URL ?= https://picogus.com/drivers/cdmke.zip
-CDMKE_DIR ?= $(if $(CDMKE_URL),build/cdmke)
+CDMKE_ZIP = $(TP)/cdmke/cdmke.zip
+CDMKE_DIR ?= build/cdmke
 GUS_URL ?= $(PICOMEM_URL)/ultrasnd.zip
-GUS_DIR ?= $(if $(GUS_URL),build/ultrasnd)
+GUS_ZIP = $(TP)/ultrasnd/ultrasnd.zip
+GUS_DIR ?= build/ultrasnd
 MKIMAGE_ARGS ?=
 # FreeDOS utilities for C:\DOS: EDIT and a few friends, and LBACACHE, a disk
-# cache AUTOEXEC loads (GPL; fetched from the FreeDOS 1.3 package repository)
+# cache AUTOEXEC loads (GPL; the FreeDOS 1.3 packages, in third-party/dosutils)
 FREEDOS_REPO ?= https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base
 DOS_PKGS ?= edit lbacache mem more xcopy deltree attrib find tree label
-DOS_DIR ?= $(if $(DOS_PKGS),build/dosutils)
+DOS_ZIPS = $(foreach p,$(DOS_PKGS),$(TP)/dosutils/$(p).zip)
+DOS_DIR ?= build/dosutils
 # 4DOS 8.00 as the shell (JP Software's 2004 notice licence: distribute with
-# LICENSE.TXT; not OSI-approved); FOURDOS_URL= empty keeps FreeCOM
+# LICENSE.TXT; not OSI-approved); FOURDOS_DIR= empty keeps FreeCOM
 FOURDOS_URL ?= https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/util/user/4dos/4dos800.zip
-FOURDOS_DIR ?= $(if $(FOURDOS_URL),build/4dos)
+FOURDOS_ZIP = $(TP)/4dos/4dos800.zip
+FOURDOS_DIR ?= build/4dos
 FOURDOS_FILES = 4DOS.COM 4DOS.HLP 4HELP.EXE KSTACK.COM OPTION.EXE HELPCFG.EXE BATCOMP.EXE LICENSE.TXT README.TXT INTRO.TXT
 PICOMEM_INPUTS = $(PICOMEM_DIR) $(MTCP_TOOLS) $(CDMKE_DIR) $(GUS_DIR) $(DOS_DIR) $(FOURDOS_DIR) $(if $(filter edrdos,$(KERNEL)),$(EDR_DIR))
-# the build/ defaults are fetched by the rules below; anything else must be there already
-PICOMEM_FETCH = $(filter build/picomem build/mtcp build/cdmke build/ultrasnd build/dosutils build/4dos build/edrdos,$(PICOMEM_INPUTS))
+# the build/ defaults are unpacked by the rules below; anything else must be there already
+PICOMEM_FETCH = $(filter build/mtcp build/cdmke build/ultrasnd build/dosutils build/4dos build/edrdos,$(PICOMEM_INPUTS))
 picomem-image: picomem-folders dist $(PICOMEM_FETCH)
-	@$(MAKE) -s build/SLOWDOWN.COM && cp build/SLOWDOWN.COM build/SLOWDOWN.DOC dist/wave86/ || echo "  (no SLOWDOWN.COM: the image goes without it)"
 	python3 tools/mkimage.py --dist dist/wave86 --picomem "$(PICOMEM_DIR)" --mtcp "$(MTCP_TOOLS)" \
 	  $(if $(CDMKE_DIR),--cdmke "$(CDMKE_DIR)") $(if $(GUS_DIR),--gus "$(GUS_DIR)") $(if $(DOS_DIR),--dos "$(DOS_DIR)") $(if $(FOURDOS_DIR),--4dos "$(FOURDOS_DIR)") \
 	  --kernel $(KERNEL) $(if $(filter edrdos,$(KERNEL)),--edr "$(EDR_DIR)") $(foreach d,$(DOS_DISKS),--dos-disk $(d)) \
@@ -256,51 +273,86 @@ picomem-image: picomem-folders dist $(PICOMEM_FETCH)
 # a folder given by hand that is not there fails here, before the dist is built
 picomem-folders:
 	@for d in $(filter-out $(PICOMEM_FETCH),$(PICOMEM_INPUTS)); do \
-	  test -d "$$d" || { echo "picomem-image: no folder $$d (PICOMEM_DIR, MTCP_TOOLS, CDMKE_DIR, GUS_DIR, DOS_DIR or FOURDOS_DIR)"; exit 1; }; done
+	  test -d "$$d" || { echo "picomem-image: no folder $$d (PICOMEM_DIR, MTCP_TOOLS, CDMKE_DIR, GUS_DIR, DOS_DIR, FOURDOS_DIR or EDR_DIR)"; exit 1; }; done
 
-build/edrdos:
+# the pieces, unpacked from third-party/ into build/; a newer archive there
+# unpacks again, since each of these depends on its archive
+build/edrdos: $(EDR_ZIP)
 	@rm -rf build/edrdos.part && mkdir -p build/edrdos.part
-	curl -sSfL -o build/edrdos.part/edrdos.zip $(EDR_URL)
-	cd build/edrdos.part && unzip -q -o edrdos.zip && rm edrdos.zip
-	@mv build/edrdos.part build/edrdos && ls build/edrdos | tr '\n' ' ' && echo
+	cd build/edrdos.part && unzip -q -o $(abspath $(EDR_ZIP))
+	@rm -rf build/edrdos && mv build/edrdos.part build/edrdos && ls build/edrdos | tr '\n' ' ' && echo
 
-build/4dos:
+build/4dos: $(FOURDOS_ZIP)
 	@rm -rf build/4dos.part && mkdir -p build/4dos.part
-	curl -sSfL -o build/4dos.part/4dos.zip $(FOURDOS_URL)
-	cd build/4dos.part && unzip -q -o 4dos.zip $(FOURDOS_FILES) && rm 4dos.zip
-	@mv build/4dos.part build/4dos && ls build/4dos | tr '\n' ' ' && echo
+	cd build/4dos.part && unzip -q -o $(abspath $(FOURDOS_ZIP)) $(FOURDOS_FILES)
+	@rm -rf build/4dos && mv build/4dos.part build/4dos && ls build/4dos | tr '\n' ' ' && echo
 
-build/dosutils:
+build/dosutils: $(DOS_ZIPS)
 	@rm -rf build/dosutils.part && mkdir -p build/dosutils.part
-	for p in $(DOS_PKGS); do curl -sSfL -o build/dosutils.part/$$p.zip $(FREEDOS_REPO)/$$p.zip || { echo "no $(FREEDOS_REPO)/$$p.zip"; exit 1; }; \
-	  unzip -q -j -o build/dosutils.part/$$p.zip 'BIN/*' -d build/dosutils.part || { echo "no BIN/ in $$p.zip"; exit 1; }; rm build/dosutils.part/$$p.zip; done
-	@mv build/dosutils.part build/dosutils && ls build/dosutils | tr '\n' ' ' && echo
+	for z in $(DOS_ZIPS); do unzip -q -j -o $$z 'BIN/*' -d build/dosutils.part || { echo "no BIN/ in $$z"; exit 1; }; done
+	@rm -rf build/dosutils && mv build/dosutils.part build/dosutils && ls build/dosutils | tr '\n' ' ' && echo
 
-build/picomem:
-	@rm -rf build/picomem.part && mkdir -p build/picomem.part
-	for f in $(PICOMEM_FILES); do curl -sSfL -o build/picomem.part/$$f $(PICOMEM_URL)/$$f || { echo "no $(PICOMEM_URL)/$$f"; exit 1; }; done
-	mv build/picomem.part build/picomem
-	@ls build/picomem
-
-build/mtcp:
+build/mtcp: $(MTCP_ZIP)
 	@mkdir -p build
-	curl -sSfL -o build/mtcp.zip https://www.brutman.com/mTCP/download/mTCP_$(MTCP_VER).zip
-	rm -rf build/mtcp && unzip -q -o -d build/mtcp build/mtcp.zip && rm build/mtcp.zip
+	rm -rf build/mtcp && unzip -q -o -d build/mtcp $(MTCP_ZIP)
 	@ls build/mtcp
 
-build/cdmke:
+build/cdmke: $(CDMKE_ZIP)
 	@mkdir -p build
-	curl -sSfL -o build/cdmke.zip $(CDMKE_URL)
-	rm -rf build/cdmke && unzip -q -o -d build/cdmke build/cdmke.zip && rm build/cdmke.zip
+	rm -rf build/cdmke && unzip -q -o -d build/cdmke $(CDMKE_ZIP)
 	@ls build/cdmke
 
 # the Gravis UltraSound software (ultrasnd.zip, flat: ULTRASND.INI, ULTRINIT,
 # ULTRAMID, the MIDI\ patches...), the copy the PicoMEM wiki points at
-build/ultrasnd:
+build/ultrasnd: $(GUS_ZIP)
 	@mkdir -p build
-	curl -sSfL -o build/ultrasnd.zip $(GUS_URL)
-	rm -rf build/ultrasnd && unzip -q -o -d build/ultrasnd build/ultrasnd.zip && rm build/ultrasnd.zip
+	rm -rf build/ultrasnd && unzip -q -o -d build/ultrasnd $(GUS_ZIP)
 	@ls build/ultrasnd | wc -l | sed 's/^ *//;s/$$/ entries in build\/ultrasnd/'
+
+# ---- third-party/: refreshing the pieces from where they came. Each is
+# recorded with its origin and SHA-256 in third-party/SOURCES.txt by
+# tools/thirdparty.py; a refresh that brings the same bytes changes nothing,
+# and one that cannot reach its site leaves what is there and says so - the
+# other pieces are still tried, and make ends with an error.
+# A new version has a new file name (MTCP_VER=, ND_VER=, EDR_VER=): the old
+# archive stays until you delete it. Look at what changed, then commit it.
+# check-third-party, which CI runs, says whether every recorded file is
+# there and unchanged.
+FETCH = python3 tools/thirdparty.py fetch
+UPDATES = update-picomem update-mtcp update-netdrive update-cdmke update-gus update-dosutils update-4dos update-edrdos update-slowdown
+update-third-party:
+	@rc=0; for t in $(UPDATES); do $(MAKE) -s $$t || rc=1; done; exit $$rc
+update-picomem:
+	@for f in $(PICOMEM_FILES); do $(FETCH) $(TP)/picomem/$$f $(PICOMEM_URL)/$$f || exit 1; done
+update-mtcp:
+	@$(FETCH) $(MTCP_ZIP) $(MTCP_URL)
+update-netdrive:
+	@$(FETCH) $(ND_ZIP) $(ND_URL)
+update-cdmke:
+	@$(FETCH) $(CDMKE_ZIP) $(CDMKE_URL)
+update-gus:
+	@$(FETCH) $(GUS_ZIP) $(GUS_URL)
+update-dosutils:
+	@for p in $(DOS_PKGS); do $(FETCH) $(TP)/dosutils/$$p.zip $(FREEDOS_REPO)/$$p.zip || exit 1; done
+update-4dos:
+	@$(FETCH) $(FOURDOS_ZIP) $(FOURDOS_URL)
+update-edrdos:
+	@$(FETCH) $(EDR_ZIP) $(EDR_URL)
+update-slowdown:
+	@$(FETCH) $(TP)/slowdown/SLOWDOWN.COM $(SLOWDOWN_RAW)/BIN/SLOWDOWN.COM
+	@$(FETCH) $(TP)/slowdown/SLOWDOWN.DOC $(SLOWDOWN_RAW)/DOC/SLOWDOWN/SLOWDOWN.DOC
+check-third-party:
+	@python3 tools/thirdparty.py check
+
+# Open Watcom V2 into toolchain/ (not in git: 50 MB of compilers), the
+# host tools for this machine plus h/ and lib286/, from a dated release
+# rather than the rolling Current-build, so a build here and one on CI
+# use the same compiler; OW_TAG= picks another release.
+OW_TAG ?= 2026-09-01-Build
+toolchain:
+	@if [ -d toolchain/h ] && [ -d toolchain/$(WATCOM_BIN) ]; then echo "toolchain/ is there ($(WATCOM_BIN)); rm -rf toolchain to fetch $(OW_TAG) again"; exit 0; fi; \
+	curl -sSfL -o ow-snapshot.tar.xz https://github.com/open-watcom/open-watcom-v2/releases/download/$(OW_TAG)/ow-snapshot.tar.xz && \
+	mkdir -p toolchain && tar -xJf ow-snapshot.tar.xz -C toolchain ./$(WATCOM_BIN) ./h ./lib286 && rm ow-snapshot.tar.xz && ls toolchain
 
 # the FreeDOS FAT16 boot sector that image gets (dos/FAT16.BS), assembled
 # from the kernel's own boot/boot.asm; only needed when dos/boot.asm changes
@@ -355,4 +407,5 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test dostest dosrun netdrive waveserve dist picomem-image picomem-folders bootsector clean music music-files thumbs net cdrom
+.PHONY: all run test dostest dosrun netdrive waveserve dist picomem-image picomem-folders bootsector clean music music-files thumbs net cdrom \
+        slowdown toolchain check-third-party update-third-party update-picomem update-mtcp update-netdrive update-cdmke update-gus update-dosutils update-4dos update-edrdos update-slowdown
