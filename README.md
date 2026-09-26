@@ -98,8 +98,14 @@ folders on the SD's root for the games and the discs. On the image:
     C:\4DOS        4DOS 8.00, the shell, with its help (4HELP, or F1 at the prompt), its
                    licence, and a 4DOS.INI that puts it in upper memory
 
-CONFIG.SYS loads JEMMEX (`DOS=HIGH,UMB`, with `X=D000-D5FF` keeping its
-upper memory off the card's own BIOS and RAM window), NetDrive's driver,
+CONFIG.SYS shows a menu for five seconds, then takes 1: 1 loads JEMMEX
+(`DOS=HIGH,UMB`, with `X=D000-D7FF` keeping its upper memory off the
+card's own BIOS and RAM window and the 8 KB after it), 2 loads JEMMEX
+with `NOEMS NOHI NOINVLPG X=A000-FFFF` and 4DOS neither swapping nor
+loading high, 3 loads no memory manager at all and FreeCOM as the shell;
+2 and 3 exist for finding out what a JemmEx exception or a hang on the
+card is about, one piece at a time. Then NetDrive's driver (in upper
+memory under 1),
 and `CDMKE.SYS /D:MSCD000 /P:250 /Q`, the Panasonic/MKE driver for the
 card's emulated CD-ROM; the shell is 4DOS 8.00 - the same one as on an
 MS-DOS machine set up with it, so batch files and habits carry over,
@@ -178,8 +184,9 @@ cache - does not care which DOS is under it, so the builder takes three:
   So that DOS writes its own boot sector and system files, the only way
   that works for MS-DOS (its boot sector wants IO.SYS in the first
   directory entry); then the rest of the tree goes on with mtools, which
-  leaves what is there alone. CONFIG.SYS gets its `HIMEM.SYS` and
-  `EMM386.EXE RAM X=D000-D5FF` instead of JEMMEX, AUTOEXEC.BAT `SMARTDRV
+  leaves what is there alone. CONFIG.SYS gets DOS 6's own `[menu]` with
+  the same three kinds of setup - `HIMEM.SYS` and `EMM386.EXE RAM
+  X=D000-D7FF`, HIMEM alone, or neither - instead of JEMMEX, AUTOEXEC.BAT `SMARTDRV
   /X 8192` as its cache (the FreeDOS image has none: LBACACHE was tried
   and taken out), its DBLSPACE.BIN or DRVSPACE.BIN taken off the root so
   IO.SYS loads no DoubleSpace driver, and WAVE86.INI `slowcache=0`, since
