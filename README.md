@@ -98,18 +98,19 @@ folders on the SD's root for the games and the discs. On the image:
     C:\4DOS        4DOS 8.00, the shell, with its help (4HELP, or F1 at the prompt), its
                    licence, and a 4DOS.INI that puts it in upper memory
 
-CONFIG.SYS shows a menu for five seconds, then takes 1: 1 loads JEMMEX
-(`DOS=HIGH,UMB`, with `X=D000-D7FF` keeping its upper memory off the
-card's own BIOS and RAM window and the 8 KB after it), 2 loads JEMMEX
-with `NOEMS NOHI NOINVLPG X=A000-FFFF` and 4DOS neither swapping nor
-loading high, 3 loads no memory manager at all and FreeCOM as the shell,
-4 loads HIMEMX, XMS and the HMA without V86 mode (no EMS, no upper
-memory: the setup for a machine JEMMEX cannot live with), and 5 to 8
-take 1 apart one piece at a time (no upper memory, no EMS, 2's JEMMEX
-with 1's 4DOS, the whole C and D segments kept off limits); 2 to 8 exist
-for finding out what a JemmEx exception or a hang on the card is about.
-Then NetDrive's driver (in upper
-memory under 1),
+CONFIG.SYS shows a menu for five seconds, then takes 1, which is the
+pair Phil's Computer Lab's FreeDOS boots with: HIMEMX for XMS and
+`JEMM386 RAM` for EMS and upper memory (`DOS=HIGH,UMB`, with
+`X=D000-D7FF` keeping the upper memory off the card's own BIOS and RAM
+window and the 8 KB after it). The other items exist for finding out what
+a JemmEx exception or a hang on the card is about: 0 is that pair exactly
+as his, with no X=; 9 is JEMMEX, the same in one program; 5 to 8 take 9
+apart one piece at a time (no upper memory, no EMS, 2's JEMMEX with 1's
+4DOS, the whole C and D segments kept off limits); 2 is JEMMEX with
+`NOEMS NOHI NOINVLPG X=A000-FFFF` and 4DOS neither swapping nor loading
+high; 3 is no memory manager at all and FreeCOM as the shell; 4 is HIMEMX
+alone, XMS and the HMA without V86 mode. Then NetDrive's driver (in upper
+memory where there is any),
 and `CDMKE.SYS /D:MSCD000 /P:250 /Q`, the Panasonic/MKE driver for the
 card's emulated CD-ROM; the shell is 4DOS 8.00 - the same one as on an
 MS-DOS machine set up with it, so batch files and habits carry over,

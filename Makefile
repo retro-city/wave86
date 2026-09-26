@@ -257,7 +257,7 @@ MKIMAGE_ARGS ?=
 # packages, in third-party/dosutils). No disk cache: LBACACHE was here and
 # went out again, the card's disk is not the place for one.
 FREEDOS_REPO ?= https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base
-DOS_PKGS ?= edit mem more xcopy deltree attrib find tree label himemx
+DOS_PKGS ?= edit mem more xcopy deltree attrib find tree label himemx jemm
 DOS_ZIPS = $(foreach p,$(DOS_PKGS),$(TP)/dosutils/$(p).zip)
 DOS_DIR ?= build/dosutils
 # 4DOS 8.00 as the shell (JP Software's 2004 notice licence: distribute with

@@ -215,18 +215,20 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
 
     c = [f"; {FLAVOURS[flavour]} on a PicoMem 2 - written by make picomem-image (tools/mkimage.py)"]
     if menu:
-        c += ["; A menu: five seconds, then 1. 1 is the setup meant for the card; the",
-              "; others are for finding out what a JemmEx exception or a hang is about,",
-              "; one piece at a time. 2 keeps JEMMEX but with no EMS, nothing in upper",
-              "; memory and its own code low, and 4DOS neither swapping nor loading",
-              "; high (C:\\4DOS\\NOSWAP.INI); 3 has no memory manager at all and FreeCOM",
-              "; for the shell; 4 has HIMEMX, XMS and the HMA without V86 mode (no EMS,",
-              "; no upper memory). 5 to 8 take 1 apart: 5 hands out no upper memory,",
-              "; 6 no EMS, 7 is 2's JEMMEX with 4DOS as in 1, 8 keeps the whole C and D",
-              "; segments off limits. The lines that start with digits belong to those",
-              "; choices; F8 still steps.",
+        c += ["; A menu: five seconds, then 1. 1 is the setup meant for the card, the",
+              "; pair Phil's Computer Lab's FreeDOS boots with (HIMEMX for XMS, JEMM386",
+              "; RAM for EMS and upper memory), with the card's own range kept out; 0",
+              "; is that pair exactly as his, no X= at all. The rest are for finding",
+              "; out what a JemmEx exception or a hang is about, one piece at a time:",
+              "; 9 is JEMMEX, the same in one program; 5 to 8 take 9 apart (no upper",
+              "; memory; no EMS; 2's JEMMEX; the C and D segments kept off limits);",
+              "; 2 keeps JEMMEX with no EMS, nothing in upper memory and its own code",
+              "; low, and 4DOS neither swapping nor loading high (C:\\4DOS\\NOSWAP.INI);",
+              "; 3 has no memory manager at all and FreeCOM for the shell; 4 has",
+              "; HIMEMX alone, XMS and the HMA without V86 mode. The lines that start",
+              "; with digits belong to those choices; F8 still steps.",
               "MENU",
-              "MENU  1 - JEMMEX X=D000-D7FF: XMS, EMS, upper memory; 4DOS swapping to XMS",
+              "MENU  1 - HIMEMX + JEMM386 RAM X=D000-D7FF (Phil's pair, the card kept out); 4DOS swapping to XMS",
               "MENU  2 - JEMMEX X=A000-FFFF NOEMS NOHI NOINVLPG; 4DOS not swapping, low",
               "MENU  3 - no memory manager; FreeCOM as the shell",
               "MENU  4 - HIMEMX: XMS only, no V86 mode; 4DOS swapping to XMS",
@@ -234,32 +236,36 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
               "MENU  6 - JEMMEX X=D000-D7FF NOEMS: upper memory, no EMS; 4DOS as in 1",
               "MENU  7 - JEMMEX as in 2; 4DOS as in 1",
               "MENU  8 - JEMMEX X=C000-DFFF NOEMS: upper memory at E000 only; 4DOS as in 1",
+              "MENU  9 - JEMMEX X=D000-D7FF: XMS, EMS, upper memory in one; 4DOS as in 1",
+              "MENU  0 - HIMEMX + JEMM386 RAM, exactly Phil's lines; 4DOS as in 1",
               "MENU",
               "MENUDEFAULT=1,5"]
-    c += ["; JEMMEX: XMS, EMS and upper memory, so DOS, the drivers and the TSRs go",
-          "; up there and a game gets the conventional memory. X= keeps its UMBs",
-          "; off the PicoMem's own 24 KB at D000-D5FF (16 KB of BIOS, then 8 KB",
-          "; of RAM the card's tools talk through) and the 8 KB after it, which",
-          "; the card's own D6 configuration keeps free as well; the range moves",
-          "; with a BIOS line in the SD card's config.txt. (The PicoMem wiki warns",
-          "; that EMM386 breaks the Sound Blaster of a PicoMem 1, whose DMA was done",
-          "; in software; the 2 has real DMA. If sound fails here, try NOEMS after",
-          "; X=, then the line without JEMMEX at all - DOS=HIGH,UMB goes with it.)",
-          P(1) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF"]
+    c += ["; HIMEMX for extended memory, JEMM386 RAM for EMS and upper memory, so",
+          "; DOS, the drivers and the TSRs go up there and a game gets the",
+          "; conventional memory. X= keeps its UMBs off the PicoMem's own 24 KB at",
+          "; D000-D5FF (16 KB of BIOS, then 8 KB of RAM the card's tools talk",
+          "; through) and the 8 KB after it, which the card's own D6 configuration",
+          "; keeps free as well; the range moves with a BIOS line in the SD card's",
+          "; config.txt. (The PicoMem wiki warns that EMM386 breaks the Sound Blaster",
+          "; of a PicoMem 1, whose DMA was done in software; the 2 has real DMA. If",
+          "; sound fails here, try NOEMS after X=, then HIMEMX alone.)",
+          P(1, 4, 0) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
+          P(1) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF"]
     if menu:
-        c += [P(2, 7) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF NOEMS NOHI NOINVLPG",
+        c += [P(0) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM",
+              P(9) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF",
+              P(2, 7) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF NOEMS NOHI NOINVLPG",
               P(5) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF",
               P(6) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=D000-D7FF NOEMS",
               P(8) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=C000-DFFF NOEMS",
-              P(4) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
               P(4) + "DOS=HIGH"]
-    c += [P(1, 2, 5, 6, 7, 8) + "DOS=HIGH,UMB",
+    c += [P(1, 2, 5, 6, 7, 8, 9, 0) + "DOS=HIGH,UMB",
           "FILES=30",
           "BUFFERS=20",
           "LASTDRIVE=Z",
           "; mTCP NetDrive reserves D: and E:; AUTOEXEC.BAT frees D: for the disc",
           "; (DRVOFF D:), so discs kept on the server come in on E:",
-          P(1, 6, 8) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
+          P(1, 6, 8, 9, 0) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
     if menu:
         c.append(P(2, 3, 4, 5, 7) + "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")
     c += ["; the PicoMem 2's emulated CD-ROM drive: a Panasonic/MKE interface on",
@@ -280,7 +286,7 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
         c += ["; 4DOS 8.00 is the shell, from C:\\4DOS (its 4DOS.INI puts it in upper memory);",
               "; /P runs C:\\AUTOEXEC.BAT. COMMAND.COM stays in the root as a fallback:",
               "; SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT",
-              P(1, 4, 5, 6, 7, 8) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
+              P(1, 4, 5, 6, 7, 8, 9, 0) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
         if menu:
             c += [P(2) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\NOSWAP.INI /E:2048 /P",
                   P(3) + "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT"]
