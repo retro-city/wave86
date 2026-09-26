@@ -173,10 +173,8 @@ build/DHCP.EXE: net/dhcp/DHCP.CPP net/dhcp/DHCP.CFG $(MTCP_SRC) build/mtcp-inc/.
 
 # the DOS side, zipped: everything that goes next to the launcher on the
 # DOS machine, only our own tunes, the FreeDOS extras, the licences.
-# SLOWDOWN comes along for a build of your own (U carries it to the DOS
-# machine); SLOWDOWN_IN_DIST=0, which CI uses for the release zips, leaves
-# it out, since its author asks to be asked before it is distributed as a
-# companion to another program (SLOWDOWN.DOC, "A word from the sponsor").
+# SLOWDOWN comes along (U carries it to the DOS machine); SLOWDOWN_IN_DIST=0
+# leaves it out of the zip. Its terms are in SLOWDOWN.DOC and THIRD-PARTY.md.
 SLOWDOWN_IN_DIST ?= 1
 dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 	rm -rf dist/wave86 && mkdir -p dist/wave86/MUSIC dist/wave86/THUMBS dist/wave86/EXTRAS
@@ -198,12 +196,12 @@ dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 # launcher in C:\WAVE86, the card's DOS tools in C:\PICOMEM, mTCP in
 # C:\MTCP, the Gravis UltraSound files in C:\ULTRASND, booting into WAVE86
 # with the SD card on W:. The pieces are in third-party/ (its README and
-# THIRD-PARTY.md say what and whose): the card's tools from the PicoMEM D6
-# release package, mTCP's client zip, CDMKE.SYS (the Panasonic/MKE CD-ROM
-# driver, the PicoGUS project's copy), the Gravis zip the PicoMEM wiki
-# points at, the FreeDOS utilities, 4DOS and the EDR-DOS kernel, each
-# unpacked into build/ on first use; make update-third-party refreshes them
-# from where they came (the *_URL, *_VER and *_REF variables say where).
+# THIRD-PARTY.md say what and whose): the PicoMEM D6 release package and
+# the card repository's drivers folder (the tools, the Gravis zip), mTCP's
+# client zip, CDMKE.SYS (the PicoGUS project's copy), the FreeDOS utilities,
+# 4DOS and the EDR-DOS kernel, each unpacked into build/ on first use; make
+# update-third-party refreshes them from where they came (the *_URL, *_VER
+# and *_REF variables say where).
 # An empty folder variable (CDMKE_DIR=, GUS_DIR=, DOS_DIR=, FOURDOS_DIR=)
 # leaves that piece out; a folder of your own (PICOMEM_DIR=, MTCP_TOOLS=,
 # CDMKE_DIR=, GUS_DIR=, DOS_DIR=, FOURDOS_DIR=, EDR_DIR=) is used instead
@@ -230,14 +228,20 @@ EDR_ZIP = $(TP)/edrdos/edrdos_$(EDR_VER).zip
 EDR_DIR ?= build/edrdos
 DOS_DISKS ?=
 IMAGE_MB ?= 512
-# the card's tools: third-party/picomem is the PicoMEM D6 release package's
-# PICOMEM folder plus the NE2000 packet driver from the repository; make
-# update-picomem takes the repository's drivers/ folder (PICOMEM_REF pins a
-# branch or commit), which can be ahead of what the firmware release ships
+# the card's tools: C:\PICOMEM on the image is the PICOMEM folder of the
+# D6 release package (third-party/picomem/PM_D6_CONFIG.zip, the release
+# matched to the firmware) plus NE2000.COM from the repository's drivers
+# folder, which is in third-party/picomem/drivers whole (make update-picomem
+# refreshes it; PICOMEM_REF pins a branch or commit; its PMINIT can be ahead
+# of the release's). PICOMEM_DIR= names a folder of your own instead.
 PICOMEM_REF ?= main
 PICOMEM_URL = https://raw.githubusercontent.com/FreddyVRetro/ISA-PicoMEM/$(PICOMEM_REF)/drivers
-PICOMEM_FILES = PMINIT.EXE PMDFS.EXE PMMOUSE.EXE PMEMM.EXE PM2000.COM NE2000.COM
-PICOMEM_DIR ?= $(TP)/picomem
+PICOMEM_FILES = ASTCLOCK.COM NE2000.COM PICOMEM.EXE PM2000.COM PMDFS.EXE PMDFS3.EXE PMEMM.EXE PMINIT.EXE PMMOUSE.EXE README.md \
+                SBCD/CD/FILE_ID.DIZ SBCD/CD/FILE_ID.OLD SBCD/CD/LICENSE.TXT SBCD/CD/LOCKCD.EXE SBCD/CD/README.COM SBCD/CD/README.NOW \
+                SBCD/CD/README.TXT SBCD/CD/SBCD.SYS SBCD/CD/SETUPCD.EXE SBCD/CD/TESTCD.EXE SBCD/CD/UNLOCKCD.EXE SBCD/CD_DOS.ZIP SBCD/readme.txt \
+                TEST/EMS/EMMSTAT.EXE TEST/EMS/EMSTEST.COM TEST/EMS/MOVETEST.COM TEST/EMS/OEMSTEST.COM TEST/PICOMEM.EXE ultrasnd.zip
+PICOMEM_D6 = $(TP)/picomem/PM_D6_CONFIG.zip
+PICOMEM_DIR ?= build/picomem
 MTCP_VER ?= 2025-01-10
 MTCP_URL = https://www.brutman.com/mTCP/download/mTCP_$(MTCP_VER).zip
 MTCP_ZIP = $(TP)/mtcp/mTCP_$(MTCP_VER).zip
@@ -246,7 +250,7 @@ CDMKE_URL ?= https://picogus.com/drivers/cdmke.zip
 CDMKE_ZIP = $(TP)/cdmke/cdmke.zip
 CDMKE_DIR ?= build/cdmke
 GUS_URL ?= $(PICOMEM_URL)/ultrasnd.zip
-GUS_ZIP = $(TP)/ultrasnd/ultrasnd.zip
+GUS_ZIP = $(TP)/picomem/drivers/ultrasnd.zip
 GUS_DIR ?= build/ultrasnd
 MKIMAGE_ARGS ?=
 # FreeDOS utilities for C:\DOS: EDIT and a few friends (GPL; the FreeDOS 1.3
@@ -264,7 +268,7 @@ FOURDOS_DIR ?= build/4dos
 FOURDOS_FILES = 4DOS.COM 4DOS.HLP 4HELP.EXE KSTACK.COM OPTION.EXE HELPCFG.EXE BATCOMP.EXE LICENSE.TXT README.TXT INTRO.TXT
 PICOMEM_INPUTS = $(PICOMEM_DIR) $(MTCP_TOOLS) $(CDMKE_DIR) $(GUS_DIR) $(DOS_DIR) $(FOURDOS_DIR) $(if $(filter edrdos,$(KERNEL)),$(EDR_DIR))
 # the build/ defaults are unpacked by the rules below; anything else must be there already
-PICOMEM_FETCH = $(filter build/mtcp build/cdmke build/ultrasnd build/dosutils build/4dos build/edrdos,$(PICOMEM_INPUTS))
+PICOMEM_FETCH = $(filter build/picomem build/mtcp build/cdmke build/ultrasnd build/dosutils build/4dos build/edrdos,$(PICOMEM_INPUTS))
 picomem-image: picomem-folders dist $(PICOMEM_FETCH)
 	python3 tools/mkimage.py --dist dist/wave86 --picomem "$(PICOMEM_DIR)" --mtcp "$(MTCP_TOOLS)" \
 	  $(if $(CDMKE_DIR),--cdmke "$(CDMKE_DIR)") $(if $(GUS_DIR),--gus "$(GUS_DIR)") $(if $(DOS_DIR),--dos "$(DOS_DIR)") $(if $(FOURDOS_DIR),--4dos "$(FOURDOS_DIR)") \
@@ -275,6 +279,13 @@ picomem-image: picomem-folders dist $(PICOMEM_FETCH)
 picomem-folders:
 	@for d in $(filter-out $(PICOMEM_FETCH),$(PICOMEM_INPUTS)); do \
 	  test -d "$$d" || { echo "picomem-image: no folder $$d (PICOMEM_DIR, MTCP_TOOLS, CDMKE_DIR, GUS_DIR, DOS_DIR, FOURDOS_DIR or EDR_DIR)"; exit 1; }; done
+
+# C:\PICOMEM: the D6 package's PICOMEM folder, and the packet driver
+build/picomem: $(PICOMEM_D6) $(TP)/picomem/drivers/NE2000.COM
+	@rm -rf build/picomem.part && mkdir -p build/picomem.part
+	cd build/picomem.part && unzip -q -o -j $(abspath $(PICOMEM_D6)) 'PM_D6_CONFIG/PICOMEM/*'
+	cp $(TP)/picomem/drivers/NE2000.COM build/picomem.part/
+	@rm -rf build/picomem && mv build/picomem.part build/picomem && ls build/picomem | tr '\n' ' ' && echo
 
 # the pieces, unpacked from third-party/ into build/; a newer archive there
 # unpacks again, since each of these depends on its archive
@@ -324,7 +335,7 @@ UPDATES = update-picomem update-mtcp update-netdrive update-cdmke update-gus upd
 update-third-party:
 	@rc=0; for t in $(UPDATES); do $(MAKE) -s $$t || rc=1; done; exit $$rc
 update-picomem:
-	@for f in $(PICOMEM_FILES); do $(FETCH) $(TP)/picomem/$$f $(PICOMEM_URL)/$$f || exit 1; done
+	@for f in $(PICOMEM_FILES); do $(FETCH) $(TP)/picomem/drivers/$$f $(PICOMEM_URL)/$$f || exit 1; done
 update-mtcp:
 	@$(FETCH) $(MTCP_ZIP) $(MTCP_URL)
 update-netdrive:

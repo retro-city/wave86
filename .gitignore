@@ -22,9 +22,5 @@ music/worms.mod
 build_*/
 # worktrees the Claude desktop app makes for its agents
 .claude/worktrees/
-# the PicoMEM D6 release package as downloaded: its PICOMEM folder is in
-# third-party/picomem; the rest (UniVBE, Yamaha and Panasonic setup
-# programs...) is not ours to publish
-/picomem/
 __pycache__/
 dist/

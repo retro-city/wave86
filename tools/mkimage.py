@@ -3,7 +3,7 @@
 card's DOS tools, mTCP, booting straight into WAVE86.
 
     make picomem-image                  (unpacks the pieces from third-party/, then runs this)
-    python3 tools/mkimage.py --dist dist/wave86 --picomem third-party/picomem \\
+    python3 tools/mkimage.py --dist dist/wave86 --picomem build/picomem \\
         --mtcp build/mtcp --cdmke build/cdmke --gus build/ultrasnd -o build/pmwave-fdos.img
 
 The image is a raw disk with an MBR and one active FAT16 partition, in the

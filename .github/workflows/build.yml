@@ -18,8 +18,8 @@ jobs:
       - name: Open Watcom V2 (host tools for Linux, the release the Makefile pins)
         run: make toolchain
 
-      - name: Build the DOS side (the zip without SLOWDOWN, whose author asks first)
-        run: make dist SLOWDOWN_IN_DIST=0
+      - name: Build the DOS side
+        run: make dist
 
       - name: Test the server's torrent reader
         run: python3 tools/test_torrentfs.py

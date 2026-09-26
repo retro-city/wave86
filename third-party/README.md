@@ -7,13 +7,14 @@ and SHA-256 are in `SOURCES.txt`, kept by `tools/thirdparty.py`; the
 terms each piece comes under are in `THIRD-PARTY.md` at the top of the
 repository.
 
-    picomem/    the PicoMEM card's DOS tools (PMINIT, PMDFS, PMMOUSE, PMEMM,
-                PM2000, PMTEST, their readme.txt) from the D6 release package,
-                and the NE2000 packet driver from the card's repository
+    picomem/    PM_D6_CONFIG.zip, the PicoMEM D6 release package, whole (the
+                card's DOS tools in PICOMEM/, example CONFIG.SYS and
+                AUTOEXEC.BAT, a DOSDRV/ folder of drivers and setup programs);
+                drivers/, the card repository's drivers folder, whole (the
+                tools, the Gravis UltraSound zip, SBCD/, TEST/)
     mtcp/       Michael Brutman's mTCP client programs, the zip as released
     netdrive/   his mTCP NetDrive server, every platform in one zip
     cdmke/      CDMKE.SYS, the Panasonic/MKE CD-ROM driver (the PicoGUS copy)
-    ultrasnd/   the Gravis UltraSound software (the PicoMEM repository's zip)
     dosutils/   FreeDOS 1.3 packages: EDIT, MEM, MORE, XCOPY, DELTREE, ATTRIB,
                 FIND, TREE, LABEL
     4dos/       4DOS 8.00, the official package
@@ -21,7 +22,8 @@ repository.
     slowdown/   SLOWDOWN 3.10, the COM and its DOC, from the FreeDOS package
 
 The Makefile unpacks what a target needs into `build/` on first use
-(`build/mtcp`, `build/4dos`...), so a `make clean` costs no download.
+(`build/mtcp`, `build/4dos`, `build/picomem` = the D6 package's PICOMEM
+folder plus `drivers/NE2000.COM`...), so a `make clean` costs no download.
 
 Refreshing from upstream: `make update-third-party`, or one piece at a
 time (`make update-mtcp`, `update-netdrive`, `update-picomem`,
@@ -38,7 +40,9 @@ package is a release matched to the card's firmware, while
 `update-picomem` takes the repository's `drivers/` folder, which can be
 ahead of it (its PMINIT was Rev 1.0.2 when the D6 package's was 1.0.1);
 a newer release package is put in `picomem/` by hand and recorded with
-`tools/thirdparty.py add`.
+`tools/thirdparty.py add`. What is kept here is every file the
+upstream folders hold; the terms of each are listed in `THIRD-PARTY.md`
+as they stand, for review.
 
 `make check-third-party` (CI runs it) says whether every recorded file is
 there and unchanged, and names any file here that is not recorded.

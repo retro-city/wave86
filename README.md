@@ -132,13 +132,13 @@ prompt goes away.
 
 The pieces are in the repository, under `third-party/` (its README
 says what is where; `THIRD-PARTY.md` whose it is), because retro
-download sites come and go: the card's tools from the PicoMEM D6
-release package plus the NE2000 packet driver from the card's
-repository (`PICOMEM_DIR=` uses a folder of your own), mTCP's client
-zip (`MTCP_TOOLS=` for your own), CDMKE.SYS, the PicoGUS project's copy
-(`CDMKE_DIR=` empty leaves it out, and the CONFIG.SYS line becomes a
-comment), the Gravis UltraSound software, the `ultrasnd.zip` the PicoMEM
-wiki points at (`GUS_DIR=` empty leaves it out, then C:\ULTRASND is
+download sites come and go: the PicoMEM D6 release package and the
+card repository's `drivers/` folder, whole (C:\PICOMEM is the package's
+PICOMEM folder plus the packet driver; `PICOMEM_DIR=` uses a folder of
+your own), mTCP's client zip (`MTCP_TOOLS=` for your own), CDMKE.SYS,
+the PicoGUS project's copy (`CDMKE_DIR=` empty leaves it out, and the
+CONFIG.SYS line becomes a comment), the Gravis UltraSound software, the
+`ultrasnd.zip` in that `drivers/` folder (`GUS_DIR=` empty leaves it out, then C:\ULTRASND is
 empty and the GUS lines stay off; `GUS_DIR=` also takes an unzipped copy
 of your own), the FreeDOS utilities as the 1.3 packages from ibiblio
 (`DOS_PKGS=` is the list, `DOS_DIR=` a folder of your own, `DOS_DIR=`
@@ -296,10 +296,8 @@ jump, so anything from 32768 KB up fails it - 31 MB works, 36 does not;
 eXoDOS runs it with `memsize=16`. `SLOWDOWN` is Bret Johnson's (freeware,
 the COM and its DOC together, unmodified, in `third-party/slowdown` from
 the FreeDOS package; `make update-slowdown` refreshes them, `make dist`
-on your own machine and `U` carry them to the DOS machine, and the
-release zips go without them, since the author asks to be asked before
-SLOWDOWN travels as a companion to another program). Its eras are its
-own model of a 486's speed, not a
+and `U` carry them to the DOS machine; its terms are in its DOC and in
+THIRD-PARTY.md). Its eras are its own model of a 486's speed, not a
 measurement of yours: `slow_486=` and friends in the global section
 replace what an era means when the presets feel wrong, `slowcache=0`
 keeps it off the CPU cache (MS-DOS 6.22's HIMEM/EMM386 crash when
