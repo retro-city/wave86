@@ -431,7 +431,7 @@ or with `WAVE86 /launch DOOM`. The details pane shows the mode, and
 ## Music
 
 The `.IMF`, `.WLF`, `.MOD` and `.MID` files in `MUSIC\` next to the EXE
-are the playlist, in name order, 64 at most. `F4` (or `musicstyle=` in
+are the playlist, in name order, 64 at most. `F4` (or `musicformat=` in
 the INI: `all`, `midi`, `mod`, `adlib`) keeps it to one kind; its box
 shows how many tracks of each kind this machine can play.
 
@@ -987,7 +987,7 @@ than flashing past.
 With `netmusic=1` it plays the soundtrack too: the launcher's music
 engine (`src/music.c`), built again in large model and linked into
 WAVEGET, reading the same `MUSIC\` folder, with `adlib=`, `mpu=`,
-`mpuport=` and `musicstyle=` honoured as in the launcher. `M`, `+`, `-`,
+`mpuport=` and `musicformat=` honoured as in the launcher. `M`, `+`, `-`,
 `<` and `>` do what they do in the launcher. Only the FM and MIDI
 tracks play: `cfg_modrate` is nailed to 0 in WAVEGET, which keeps the MOD
 mixer and its DMA away from the packet driver, so the cost is a handful

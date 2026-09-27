@@ -112,8 +112,8 @@ static int __far critFail(unsigned deverr, unsigned, unsigned __far *) {
  *   cfg_music 1 means start playing at once (netmusic=0 in the INI, read
  *   below, turns the whole thing off);
  *   cfg_adlib and cfg_mpu -1 mean detect, cfg_mpuport 0 BLASTER's P or
- *   330, cfg_musicstyle 0 every kind (the INI's adlib=, mpu=, mpuport=
- *   and musicstyle= override them).
+ *   330, cfg_musicformat 0 every kind (the INI's adlib=, mpu=, mpuport=
+ *   and musicformat= override them).
  * mus_init() registers mus_shutdown with atexit, so every exit path here
  * unhooks the timer, silences the OPL and sends every sounding MIDI note
  * its Note Off.
@@ -125,8 +125,8 @@ extern "C" {
   int cfg_modrate = 0;
   int cfg_mpu = -1;
   unsigned cfg_mpuport = 0;
-  extern int cfg_musicstyle;        /* music.c's: 0 all */
-  int mus_style_parse(const char *s);
+  extern int cfg_musicformat;        /* music.c's: 0 all */
+  int mus_format_parse(const char *s);
   void mus_init(void);
   void mus_poll(void);
   void mus_toggle(void);
@@ -617,7 +617,7 @@ static void uiProgress(const char *file, unsigned long done, unsigned long total
 
 /* MUSIC\ sits next to WAVEGET.EXE; netmusic=0 in WAVE86.INI says no,
    netcrc=0 turns the checksums off, and adlib=, mpu=, mpuport= and
-   musicstyle= are honoured the way the launcher honours them */
+   musicformat= are honoured the way the launcher honours them */
 /* a word from an INI line: up to a space, a tab or a ; comment */
 static void iniWord(char *dst, unsigned n, const char *s) {
   unsigned i = 0;
@@ -659,7 +659,7 @@ static void loadSettings(const char *exePath) {
       else if (strnicmp(buf, "adlib=", 6) == 0) cfg_adlib = atoi(buf + 6);
       else if (strnicmp(buf, "mpu=", 4) == 0) cfg_mpu = atoi(buf + 4);
       else if (strnicmp(buf, "mpuport=", 8) == 0) cfg_mpuport = (unsigned)strtoul(buf + 8, NULL, 16);
-      else if (strnicmp(buf, "musicstyle=", 11) == 0) cfg_musicstyle = mus_style_parse(buf + 11);
+      else if (strnicmp(buf, "musicformat=", 12) == 0) cfg_musicformat = mus_format_parse(buf + 12);
     }
     fclose(f);
   }

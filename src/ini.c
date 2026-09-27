@@ -149,8 +149,8 @@ void ini_load(const char *fname)
                 cfg_adlib = atoi(trim(s + 6));
             } else if (strnicmp(s, "music=", 6) == 0) {
                 cfg_music = atoi(trim(s + 6)) ? 1 : 0;
-            } else if (strnicmp(s, "musicstyle=", 11) == 0) {
-                cfg_musicstyle = mus_style_parse(trim(s + 11));
+            } else if (strnicmp(s, "musicformat=", 12) == 0) {
+                cfg_musicformat = mus_format_parse(trim(s + 12));
             } else if (strnicmp(s, "mpu=", 4) == 0) {
                 cfg_mpu = atoi(trim(s + 4));
             } else if (strnicmp(s, "mpuport=", 8) == 0) {

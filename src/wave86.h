@@ -111,7 +111,7 @@ extern char mus_track[9];       /* current track base name */
 extern int cfg_modrate;         /* ini modrate=: -1 auto, 0 off, Hz */
 extern int cfg_adlib;           /* ini adlib=: -1 auto, 0 off, 1 force */
 extern int cfg_music;           /* ini music=: 1 = autoplay at startup */
-extern int cfg_musicstyle;      /* ini musicstyle=: 0 all, 1 midi, 2 mod, 3 adlib (F4) */
+extern int cfg_musicformat;      /* ini musicformat=: 0 all, 1 midi, 2 mod, 3 adlib (F4) */
 extern int cfg_mpu;             /* ini mpu=: -1 auto, 0 off, 1 force */
 extern unsigned cfg_mpuport;    /* ini mpuport=: hex port, 0 = BLASTER's P or 330 */
 extern int cfg_netcd;           /* ini netcd=: 1 = NET CD instead of LOCAL CD */
@@ -197,10 +197,10 @@ void mus_toggle(void);
 void mus_volume(int delta);
 int mus_vu(void);               /* live level, 0..10 bar cells */
 void mus_skip(int dir);         /* +1 next / -1 previous track */
-int mus_style_count(int style); /* tracks a musicstyle would play here, -1 no card */
-const char *mus_style_name(int style);  /* "all", "midi", "mod", "adlib" */
-int mus_style_parse(const char *s);     /* the other way; anything else is all */
-void mus_set_style(int style);  /* F4: the playlist again, for that style */
+int mus_format_count(int format); /* tracks a musicformat would play here, -1 no card */
+const char *mus_format_name(int format);  /* "all", "midi", "mod", "adlib" */
+int mus_format_parse(const char *s);     /* the other way; anything else is all */
+void mus_set_format(int format);  /* F4: the playlist again, for that format */
 
 /* --- midi.c: MIDI files on an MPU-401 --- */
 extern int mpu_present;

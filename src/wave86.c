@@ -1068,7 +1068,7 @@ static unsigned menu_pick(int net, int cur)
         unsigned c = items[i].code;
         int d = 0;
         if (c == K_MUSIC || c == '+' || c == '-' || c == '<' || c == '>') d = nomusic;
-        else if (c == K_F4) d = !mus_present;      /* a style can bring tracks back */
+        else if (c == K_F4) d = !mus_present;      /* a format can bring tracks back */
         else if (net) {
             if (c == 'q') d = !net_qcount;
             else if (c == 'p') d = !net_count || !net_get(cur)->netplay;
@@ -1932,9 +1932,9 @@ static void music_key(void)
         return;
     }
     if (!mus_ntracks) {
-        if (cfg_musicstyle)
+        if (cfg_musicformat)
             sprintf(msg, "NO %s TRACKS TO PLAY HERE. F4 CHOOSES ANOTHER FORMAT.",
-                    cfg_musicstyle == 1 ? "MIDI" : cfg_musicstyle == 2 ? "MOD" : "ADLIB");
+                    cfg_musicformat == 1 ? "MIDI" : cfg_musicformat == 2 ? "MOD" : "ADLIB");
         else
             sprintf(msg, "NO TRACKS IN %s%sMUSIC", home_dir,
                     home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
@@ -1948,40 +1948,40 @@ static void music_key(void)
 /*
  * F4: which tracks in MUSIC\ play - all of them, or one kind - in a box
  * like the menu's, each with how many there are for this machine's cards.
- * The choice goes into WAVE86.INI as musicstyle=. Returns what the status
+ * The choice goes into WAVE86.INI as musicformat=. Returns what the status
  * line should say, or NULL.
  */
-static char __far style_lbl[4][32];
-static MenuItem __far style_items[4];
+static char __far format_lbl[4][32];
+static MenuItem __far format_items[4];
 
-static const char *music_style(void)
+static const char *music_format(void)
 {
     static const char *const what[4] = { "ALL", "MIDI (MPU-401)", "MOD (BLASTER)", "ADLIB (FM)" };
     static const char __far *const keys[4] = { "1", "2", "3", "4" };
     static char msg[64];
     unsigned char dim[4];
     char title[32], buf[40];
-    int i, sel = cfg_musicstyle, count[4];
+    int i, sel = cfg_musicformat, count[4];
 
     if (!mus_present)
         return "NO ADLIB, SOUND BLASTER OR MPU-401 FOUND (SEE WAVE86 /DIAG).";
     for (i = 0; i < 4; i++) {
-        count[i] = mus_style_count(i);
+        count[i] = mus_format_count(i);
         if (count[i] < 0)
             sprintf(buf, "%-15sNO CARD", what[i]);
         else
             sprintf(buf, "%-15s%2d TRACK%s", what[i], count[i], count[i] == 1 ? "" : "S");
-        _fstrcpy(style_lbl[i], buf);
-        style_items[i].key = keys[i];
-        style_items[i].label = style_lbl[i];
-        style_items[i].code = '1' + i;
+        _fstrcpy(format_lbl[i], buf);
+        format_items[i].key = keys[i];
+        format_items[i].label = format_lbl[i];
+        format_items[i].code = '1' + i;
         dim[i] = (unsigned char)(count[i] <= 0);
     }
     sprintf(title, " MUSIC FORMAT: %s ", what[sel]);
     for (;;) {
         unsigned k;
         int pick = -1;
-        ui_menu(title, style_items, 4, sel, dim);
+        ui_menu(title, format_items, 4, sel, dim);
         k = getkey();
         if (k == 0x1B || k == K_F4)
             return NULL;
@@ -1990,8 +1990,8 @@ static const char *music_style(void)
         else if (k == K_UP) sel = (sel + 3) % 4;
         else if (k == K_DOWN) sel = (sel + 1) % 4;
         if (pick >= 0 && !dim[pick]) {
-            mus_set_style(pick);
-            ini_write_global("musicstyle", mus_style_name(pick));
+            mus_set_format(pick);
+            ini_write_global("musicformat", mus_format_name(pick));
             sprintf(msg, "MUSIC FORMAT %s: %d TRACK%s.", what[pick], mus_ntracks,
                     mus_ntracks == 1 ? "" : "S");
             return msg;
@@ -2326,7 +2326,7 @@ int main(int argc, char **argv)
             switch (k) {
             case K_MUSIC: music_key(); continue;
             case K_F4: {
-                const char *m = music_style();
+                const char *m = music_format();
                 net_redraw(nsel, ntop);
                 if (m) ui_status(m);
                 continue;
@@ -2451,7 +2451,7 @@ int main(int argc, char **argv)
             music_key();
             break;
         case K_F4: {
-            const char *m = music_style();
+            const char *m = music_format();
             redraw(sel, top);
             if (m) ui_status(m);
             continue;

@@ -12,7 +12,7 @@
  * level can be re-applied when the user changes it.
  *
  * The same timer plays MIDI files on an MPU-401 (midi.c), and the
- * playlist hands MODs to the Sound Blaster mixer (mod.c). musicstyle=
+ * playlist hands MODs to the Sound Blaster mixer (mod.c). musicformat=
  * in the INI, or F4 in the launcher, keeps it to one kind.
  */
 #include <dos.h>
@@ -37,7 +37,7 @@ int mus_on = 0;
 int mus_vol = 8;                /* 0..10 */
 int mus_ntracks = 0;
 int mus_kind = 0;               /* 0 = IMF on AdLib, 1 = MOD on Sound Blaster, 2 = MIDI on MPU-401 */
-int cfg_musicstyle = 0;         /* musicstyle=: 0 all, 1 midi, 2 mod, 3 adlib */
+int cfg_musicformat = 0;         /* musicformat=: 0 all, 1 midi, 2 mod, 3 adlib */
 char mus_track[9] = "";
 
 static int opl_present = 0;
@@ -480,24 +480,24 @@ static int scan_kind(int kind, int store)
     }
 }
 
-/* musicstyle: 0 all, 1 MIDI, 2 MOD, 3 AdLib; the kind each one plays */
-static const signed char style_kind[4] = { -1, 2, 1, 0 };
+/* musicformat: 0 all, 1 MIDI, 2 MOD, 3 AdLib; the kind each one plays */
+static const signed char format_kind[4] = { -1, 2, 1, 0 };
 
 static void scan_tracks(void)
 {
-    int kind, only = cfg_musicstyle > 0 && cfg_musicstyle < 4 ? style_kind[cfg_musicstyle] : -1;
+    int kind, only = cfg_musicformat > 0 && cfg_musicformat < 4 ? format_kind[cfg_musicformat] : -1;
     mus_ntracks = 0;
     for (kind = 0; kind < 3; kind++)
         if (only < 0 || only == kind)
             scan_kind(kind, 1);
 }
 
-/* F4's box: the tracks a style would play here, -1 for no card */
-int mus_style_count(int style)
+/* F4's box: the tracks a format would play here, -1 for no card */
+int mus_format_count(int format)
 {
     int kind, n = 0, any = 0;
-    if (style > 0 && style < 4)
-        return scan_kind(style_kind[style], 0);
+    if (format > 0 && format < 4)
+        return scan_kind(format_kind[format], 0);
     for (kind = 0; kind < 3; kind++) {
         int c = scan_kind(kind, 0);
         if (c >= 0) { n += c; any = 1; }
@@ -505,21 +505,21 @@ int mus_style_count(int style)
     return any ? n : -1;
 }
 
-static const char *const style_names[4] = { "all", "midi", "mod", "adlib" };
+static const char *const format_names[4] = { "all", "midi", "mod", "adlib" };
 
-const char *mus_style_name(int style)
+const char *mus_format_name(int format)
 {
-    return style_names[style > 0 && style < 4 ? style : 0];
+    return format_names[format > 0 && format < 4 ? format : 0];
 }
 
-/* musicstyle= as written: all, midi, mod or adlib; anything else is all */
-int mus_style_parse(const char *s)
+/* musicformat= as written: all, midi, mod or adlib; anything else is all */
+int mus_format_parse(const char *s)
 {
     int i;
     while (*s == ' ' || *s == '\t') s++;
     for (i = 1; i < 4; i++) {
-        size_t n = strlen(style_names[i]);
-        if (strnicmp(s, style_names[i], n) == 0 &&
+        size_t n = strlen(format_names[i]);
+        if (strnicmp(s, format_names[i], n) == 0 &&
             (s[n] == 0 || s[n] == ' ' || s[n] == '\t' || s[n] == ';' || s[n] == '\r' || s[n] == '\n'))
             return i;
     }
@@ -527,16 +527,16 @@ int mus_style_parse(const char *s)
 }
 
 /*
- * F4 chose a style: the playlist again. The track playing carries on
- * when the style has it; otherwise the first of the new list starts (if
+ * F4 chose a format: the playlist again. The track playing carries on
+ * when the format has it; otherwise the first of the new list starts (if
  * the music is on), or starts at the next M.
  */
-void mus_set_style(int style)
+void mus_set_format(int format)
 {
     char cur[FN_LEN];
     int i;
 
-    cfg_musicstyle = style;
+    cfg_musicformat = format;
     if (!mus_present)
         return;
     cur[0] = 0;
@@ -657,8 +657,8 @@ void mus_diag(void)
                us, opl_read_ns / 10, opl_read_ns % 10, opl_d1, opl_d2);
         printf("         so the player costs about %lu%% of the CPU\n", us * 560 * 3 / 10000);
     }
-    printf("Tracks : %d in MUSIC\\ for musicstyle=%s (IMF/WLF need FM, MOD a DSP,\n"
-           "         MID an MPU-401)\n", mus_ntracks, mus_style_name(cfg_musicstyle));
+    printf("Tracks : %d in MUSIC\\ for musicformat=%s (IMF/WLF need FM, MOD a DSP,\n"
+           "         MID an MPU-401)\n", mus_ntracks, mus_format_name(cfg_musicformat));
 }
 
 /* everything off and every far buffer returned, for running a game
