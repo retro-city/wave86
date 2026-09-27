@@ -191,8 +191,8 @@ dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 	sed 's/$$/\r/' LICENSE > dist/wave86/LICENSE.TXT
 	sed 's/$$/\r/' THIRD-PARTY.md > dist/wave86/THIRDPTY.TXT
 	sed 's/$$/\r/' cdrom/LICENSE.txt > dist/wave86/SHSUCD.TXT
-	cd dist && rm -f wave86-$(VERSION)-dos.zip && zip -q -r wave86-$(VERSION)-dos.zip wave86
-	@ls -la dist/wave86-$(VERSION)-dos.zip
+	cd dist && rm -f wave86-$(RELEASE_VER)-dos.zip && zip -q -r wave86-$(RELEASE_VER)-dos.zip wave86
+	@ls -la dist/wave86-$(RELEASE_VER)-dos.zip
 
 # The release packages beside the DOS zip, named after RELEASE_VER (the
 # tag without its v in CI; the launcher's own version otherwise):

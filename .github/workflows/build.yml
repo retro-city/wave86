@@ -45,6 +45,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
+          prerelease: ${{ contains(github.ref_name, '-') }}     # v0.5-pre1 and the like
 
   picomem:
     # The EDR-DOS disk for a PicoMEM 2, built and boot-tested in dosbox-x:
@@ -82,3 +83,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*-picomem-hdd.zip
+          prerelease: ${{ contains(github.ref_name, '-') }}

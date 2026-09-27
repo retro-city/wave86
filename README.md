@@ -452,8 +452,9 @@ carries three:
     wave86-0.6-picomem-hdd.zip   the EDR-DOS disk for a PicoMEM 2 and its
                                  README (make picomem-release)
 
-The version in the last two is the tag's (`RELEASE_VER=`; the launcher's
-own version when built by hand). The image is built on a macOS runner
+The version in the names is the tag's (`RELEASE_VER=`; the launcher's
+own version when built by hand), and a tag with a hyphen in it, like
+`v0.5-pre1`, is published as a pre-release. The image is built on a macOS runner
 with Homebrew's dosbox-x and mtools, boot tests and all, after the Linux
 job has made the release; the Actions tab can also build it by hand
 (Run workflow), as an artifact.
