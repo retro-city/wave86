@@ -51,7 +51,7 @@ AUTOEXEC.
   a small batch file and quits, and `WAVE.BAT` brings the menu back when
   the game ends.
 - Plays music while you choose: AdLib tunes, and ProTracker MODs through
-  a Sound Blaster, turned on from the menu (`M`, then `M`).
+  a Sound Blaster. `M` turns it on and off.
 - Shows a picture of each game, made from the collection's artwork.
 - Installs games from the server, a whole queue at a time, and carries a
   stopped download on from where it stopped. A game is in the list from
@@ -79,7 +79,8 @@ In the games list:
 | A | the PicoMEM's sound card: Sound Blaster or Gravis UltraSound |
 | R | rescan the games folder |
 | N | the games on the server |
-| M or ? | a menu of everything, each with its key |
+| F1 or ? | a menu of everything, each with its key |
+| M | music on or off |
 | + / -, < / > | volume, previous / next track |
 | Esc | back to DOS |
 
@@ -93,7 +94,8 @@ In the server's games (N):
 | P | play it off the server |
 | Q | the queue; Del takes one out, Enter fetches them |
 | / or S | search; F3 searches on |
-| M | the menu: L fetches the list again, C switches between the disc with the game and the disc on the server, U updates WAVE86 itself |
+| F1 or ? | the menu: L fetches the list again, C switches between the disc with the game and the disc on the server, U updates WAVE86 itself |
+| M | music on or off |
 | Esc | back to the games |
 
 With no `server=` in the INI, N asks for the address first, adds port
@@ -957,7 +959,7 @@ than flashing past.
 With `netmusic=1` it plays the soundtrack too: the launcher's music
 engine (`src/music.c`), built again in large model and linked into
 WAVEGET, reading the same `MUSIC\` folder, with `adlib=` honoured as in
-the launcher. `M`, `+`, `-`, `<` and `>` do what they do in the menu.
+the launcher. `M`, `+`, `-`, `<` and `>` do what they do in the launcher.
 Only the FM tracks play: `cfg_modrate` is nailed to 0 in WAVEGET, which
 keeps the MOD mixer and its DMA away from the packet driver, so the cost
 is a handful of OPL register writes on each timer tick - still a few

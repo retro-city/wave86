@@ -46,6 +46,7 @@ void ui_game_edit(const char *title, const char *const *labels, const char *cons
 #define K_END   0x4F00
 #define K_LEFT  0x4B00
 #define K_RIGHT 0x4D00
+#define K_F1    0x3B00
 #define K_F3    0x3D00
 #define K_DEL   0x5300
 #define PAGE    14              /* rows in a list */
@@ -101,6 +102,7 @@ static unsigned getkey(void)
             case '{': return K_LEFT;
             case '}': return K_RIGHT;
             case '!': return K_F3;
+            case '^': return K_F1;
             case '#': return K_DEL;
             case '[': return K_UP;
             case ']': return K_DOWN;
@@ -908,12 +910,12 @@ static int find_title(int net, int from, int again)
 }
 
 /*
- * M or ?: the menu. Everything the view does, with its key, over the
+ * F1 or ?: the menu. Everything the view does, with its key, over the
  * bottom of the screen; the arrows and Enter pick one, or the key itself
  * does. What comes back is the key the main loop would have got - so a
  * choice is handled exactly as the key is - or 0 for nothing (Esc, or an
- * item that does nothing just now). The one key that cannot come back
- * as itself is M, which opens the menu: music is K_MUSIC.
+ * item that does nothing just now). M, the music, comes back as K_MUSIC,
+ * which the views also turn M into.
  */
 #define GAMES_MENU(X) \
     X(g01, "ENTER", "RUN GAME",                0x0D) \
@@ -1025,7 +1027,7 @@ static unsigned menu_pick(int net, int cur)
         unsigned k;
         ui_menu(" MENU ", items, n, sel, dim);
         k = getkey();
-        if (k == 0x1B || k == '?') return 0;
+        if (k == 0x1B || k == '?' || k == K_F1) return 0;
         if (k == 'm' || k == 'M') k = K_MUSIC;
         if (k == 0x0D) { menu_sel[net] = sel; return dim[sel] ? 0 : items[sel].code; }
         if (k >= 'a' && k <= 'z') k -= 32;
@@ -2183,11 +2185,12 @@ int main(int argc, char **argv)
         if (view == 1) {                /* ---- the eXoDOS list ---- */
             static int nsel = 0, ntop = 0;
             int nold = nsel;
-            if (k == '?' || k == 'm' || k == 'M') {
+            if (k == '?' || k == K_F1) {
                 k = menu_pick(1, nsel);
                 net_redraw(nsel, ntop);
                 if (!k) continue;
             }
+            if (k == 'm' || k == 'M') k = K_MUSIC;
             switch (k) {
             case K_MUSIC: music_key(); continue;
             case K_UP:   nsel--; break;
@@ -2299,11 +2302,12 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (k == '?' || k == 'm' || k == 'M') {
+        if (k == '?' || k == K_F1) {
             k = menu_pick(0, sel);
             redraw(sel, top);
             if (!k) continue;
         }
+        if (k == 'm' || k == 'M') k = K_MUSIC;
         switch (k) {
         case K_MUSIC:
             music_key();

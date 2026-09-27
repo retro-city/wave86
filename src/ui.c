@@ -137,7 +137,7 @@ void ui_keybar(const Game *sel)
     keychip(&x, "F2", "NAME", game_count == 0);
     keychip(&x, "/", "SEARCH", game_count == 0);
     keychip(&x, "DEL", "REMOVE", game_count == 0);
-    keychip(&x, "M", "MENU", 0);        /* everything, with its key */
+    keychip(&x, "F1", "MENU", 0);       /* everything, with its key */
     keychip(&x, "ESC", "QUIT", 0);
 }
 
@@ -781,6 +781,6 @@ void ui_net_keybar(int cur)
         keychip(&x, "P", "PLAY", net_count == 0 || !net_get(cur)->netplay);
     keychip(&x, "Q", "VIEW QUEUE", net_qcount == 0);
     keychip(&x, "/", "SEARCH", net_count == 0);
-    keychip(&x, "M", "MENU", 0);        /* the rest is in there: C, I, L, U ... */
+    keychip(&x, "F1", "MENU", 0);       /* the rest is in there: C, I, L, U ... */
     keychip(&x, "ESC", "BACK", 0);
 }

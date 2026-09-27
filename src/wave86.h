@@ -144,8 +144,8 @@ void net_free(void);
 void net_mark_pending(const NetGame *g);
 void net_mark_pending_raw(const char *dir, const char *title, const char *exe, const char *src, unsigned long kb);    /* appends to NETGAME.TXT */
 void net_pending_reset(void);   /* forget what was on its way in */
-/* the menu (M or ?): a key chooser. code is what pressing the item's key
-   would send the main loop, K_MUSIC for the one whose key opens the menu */
+/* the menu (F1 or ?): a key chooser. code is what pressing the item's key
+   would send the main loop; M, the music, is K_MUSIC */
 typedef struct { const char __far *key; const char __far *label; unsigned code; } MenuItem;
 #define K_MUSIC 0x1000
 

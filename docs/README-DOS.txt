@@ -51,8 +51,9 @@ bar when nothing is queued; Q shows the queue (Del takes one out); P
 plays a game straight off the server. / (or S) searches for a title:
 type a few letters of it, Enter; F3 searches on. Left and right turn
 the page. In the games list / and F3 search, left and right page, the
-same way, and Del removes a game from the disk after a yes. M (or ?) in
-either list opens a menu of everything it does, each with its key. A in
+same way, and Del removes a game from the disk after a yes. F1 (or ?)
+in either list opens a menu of everything it does, each with its key;
+M turns the music on and off. A in
 the games list switches the PicoMEM's sound card: 1 runs PMINIT /SB 1
 (Sound Blaster), 2 runs PMINIT /GUS 1 (Gravis UltraSound), through the
 batch loop like a game; the image's AUTOEXEC.BAT already runs the
