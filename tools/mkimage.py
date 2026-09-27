@@ -188,6 +188,14 @@ FOURDOS_INI = "\r\n".join([
     "",
 ]) + "\r\n"
 # the same for the boot menu's item 4: nothing in upper memory either
+# SWAP.INI: 4DOS as the shell an eXoDOS batch runs in under FreeCOM (the
+# boot menu's item 3): swapping to XMS, so the game gets the memory. As
+# the shell of the whole session, swapping crashed on the card when it
+# came back over a TSR loaded meanwhile; a child that loads after every
+# TSR and ends with the batch has none of that to come back over.
+FOURDOS_SWAP_INI = FOURDOS_INI.replace("Swapping=None", "Swapping=XMS").replace(
+    "; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
+    "; SWAP.INI - 4DOS while an eXoDOS batch runs (the boot menu's item 3): swapping to XMS.")
 FOURDOS_NOSWAP_INI = FOURDOS_INI.replace("UMBLoad=Yes", "UMBLoad=No").replace("UMBEnvironment=Yes", "UMBEnvironment=No") \
     .replace("UMBAlias=Yes", "UMBAlias=No").replace("UMBHistory=Yes", "UMBHistory=No") \
     .replace("; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
@@ -223,19 +231,25 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
               "; pair Phil's Computer Lab's FreeDOS boots with, HIMEMX for XMS and",
               "; JEMM386 RAM for EMS and upper memory, the card's own range kept out,",
               "; and 4DOS as the shell, staying in memory (swapping itself out crashed",
-              "; on the card, to XMS, EMS and disk alike). 2 adds LBACACHE, a disk",
-              "; cache (AUTOEXEC loads it when CONFIG says 2). 3 has FreeCOM instead",
-              "; of 4DOS: more conventional memory for a game, but the eXoDOS start",
-              "; batches' menus want 4DOS. 4 and 5 are the two other setups that ran on",
-              "; the card while the fault was hunted: JEMMEX with no EMS and nothing in",
-              "; upper memory, and no memory manager at all. The lines that start with",
-              "; digits belong to those choices; F8 still steps.",
+              "; on the card, to XMS, EMS and disk alike - and, resident, it holds",
+              "; some 290 KB of the 640). 2 adds LBACACHE, a disk cache (AUTOEXEC",
+              "; loads it when CONFIG says 2). 3 has FreeCOM as the shell, and an",
+              "; eXoDOS start batch (its menus want 4DOS) runs in a 4DOS of its own,",
+              "; swapping to XMS, that ends with the batch (AUTOEXEC sets WAVESHELL",
+              "; when CONFIG says 3, and the launcher's batch uses it): the game gets",
+              "; the memory. 4 and 5 are the two other setups that ran on the card",
+              "; while the fault was hunted: JEMMEX with no EMS and nothing in upper",
+              "; memory, and no memory manager at all. 6 is 1 with I=B000-B7FF: the",
+              "; mono text area, unused with a VGA in colour, as 32 KB more of upper",
+              "; memory on a board whose ROMs leave JEMM386 one block. The lines",
+              "; that start with digits belong to those choices; F8 still steps.",
               "MENU",
               "MENU  1 - HIMEMX + JEMM386 RAM X=D000-D7FF; 4DOS, not swapping",
               "MENU  2 - as 1, with LBACACHE, an 8 MB disk cache",
-              "MENU  3 - as 1, FreeCOM as the shell",
+              "MENU  3 - as 1, FreeCOM as the shell; 4DOS, swapping, only while a batch runs",
               "MENU  4 - JEMMEX X=A000-FFFF NOEMS NOHI NOINVLPG; 4DOS not swapping, low",
               "MENU  5 - no memory manager; FreeCOM as the shell",
+              "MENU  6 - as 1, with I=B000-B7FF: 32 KB more upper memory",
               "MENU",
               "MENUDEFAULT=1,5"]
     c += ["; HIMEMX for extended memory, JEMM386 RAM for EMS and upper memory, so",
@@ -247,17 +261,18 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
           "; config.txt. (The PicoMem wiki warns that EMM386 breaks the Sound Blaster",
           "; of a PicoMem 1, whose DMA was done in software; the 2 has real DMA. If",
           "; sound fails here, try NOEMS after X=, then HIMEMX alone.)",
-          P(1, 2, 3) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
-          P(1, 2, 3) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF"]
+          P(1, 2, 3, 6) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
+          P(1, 2, 3) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF",
+          P(6) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF I=B000-B7FF"]
     if menu:
         c.append(P(4) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF NOEMS NOHI NOINVLPG")
-    c += [P(1, 2, 3, 4) + "DOS=HIGH,UMB",
+    c += [P(1, 2, 3, 4, 6) + "DOS=HIGH,UMB",
           "FILES=30",
           "BUFFERS=20",
           "LASTDRIVE=Z",
           "; mTCP NetDrive reserves D: and E:; AUTOEXEC.BAT frees D: for the disc",
           "; (DRVOFF D:), so discs kept on the server come in on E:",
-          P(1, 2, 3) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
+          P(1, 2, 3, 6) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
     if menu:
         c.append(P(4, 5) + "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")
     c += ["; the PicoMem 2's emulated CD-ROM drive: a Panasonic/MKE interface on",
@@ -279,7 +294,7 @@ def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
               "; its environment and history high); /P runs C:\\AUTOEXEC.BAT. COMMAND.COM",
               "; stays in the root as a fallback:",
               "; SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P" + (r"=C:\AUTOEXEC.BAT" if menu else ""),
-              P(1, 2) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
+              P(1, 2, 6) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
         if menu:
             c += [P(4) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\NOSWAP.INI /E:2048 /P",
                   P(3, 5) + "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT"]
@@ -473,6 +488,11 @@ def autoexec_bat():
         "REM FreeDOS when the boot menu's item 2 was chosen (the kernel sets CONFIG).",
         "IF EXIST C:\\DOS\\SMARTDRV.EXE LH C:\\DOS\\SMARTDRV.EXE /X 8192",
         "IF \"%CONFIG%\"==\"2\" LH C:\\DOS\\LBACACHE.COM 8192",
+        "REM Boot menu item 3: FreeCOM is the shell, and an eXoDOS start batch runs",
+        "REM in a 4DOS of its own that swaps to XMS and ends with the batch (the",
+        "REM launcher's batch runs %WAVESHELL% call RUN.BAT): the game gets the",
+        "REM memory 4DOS would hold. Set it by hand under any item to try it.",
+        "IF \"%CONFIG%\"==\"3\" SET WAVESHELL=C:\\4DOS\\4DOS.COM @C:\\4DOS\\SWAP.INI /C",
         "PROMPT $P$G",
         "SET TEMP=C:\\TEMP",
         "SET TMP=C:\\TEMP",
@@ -634,6 +654,7 @@ def stage_tree(work, a):
         else:
             open(os.path.join(d, "4DOS.INI"), "w", newline="").write(FOURDOS_INI)
             open(os.path.join(d, "NOSWAP.INI"), "w", newline="").write(FOURDOS_NOSWAP_INI)
+            open(os.path.join(d, "SWAP.INI"), "w", newline="").write(FOURDOS_SWAP_INI)
     open(os.path.join(stage, "CONFIG.SYS"), "w", newline="").write(config_sys(have_cdmke, fourdos, a.flavour))
     open(os.path.join(stage, "AUTOEXEC.BAT"), "w", newline="").write(autoexec_bat())
     return stage, notes

@@ -108,7 +108,19 @@ on the card, 4DOS swapping itself out while a program runs crashed as
 it came back, to XMS, EMS and disk alike, so its 4DOS.INI says
 `Swapping=None`. 2 adds LBACACHE, an 8 MB disk cache - for C:, the image the card serves
 through its BIOS; W:, the SD card through PMDFS, is a network-redirector
-drive that DOS hands straight to the card, and no disk cache touches it. 3 has FreeCOM
+drive that DOS hands straight to the card, and no disk cache touches it.
+3 has FreeCOM as the shell, and an eXoDOS start batch (its menus want
+4DOS) runs in a 4DOS of its own that swaps to XMS and ends with the
+batch: AUTOEXEC sets `WAVESHELL` when CONFIG says 3, and the launcher's
+batch runs `%WAVESHELL% call RUN.BAT`. That is the item for memory:
+4DOS.COM is 305 KB and, resident and not swapping as in 1, it holds
+some 290 KB of the 640 whatever loads high. 6 is 1 with `I=B000-B7FF`,
+the mono text area (unused with a VGA in colour) as 32 KB more upper
+memory, for a board whose ROMs leave JEMM386 a single 32 KB block - too
+little for the drivers, and no room at all for an EMS page frame; the
+other lever is BIOS Setup's shadowing of C800-DFFF, which, off, gives
+the ranges back. `WAVE86 /diag` prints the largest free upper block and
+whether DOS has them linked. 3 has FreeCOM
 instead of 4DOS, which leaves a game more conventional memory but reads
 the eXoDOS start batches' CHOICE menus differently. 4 and 5 are the two
 other setups that ran on the card while the fault was hunted: JEMMEX

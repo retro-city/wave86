@@ -61,6 +61,14 @@ The disk cache in the boot menu (LBACACHE, or SMARTDRV on MS-DOS)
 speeds up C:, the image the card serves through its BIOS; it does
 nothing for W:, the SD card through PMDFS, which DOS hands straight to
 the card as a network drive.
+Memory: 4DOS.COM is 305 KB, and kept resident without swapping (boot
+menu item 1) it holds most of the conventional memory a game wants.
+Item 3 boots FreeCOM and runs an eXoDOS start batch in a 4DOS of its
+own that swaps to XMS and ends with the batch (AUTOEXEC sets WAVESHELL,
+the launcher's batch uses it). Item 6 adds I=B000-B7FF to JEMM386, 32
+KB more upper memory when the board's ROMs leave it one block; BIOS
+Setup's shadowing of C800-DFFF, turned off, can give more. WAVE86 /diag
+shows the largest free upper block.
 A transfer that goes silent is dropped after 15 s and carried on over
 a new connection in the same run ("connecting again to carry on");
 netreconnect= in WAVE86.INI is that wait, nettimeout=120 how long

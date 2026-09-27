@@ -556,6 +556,34 @@ static int xms_free(unsigned *largest, unsigned *total)
     return 1;
 }
 
+/* The largest upper-memory block the XMS driver would still hand out, in
+   KB (XMS function 10h asked for more than it can have says so in DX):
+   0 when there is none left, -1 when it provides none at all. What LH
+   and DEVICEHIGH have to work with; xms_free() must have run. */
+static int umb_largest(void)
+{
+    unsigned a = 0, d = 0, b = 0;
+    if (!xms_entry)
+        return -1;
+    _asm {
+        push bx
+        push cx
+        mov  ah, 10h
+        mov  dx, 0FFFFh
+        call dword ptr [xms_entry]
+        mov  a, ax
+        mov  d, dx
+        xor  bh, bh
+        mov  b, bx
+        pop  cx
+        pop  bx
+    }
+    if (a == 1) return 1024;            /* it gave 64 MB: not a real answer, but not none */
+    if (b == 0xB0) return (int)(d / 64);
+    if (b == 0xB1) return 0;
+    return -1;
+}
+
 /*
  * How much room the shell has left for SET. The batches a game needs set
  * a handful of variables (where the disc is, how to mount it, which
@@ -733,7 +761,10 @@ static void write_bat(const Game *g, int use_setup)
         fprintf(f, "echo [WAVE86] taken down again; now the game mounts it itself\n");
         fprintf(f, "pause\n@echo on\n");
     }
-    fprintf(f, "%s%s", is_bat ? "call " : "", prog);
+    /* WAVESHELL, when the boot set it: a batch game runs in that shell -
+       the image's item 3 gives 4DOS, swapping, only while an eXoDOS batch
+       runs, under FreeCOM, so a game gets the memory 4DOS would hold */
+    fprintf(f, "%s%s", is_bat ? "%WAVESHELL% call " : "", prog);
     if (!use_setup && g->args[0])
         fprintf(f, " %s", g->args);
     fprintf(f, "\n");
@@ -1744,9 +1775,18 @@ int main(int argc, char **argv)
         scan_diag();
         {
             unsigned big, tot;
-            if (xms_free(&big, &tot))
+            if (xms_free(&big, &tot)) {
+                int umb = umb_largest();
                 printf("XMS    : %uK free, largest block %uK\n", tot, big);
-            else
+                r.x.ax = 0x5802;        /* the UMB link: DOS=UMB */
+                int86(0x21, &r, &r);
+                if (umb < 0)
+                    printf("Upper  : the XMS driver offers no UMBs (JEMM386 RAM, or JEMMEX, does)\n");
+                else
+                    printf("Upper  : largest free block %dK, %s%s\n", umb,
+                           r.h.al ? "linked (DOS=UMB)" : "NOT linked: DOS=UMB is missing",
+                           umb < 40 ? "  <- little: I=B000-B7FF in the JEMM386 line, or BIOS Setup's shadowing" : "");
+            } else
                 printf("XMS    : no driver (HIMEM.SYS or JEMMEX)\n");
         }
         {
