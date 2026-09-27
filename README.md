@@ -51,6 +51,7 @@ ready-made disk for the card, on FreeDOS, EDR-DOS or a DOS of your own.
 | P | the details (path, program, setup, tags) instead of the picture, and back; only in the menu, not on the key bar |
 | O | the game's options: CPU slowdown, memory limit, sound mode, written to its INI section (below) |
 | S | run its setup program |
+| A | the PicoMEM's sound card, in a small menu: 1 runs `PMINIT /SB 1` (Sound Blaster), 2 `PMINIT /GUS 1` (Gravis UltraSound), through the batch loop like a game; only offered when `C:\PICOMEM\PMINIT.EXE` is there. The image's AUTOEXEC.BAT runs the Sound Blaster (and the GUS when its files are there) at boot |
 | F2 | rename the selected game (saved to the INI) |
 | M or ? | a menu of everything the view does, each with its key, over the bottom of the screen: the arrows and Enter pick one, or the key itself does (music on/off is in there: M, then M) |
 | + / - | volume |
@@ -105,7 +106,9 @@ pair Phil's Computer Lab's FreeDOS boots with: HIMEMX for XMS and
 window and the 8 KB after it), and 4DOS as the shell, staying in memory:
 on the card, 4DOS swapping itself out while a program runs crashed as
 it came back, to XMS, EMS and disk alike, so its 4DOS.INI says
-`Swapping=None`. 2 adds LBACACHE, an 8 MB disk cache. 3 has FreeCOM
+`Swapping=None`. 2 adds LBACACHE, an 8 MB disk cache - for C:, the image the card serves
+through its BIOS; W:, the SD card through PMDFS, is a network-redirector
+drive that DOS hands straight to the card, and no disk cache touches it. 3 has FreeCOM
 instead of 4DOS, which leaves a game more conventional memory but reads
 the eXoDOS start batches' CHOICE menus differently. 4 and 5 are the two
 other setups that ran on the card while the fault was hunted: JEMMEX
@@ -873,13 +876,13 @@ wheel - and only when `--torrent` is given.
   half an hour ends the pack with an `X` line saying so, and the next
   attempt resumes where it stopped.
 - WAVEGET, for its part, shows a wait as it goes (`nothing from the
-  server for 12 s (connects again at 30)`), so a screen that does not
+  server for 12 s (connects again at 15)`), so a screen that does not
   move is known to be waiting. On the PicoMEM a transfer stops dead now
   and then - the server sits blocked with its buffers full while the
   client hears nothing - and a fresh connection works at once, so after
-  `netreconnect=` seconds of silence (30) WAVEGET drops the connection
+  `netreconnect=` seconds of silence (15) WAVEGET drops the connection
   and asks for the rest on a new one, in the same run, from the note it
-  keeps: `connecting again (2): silent 30 s at 596K of INTRO.PAK`. Only
+  keeps: `connecting again (2): silent 15 s at 596K of INTRO.PAK`. Only
   connections that bring nothing new for `nettimeout=` seconds in all
   (120) end it - the server's own wait lines count as something, as
   they always have, and UPDATE, LIST and PLAY, which do not reconnect,

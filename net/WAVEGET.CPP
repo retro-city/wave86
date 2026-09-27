@@ -54,7 +54,7 @@
    only nettimeout= seconds with nothing new at all end it. */
 static unsigned long idleMs = 120000ul;
 #define IDLE_TIMEOUT      (idleMs)
-static unsigned long reconnectMs = 30000ul;   /* netreconnect=0 turns it off */
+static unsigned long reconnectMs = 15000ul;   /* netreconnect=0 turns it off */
 /* how the last attempt ended, for the one that decides what to say */
 static int gaveUpWaiting = 0;               /* the stream stopped for silence, not an error */
 static int connectFailed = 0;               /* ... or never started: no answer to the SYN */

@@ -75,6 +75,7 @@ extern int ui_show_details;     /* P in the games list: details instead of the p
 int scan_games(void);
 extern unsigned scan_sizes_missing;    /* programs listed as 0 bytes: a redirector quirk */
 void scan_diag(void);                  /* /diag: the first game folder as the scan sees it */
+void scan_fixname(char *name);         /* a listed name into NAME.EXT, whatever form it came in */
 int scan_rmtree(const char *path);  /* a folder and all in it; 0 when gone */
 
 /* --- config (ini.c) --- */

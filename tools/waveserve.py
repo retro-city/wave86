@@ -907,6 +907,31 @@ def resolve(g, save=True):
     return True
 
 
+def pack_missing(g, entries):
+    """how many pieces of this pack the swarm has yet to deliver: what
+    the console's ALL HERE / WAITING FOR TORRENT tag is made of"""
+    if TORRENT is None or not g["zip"].startswith(TPREFIX):
+        return 0
+    raw = TORRENT.raw(g["zip"][len(TPREFIX):])
+    need = set()
+    with open_zip(g["zip"]) as z:
+        for e in entries:
+            member = e[1] or (e[3][0] if len(e) == 4 and isinstance(e[3], tuple) else None)
+            if member:
+                i = z.getinfo(member)
+                need.update(raw.pieces(i.header_offset, min(i.compress_size + 30 + len(i.filename) + 1024,
+                                                             raw.size - i.header_offset)))
+    return sum(1 for p in need if not SWARM.have(p))
+
+
+def source_tag(g, entries):
+    """the tag: where the pack is coming from, for the console"""
+    if TORRENT is None or not g["zip"].startswith(TPREFIX):
+        return "ALL HERE"
+    left = pack_missing(g, entries)
+    return "ALL HERE" if not left else f"WAITING FOR TORRENT: {left} pieces"
+
+
 def prefetch(g, entries):
     """Tell the swarm what this pack is going to read, all of it and now:
     a 486 takes an hour over what the swarm delivers in minutes, so the
@@ -1500,6 +1525,8 @@ class H(BaseHTTPRequestHandler):
 
         if g["zip"]:
             asked = prefetch(g, entries)
+            self.rec["src"] = source_tag(g, entries)
+            self.rec["pack"] = (g, entries)     # for the tag to be kept up to date
             if asked:
                 MON.log(f"{g['dir']}: {asked} pieces ({asked * TORRENT.t.piece_length // 1048576} MB) to get from the swarm")
                 self.rec["note"] = (self.rec.get("note", "") + "  from the swarm").strip()
@@ -1619,11 +1646,15 @@ class H(BaseHTTPRequestHandler):
             time.sleep(1)
             tick += 1
             if tick % 3 == 0:               # every third second, whatever the clock says
+                if "pack" in self.rec:
+                    self.rec["src"] = source_tag(*self.rec["pack"])
                 pct = 100 * (total - now_left) // total
                 st = SWARM.status()
                 self.wait_line(f"fetching {name}: {pct}%, {now_left} pieces to go, {st['peers']} peers, "
                                f"{st['down'] / 1024:.0f} KB/s", pct)
         self.rec["note"] = "from the swarm"
+        if "pack" in self.rec:
+            self.rec["src"] = source_tag(*self.rec["pack"])
 
     def my_address(self):
         """This machine as the client sees it: the Host header, else the
@@ -1848,6 +1879,24 @@ def main():
                 f"up {st['up'] / 1024:.0f} KB/s   holding {waveconsole.fmt_size(st['held'])}"
                 + (f"   waiting for {st['waiting']} pieces" if st["waiting"] else ""))
 
+    def held(g):
+        """for the games view: how much of a torrent game's zip is here"""
+        if TORRENT is None or not g["zip"].startswith(TPREFIX):
+            return "local"
+        try:
+            raw = TORRENT.raw(g["zip"][len(TPREFIX):])
+        except Exception:
+            return "?"
+        total = len(raw.pieces())
+        missing = raw.missing()
+        if not total:
+            return "-"
+        if not missing:
+            return "all"
+        if missing == total:
+            return "none"
+        return f"{total - missing}/{total}"
+
     def games():
         with LOCK:
             return GAMES
@@ -1859,7 +1908,7 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     MON.log("q quits, r re-indexes, g shows the games")
     try:
-        waveconsole.run(MON, title, games, dict(rescan=rescan), swarm_line)
+        waveconsole.run(MON, title, games, dict(rescan=rescan), swarm_line, held)
     except KeyboardInterrupt:
         pass
     server.shutdown()

@@ -862,6 +862,7 @@ static int find_title(int net, int from, int again)
     X(g07, "N",     "OPEN NETWORK INSTALL",    'n') \
     X(g08, "P/D",   "DETAILS",                 'p') \
     X(g13, "O",     "GAME OPTIONS",            'o') \
+    X(g15, "A",     "SOUND CARD (PICOMEM)",    'a') \
     X(g09, "M",     "MUSIC ON/OFF",            K_MUSIC) \
     X(g10, "+/-",   "VOLUME CONTROL",          '+') \
     X(g11, "</>",   "PREVIOUS/NEXT SONG",      '>') \
@@ -890,6 +891,48 @@ static const MenuItem __far menu_net[]   = { NET_MENU(MENU_ITEM) };
 #define MENU_ROWS 8
 static int menu_sel[2];         /* where the bar was, per view */
 
+/* The PicoMEM's sound cards, switched from the menu: PMINIT takes the
+   switch and sets the card up. The image's AUTOEXEC runs the Sound
+   Blaster (and the GUS when its files are there) at boot; this is for
+   a game that wants the other one. The command runs through the batch
+   loop like a game, and the launcher comes back. */
+#define PMINIT "C:\\PICOMEM\\PMINIT.EXE"
+#define SOUND_MENU(X) \
+    X(s01, "1", "SOUND BLASTER     PMINIT /SB 1",  '1') \
+    X(s02, "2", "GRAVIS ULTRASOUND PMINIT /GUS 1", '2')
+SOUND_MENU(MENU_TEXT)
+static const MenuItem __far menu_sound[] = { SOUND_MENU(MENU_ITEM) };
+static void hand_off(const char *msg);
+
+static void sound_card_menu(void)
+{
+    static const char __far *cmds[] = { "/SB 1", "/GUS 1" };
+    static int sel = 0;
+    unsigned char dim[2] = { 0, 0 };
+    for (;;) {
+        unsigned k;
+        int pick = -1;
+        ui_menu(" SOUND CARD ", menu_sound, 2, sel, dim);
+        k = getkey();
+        if (k == 0x1B) return;
+        if (k == '1' || k == '2') pick = k - '1';
+        else if (k == 0x0D) pick = sel;
+        else if (k == K_UP && sel) sel--;
+        else if (k == K_DOWN && sel < 1) sel++;
+        if (pick >= 0) {
+            char msg[80];
+            FILE *f = fopen(RUNBAT, "w");
+            if (!f) return;
+            fprintf(f, "@echo off\n%s %Fs\n", PMINIT, cmds[pick]);
+            fclose(f);
+            sel = pick;
+            sprintf(msg, "WAVE86: PMINIT %Fs ...", cmds[pick]);
+            hand_off(msg);
+            return;
+        }
+    }
+}
+
 static unsigned menu_pick(int net, int cur)
 {
     const MenuItem __far *items = net ? menu_net : menu_games;
@@ -908,6 +951,7 @@ static unsigned menu_pick(int net, int cur)
             else if (c == 0x0D || c == ' ' || c == '/' || c == K_F3) d = !net_count;
         } else {
             if (c == 's') d = !game_count || !games[cur].setup[0];
+            else if (c == 'a') d = access(PMINIT, 0) != 0;
             else if (c != 'r' && c != 0x1B && c != 'p' && c != 'n') d = !game_count;
         }
         dim[i] = (unsigned char)d;
@@ -2010,6 +2054,12 @@ int main(int argc, char **argv)
         case 's': case 'S':
             if (game_count && games[sel].setup[0]) {
                 launch(&games[sel], 1);
+                redraw(sel, top);
+            }
+            break;
+        case 'a': case 'A':             /* the card's sound cards */
+            if (access(PMINIT, 0) == 0) {
+                sound_card_menu();
                 redraw(sel, top);
             }
             break;

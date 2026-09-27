@@ -359,6 +359,28 @@ int net_view_pending(void)
     return 1;
 }
 
+/* The scan saw nothing to run in a folder that came whole, but the server
+   said what runs in it: if that file opens, the game is taken in with it,
+   listing or no listing (the card's drive has listed things its own way).
+   Returns its index, or -1. */
+static int adopt_game(const char *dir, const char *title, const char *exe)
+{
+    char path[PATH_LEN + 16];
+    Game *g;
+    if (game_count >= MAX_GAMES)
+        return -1;
+    sprintf(path, "%s\\%s\\%s", gamedir, dir, exe);
+    if (access(path, 0) != 0)
+        return -1;
+    g = &games[game_count];
+    memset(g, 0, sizeof(*g));
+    strncpy(g->dir, dir, FN_LEN - 1);
+    strncpy(g->name, title[0] ? title : dir, NAME_LEN - 1);
+    strncpy(g->exe, exe, FN_LEN - 1);
+    game_count++;
+    return game_count - 1;
+}
+
 /* whether the game's folder holds anything at all */
 static int folder_has_files(const char *dir)
 {
@@ -414,6 +436,8 @@ int net_apply_pending(void)
         sprintf(path, "%s\\%s\\WAVE86.RSM", gamedir, dir);
         unfinished = access(path, 0) == 0;
         i = unfinished ? -1 : find_game(dir);
+        if (i < 0 && !unfinished && exe[0] && folder_has_files(dir))
+            i = adopt_game(dir, title, exe);    /* the server said what runs: is it there? */
         if (i < 0) {
             /* A folder with files in it and no note left behind came whole
                (WAVEGET checks every file's sum before it says so), and the

@@ -108,6 +108,48 @@ static int has_ext(const char *fn, const char *ext)
 }
 
 unsigned scan_sizes_missing = 0;    /* programs the listing showed as 0 bytes (/diag) */
+unsigned scan_names_fixed = 0;      /* names that came back in raw 11-character form (/diag) */
+unsigned scan_probed_dirs = 0;      /* folders the listing did not mark as folders (/diag) */
+unsigned scan_exe_from_ini = 0;     /* programs the listing did not show, the INI knew (/diag) */
+
+/* A name as a listing gives it back. DOS itself gives NAME.EXT; a
+   redirector drive may hand over the raw 11 characters of the entry,
+   "KEEN4   EXE", or pad around the dot. Made into NAME.EXT here, and
+   counted, so the scan and /diag both see what is there. */
+static int copy_part(char *dst, const char *src, int max)
+{
+    int n = 0, keep = 0;
+    while (n < max && src[n] && src[n] != '.') {
+        dst[n] = src[n];
+        if (src[n] != ' ') keep = n + 1;
+        n++;
+    }
+    dst[keep] = 0;
+    return n;                           /* characters looked at */
+}
+
+void scan_fixname(char *name)
+{
+    char out[13];
+    const char *dot = strchr(name, '.');
+    int n, b;
+
+    if (name[0] == '.')                 /* . and .. */
+        return;
+    n = copy_part(out, name, 8);
+    if (dot) n = (int)(dot - name) + 1;
+    else if (strlen(name) <= 8) n = 0;  /* no extension at all */
+    if (n) {
+        b = strlen(out);
+        out[b] = '.';
+        copy_part(out + b + 1, name + n, 3);
+        if (!out[b + 1]) out[b] = 0;
+    }
+    if (strcmp(out, name) != 0) {
+        scan_names_fixed++;
+        strcpy(name, out);
+    }
+}
 
 /* what a game folder is listed with: everything but the volume label */
 #define SCAN_ATTRS (_A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_SUBDIR | _A_ARCH)
@@ -130,6 +172,7 @@ static void scan_one(Game *g)
     rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
     while (rc == 0) {
         const char *fn = ft.name;
+        scan_fixname(ft.name);
         if (!(ft.attrib & (_A_SUBDIR | _A_VOLID)) &&
             fn[0] != '.' && fn[0] != '_' &&
             (has_ext(fn, "EXE") || has_ext(fn, "COM") || has_ext(fn, "BAT"))) {
@@ -176,8 +219,10 @@ static void scan_one(Game *g)
 
     /* a CD image next to the game (CD\*.ISO) is mounted while it runs */
     sprintf(pat, "%s\\%s\\CD\\*.ISO", gamedir, g->dir);
-    if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0)
+    if (_dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft) == 0) {
+        scan_fixname(ft.name);
         sprintf(g->cdimg, "CD\\%s", ft.name);
+    }
     /* or a start batch that mounts it itself (IMGMOUNT.BAT). Whether that
        disc is on this machine or still on the server is the difference
        between the CD and NET CD tags, and the batch is what knows. */
@@ -224,6 +269,7 @@ static int rm_level(unsigned len, int depth)
     strcpy(rm_path + len, "\\*.*");
     rc = _dos_findfirst(rm_path, _A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_ARCH | _A_SUBDIR, &ft);
     while (rc == 0) {
+        scan_fixname(ft.name);
         if (ft.name[0] != '.') {
             rm_path[len] = '\\';
             strcpy(rm_path + len + 1, ft.name);
@@ -268,36 +314,35 @@ void scan_diag(void)
     sprintf(pat, "%s\\*.*", gamedir);
     rc = _dos_findfirst(pat, _A_SUBDIR, &ft);
     while (rc == 0 && !dir[0]) {
+        scan_fixname(ft.name);
         if ((ft.attrib & _A_SUBDIR) && ft.name[0] != '.' && ft.name[0] != '_')
             strcpy(dir, ft.name);
         rc = _dos_findnext(&ft);
     }
+    if (!dir[0] && game_count)          /* none marked as one: the first the scan kept */
+        strcpy(dir, games[0].dir);
     if (!dir[0]) {
         printf("Folder : no game folder under %s (findfirst %u)\n", gamedir, rc);
         return;
     }
-    printf("Folder : %s\\%s as the scan lists it (name size attr):", gamedir, dir);
+    printf("Folder : %s\\%s as the scan lists it (raw name [fixed] size attr):", gamedir, dir);
     sprintf(pat, "%s\\%s\\*.*", gamedir, dir);
     rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
     if (rc)
         printf(" nothing (error %u)", rc);
     while (rc == 0 && n < 10) {
-        printf("%s %s %lu %02X", n ? "," : "", ft.name, ft.size, ft.attrib);
+        char raw[16];
+        strncpy(raw, ft.name, 15); raw[15] = 0;
+        scan_fixname(ft.name);
+        printf("%s \"%s\"", n ? "," : "", raw);
+        if (strcmp(raw, ft.name) != 0) printf(" [%s]", ft.name);
+        printf(" %lu %02X", ft.size, ft.attrib);
         n++;
         rc = _dos_findnext(&ft);
     }
     printf("%s\n", rc == 0 ? ", ..." : "");
-    n = 0;
-    rc = _dos_findfirst(pat, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft);
-    printf("         and asked for plain files only:");
-    if (rc)
-        printf(" nothing (error %u)", rc);
-    while (rc == 0 && n < 10) {
-        printf("%s %s %02X", n ? "," : "", ft.name, ft.attrib);
-        n++;
-        rc = _dos_findnext(&ft);
-    }
-    printf("%s\n", rc == 0 ? ", ..." : "");
+    printf("         names in raw form: %u, folders found by probing: %u, programs from the INI: %u, listed as 0 bytes: %u\n",
+           scan_names_fixed, scan_probed_dirs, scan_exe_from_ini, scan_sizes_missing);
 }
 
 int scan_games(void)
@@ -308,20 +353,51 @@ int scan_games(void)
 
     game_count = 0;
 
-    sprintf(pat, "%s\\*.*", gamedir);
-    rc = _dos_findfirst(pat, _A_SUBDIR, &ft);
-    while (rc == 0 && game_count < MAX_GAMES) {
-        if ((ft.attrib & _A_SUBDIR) &&
-            ft.name[0] != '.' && ft.name[0] != '_') {
+    /* Two passes: the folders first, their contents after, so that no
+       listing runs inside another - a redirector drive with one search
+       at a time (the card's) would lose its place. An entry the listing
+       does not mark as a folder, but that lists as one, is one. */
+    {
+        int i, n = 0, isdir;
+        static unsigned char dirs[MAX_GAMES];  /* 1: listed as a folder, 0: to be probed */
+        sprintf(pat, "%s\\*.*", gamedir);
+        rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
+        while (rc == 0 && n < MAX_GAMES) {
+            scan_fixname(ft.name);
+            isdir = (ft.attrib & _A_SUBDIR) != 0;
+            if ((isdir || !strchr(ft.name, '.')) && !(ft.attrib & _A_VOLID) &&
+                ft.name[0] != '.' && ft.name[0] != '_') {
+                memset(&games[n], 0, sizeof(Game));
+                strncpy(games[n].dir, ft.name, FN_LEN - 1);
+                dirs[n++] = (unsigned char)isdir;
+            }
+            rc = _dos_findnext(&ft);
+        }
+        for (i = 0; i < n; i++) {
             Game *g = &games[game_count];
-            memset(g, 0, sizeof(*g));
-            strncpy(g->dir, ft.name, FN_LEN - 1);
-            strncpy(g->name, ft.name, NAME_LEN - 1);
+            if (g != &games[i]) memcpy(g, &games[i], sizeof(Game));
+            if (!dirs[i]) {                 /* not marked a folder: does it list as one? */
+                struct find_t probe;
+                sprintf(pat, "%s\\%s\\*.*", gamedir, g->dir);
+                if (_dos_findfirst(pat, SCAN_ATTRS, &probe) != 0)
+                    continue;
+                scan_probed_dirs++;
+            }
+            strncpy(g->name, g->dir, NAME_LEN - 1);
             scan_one(g);
+            if (!g->exe[0]) {               /* the listing showed no program: the INI may know one */
+                const char *e = ini_game(g->dir, "exe");
+                if (e && e[0]) {
+                    sprintf(pat, "%s\\%s\\%s", gamedir, g->dir, e);
+                    if (access(pat, 0) == 0) {
+                        strncpy(g->exe, e, FN_LEN - 1);
+                        scan_exe_from_ini++;
+                    }
+                }
+            }
             if (g->exe[0])
                 game_count++;
         }
-        rc = _dos_findnext(&ft);
     }
 
     ini_apply();

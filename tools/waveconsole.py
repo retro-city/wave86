@@ -99,7 +99,8 @@ def transfer_row(t, now, rate, width, ascii_only):
     else:
         speed, left = "-- KB/s", ""
     # what must be there, then what fits: the bar, the time left, the file
-    core = " ".join(x for x in (f" {who}", what, pct, sizes, speed) if x)
+    src = t.get("src", "")              # ALL HERE, or WAITING FOR TORRENT: n pieces
+    core = " ".join(x for x in (f" {who}", what, f"[{src}]" if src else "", pct, sizes, speed) if x)
     line = core
     if prog and len(core) + 11 <= width:
         line = core.replace(f" {who} {what} ", f" {who} {what} {prog} ", 1)
@@ -115,8 +116,8 @@ def transfer_row(t, now, rate, width, ascii_only):
     return (line[:width], "plain")
 
 
-def games_rows(games, scroll, count, width):
-    head = f" {'DIR':<8} {'TITLE':<34.34} {'YEAR':<4} {'SIZE':>8}  DISC"
+def games_rows(games, scroll, count, width, held_fn=None):
+    head = f" {'DIR':<8} {'TITLE':<34.34} {'YEAR':<4} {'SIZE':>8}  {'HERE':<7} DISC"
     rows = [(head[:width], "head")]
     for g in games[scroll:scroll + count]:
         disc = ""
@@ -124,8 +125,9 @@ def games_rows(games, scroll, count, width):
             disc = fmt_size(g.get("cd_kb", 0) * 1024) + " ISO"
             if g.get("raw_kb"):
                 disc += f", {fmt_size(g['raw_kb'] * 1024)} raw"
+        here = held_fn(g) if held_fn else ""     # all, none, 3/12 pieces, or local
         rows.append((f" {g['dir']:<8} {g['title']:<34.34} {str(g.get('year') or ''):<4} "
-                     f"{fmt_size(g['kb'] * 1024):>8}  {disc}"[:width], "plain"))
+                     f"{fmt_size(g['kb'] * 1024):>8}  {here:<7} {disc}"[:width], "plain"))
     return rows
 
 
@@ -155,7 +157,7 @@ def render(state, width, height, ascii_only=False):
         scroll = max(0, min(state["scroll"] or 0, max(0, len(games) - (body_rows - 1))))
         rows.append((f" GAMES  {len(games)}   ({scroll + 1}-{min(len(games), scroll + body_rows - 1)})   g: back to the log",
                      "head"))
-        rows += games_rows(games, scroll, body_rows - 1, width)
+        rows += games_rows(games, scroll, body_rows - 1, width, state.get("held"))
     else:
         lines = state["lines"]
         follow = state["scroll"] is None
@@ -172,7 +174,7 @@ def render(state, width, height, ascii_only=False):
     return rows
 
 
-def run(mon, title_fn, games_fn, actions, swarm_fn=None):
+def run(mon, title_fn, games_fn, actions, swarm_fn=None, held_fn=None):
     """Paint render() with curses until q. mon is waveserve's Monitor,
     title_fn() the title line, games_fn() the game list, actions a dict of
     callables for the keys ('rescan'), swarm_fn() a line about the torrent
@@ -231,7 +233,7 @@ def run(mon, title_fn, games_fn, actions, swarm_fn=None):
                 games = list(games_fn())    # a rescan may have changed it
             h, w = scr.getmaxyx()
             state = dict(title=title_fn(), swarm=swarm_fn() if swarm_fn else None, transfers=transfers,
-                         lines=lines, games=games, scroll=scroll, now=now, rates=rates)
+                         lines=lines, games=games, scroll=scroll, now=now, rates=rates, held=held_fn)
             scr.erase()
             for y, (text, style) in enumerate(render(state, w, h, ascii_only)):
                 try:

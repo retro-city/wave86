@@ -52,8 +52,16 @@ plays a game straight off the server. / (or S) searches for a title:
 type a few letters of it, Enter; F3 searches on. Left and right turn
 the page. In the games list / and F3 search, left and right page, the
 same way, and Del removes a game from the disk after a yes. M (or ?) in
-either list opens a menu of everything it does, each with its key.
-A transfer that goes silent is dropped after 30 s and carried on over
+either list opens a menu of everything it does, each with its key. A in
+the games list switches the PicoMEM's sound card: 1 runs PMINIT /SB 1
+(Sound Blaster), 2 runs PMINIT /GUS 1 (Gravis UltraSound), through the
+batch loop like a game; the image's AUTOEXEC.BAT already runs the
+Sound Blaster (and the GUS when its files are there) at boot.
+The disk cache in the boot menu (LBACACHE, or SMARTDRV on MS-DOS)
+speeds up C:, the image the card serves through its BIOS; it does
+nothing for W:, the SD card through PMDFS, which DOS hands straight to
+the card as a network drive.
+A transfer that goes silent is dropped after 15 s and carried on over
 a new connection in the same run ("connecting again to carry on");
 netreconnect= in WAVE86.INI is that wait, nettimeout=120 how long
 connections may bring nothing before WAVEGET gives up. Meanwhile it
