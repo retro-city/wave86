@@ -32,6 +32,7 @@ typedef struct {
 #define GF_TDC     0x10     /* source=tdc: from the Total DOS Collection */
 #define GF_CDBAT   0x20     /* has IMGMOUNT.BAT: its start batch mounts the CD itself */
 #define GF_NETCD   0x40     /* ... and that batch fetches the disc from the server */
+#define GF_NETPEND 0x80     /* netinstall=pending: the install off the server has not finished; Enter continues it */
 
 /* --- the looks (theme.c) --- */
 typedef struct {
@@ -83,6 +84,8 @@ void ini_load(const char *fname);   /* reads gamedir= */
 void ini_apply(void);               /* per-game [sections] onto games[] */
 int ini_write_name(const char *dir, const char *name); /* set/add name= */
 int ini_write_key(const char *dir, const char *key, const char *value);
+int ini_write_keys(const char *dir, const char *const *keys, const char *const *vals, int n); /* several at once, one rewrite */
+int ini_next_pending(unsigned *pos, char *dir);  /* the sections that say netinstall=pending, one per call; *pos = 0 to start */
 int ini_write_global(const char *key, const char *value); /* set/add a key above the sections */
 int ini_games_file(const char *dir);         /* the sections live in <dir>\GAMES.INI from now on */
 const char *ini_file_path(void);
@@ -136,7 +139,8 @@ int text_has(const char *hay, const char *NEEDLE);
 const NetGame *net_get(int i);  /* reads that line; valid until the next call */
 int net_letter_first(char c);   /* first title starting with c, or -1 */
 void net_free(void);
-void net_mark_pending(const NetGame *g);    /* appends to NETGAME.TXT */
+void net_mark_pending(const NetGame *g);
+void net_mark_pending_raw(const char *dir, const char *title, const char *exe, const char *src, unsigned long kb);    /* appends to NETGAME.TXT */
 void net_pending_reset(void);   /* forget what was on its way in */
 /* the menu (M or ?): a key chooser. code is what pressing the item's key
    would send the main loop, K_MUSIC for the one whose key opens the menu */

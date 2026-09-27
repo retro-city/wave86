@@ -17,10 +17,10 @@ VERSION := $(shell sed -n 's/.*VERSION_STR *"\([^"]*\)".*/\1/p' src/wave86.h)
 # other people's programs the build needs, kept in the repository (THIRD-PARTY.md)
 TP = third-party
 
-# -0: 8086 instructions only  -ms: small model  -os: optimize for size
+# -0: 8086 instructions only  -mm: medium model (far code, so the launcher can pass 64 KB of it; near data)  -os: optimize for size
 # -s: no stack-overflow probes (the code segment is full); -k4096: twice the
 # default stack in their place, so the margin is real rather than checked
-CFLAGS = -q -bcl=dos -0 -ms -os -wx -s -k4096
+CFLAGS = -q -bcl=dos -0 -mm -os -wx -s -k4096
 
 SRCS = src/wave86.c src/ui.c src/vga.c src/scan.c src/ini.c src/music.c \
        src/mod.c src/cpu.c src/net.c src/theme.c

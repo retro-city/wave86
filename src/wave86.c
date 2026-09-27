@@ -1367,9 +1367,9 @@ static void net_update(void)
 /* one WAVEGET GET line: the server key is DIR for eXoDOS, src:DIR for
    other collections, and for a CD game the mode decides whether the disc
    comes along */
-static void net_get_cmd(char *cmd, unsigned size, const NetGame *g, const char *exe)
+/* what WAVEGET asks the server for: the game, and how its disc comes */
+static void net_key(char *key, const NetGame *g)
 {
-    char key[32];
     if (stricmp(g->src, "exodos") == 0) strcpy(key, g->dir);
     else sprintf(key, "%s:%s", g->src, g->dir);
     /* NET CD leaves the disc on the server; otherwise a card that mounts
@@ -1381,14 +1381,86 @@ static void net_get_cmd(char *cmd, unsigned size, const NetGame *g, const char *
         else
             strcat(key, net_rawcd && g->rawkb ? "?cd=raw" : "?cd=local");
     }
-    sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, g->dir, gamedir, net_size(g), key);
-    {
-        const char *cdrom = cd_root();
-        if (cdrom && cdrom[0] && strlen(cmd) + strlen(cdrom) + 2 < size) {
-            strcat(cmd, " ");
-            strcat(cmd, cdrom);
-        }
+}
+
+static void net_get_cmd_raw(char *cmd, unsigned size, const char *dir, unsigned long kb, const char *key, const char *exe)
+{
+    const char *cdrom;
+    sprintf(cmd, "%s GET %s %s %s %lu %s", exe, cfg_server, dir, gamedir, kb, key);
+    cdrom = cd_root();
+    if (cdrom && cdrom[0] && strlen(cmd) + strlen(cdrom) + 2 < size) {
+        strcat(cmd, " ");
+        strcat(cmd, cdrom);
     }
+}
+
+/* The game's section in the INI the moment its install starts: name,
+   program and source as the server lists them, netinstall=pending, and
+   what WAVEGET was asked for (its key and size), so that Enter on the
+   game can fetch the rest with the same request - the resume note WAVEGET
+   leaves counts only against that. net_apply_pending turns it to done. */
+static void net_register(const NetGame *g, const char *key)
+{
+    /* exe= only once the program is there (net_apply_pending): the
+       server's guess goes in netexe=, and the list shows it meanwhile */
+    const char *keys[6], *vals[6];
+    char kb[12];
+    int n = 0;
+    sprintf(kb, "%lu", net_size(g));
+    keys[n] = "name";       vals[n++] = g->title[0] ? g->title : g->dir;
+    keys[n] = "source";     vals[n++] = g->src;
+    keys[n] = "netinstall"; vals[n++] = "pending";
+    keys[n] = "netkey";     vals[n++] = key;
+    keys[n] = "netkb";      vals[n++] = kb;
+    if (g->exe[0]) { keys[n] = "netexe"; vals[n++] = g->exe; }
+    ini_write_keys(g->dir, keys, vals, n);
+}
+
+/* The game's picture on its own, before any of its files: one quiet
+   WAVEGET THUMB line per game at the top of the batch, so a queue has
+   every picture at once. */
+static void net_thumb_line(FILE *f, const NetGame *g, const char *key, const char *exe)
+{
+    fprintf(f, "%s THUMB %s %s %s\\%s > NUL\n", exe, cfg_server, key, gamedir, g->dir);
+}
+
+static void net_get_cmd(char *cmd, unsigned size, const NetGame *g, const char *exe)
+{
+    char key[32];
+    net_key(key, g);
+    net_register(g, key);
+    net_get_cmd_raw(cmd, size, g->dir, net_size(g), key, exe);
+}
+
+/* Enter on a game whose install never finished: WAVEGET is asked for the
+   rest with the key and size the install started with. Comes back the
+   way a download does, through NETGAME.TXT and net_apply_pending. */
+static void net_continue(const Game *g)
+{
+    char cmd[PATH_LEN * 2 + 96], exe[PATH_LEN + 16], msg[80], key[32];
+    const char *v, *src;
+    unsigned long kb;
+    FILE *f;
+
+    if (!cfg_server[0] && !ask_server())
+        return;
+    v = ini_game(g->dir, "netkey");
+    strncpy(key, v && v[0] ? v : g->dir, sizeof(key) - 1);
+    key[sizeof(key) - 1] = 0;
+    v = ini_game(g->dir, "netkb");
+    kb = v ? strtoul(v, NULL, 10) : 0;
+    src = ini_game(g->dir, "source");
+    waveget_path(exe);
+    net_pending_forget(g->dir);         /* the rest of a queue stays in NETGAME.TXT */
+    net_mark_pending_raw(g->dir, g->name, g->exe, src && src[0] ? src : "exodos", kb);
+    f = fopen(RUNBAT, "w");
+    if (!f)
+        return;
+    net_get_cmd_raw(cmd, sizeof(cmd), g->dir, kb, key, exe);
+    fprintf(f, "@echo off\n%s\n%c:\ncd %s\n", cmd, launcher_dir[0], launcher_dir);
+    fclose(f);
+    sprintf(msg, "WAVE86: Fetching the rest of %s ...", g->name);
+    hand_off(msg);
 }
 
 /*
@@ -1410,6 +1482,17 @@ static void net_download(int nsel, int whole_queue)
     if (!f)
         return;
     fprintf(f, "@echo off\n");
+    {   /* the pictures first, every one of them */
+        char key[32];
+        int j;
+        for (j = 0; j < net_count; j++) {
+            const NetGame *g = net_get(j);
+            if (n ? !net_queued(g->dir) : j != nsel)
+                continue;
+            net_key(key, g);
+            net_thumb_line(f, g, key, exe);
+        }
+    }
     if (!n) {
         const NetGame *g = net_get(nsel);
         int netcd = g->cd && g->netcd && net_cdmode;
@@ -1571,7 +1654,7 @@ static void uninstall(int *sel, int *top)
     strcpy(dir, g->dir);
     strcpy(name, g->name);
     ui_status("DELETING ...");
-    if (scan_rmtree(path) == 0) {
+    if (access(path, 0) != 0 || scan_rmtree(path) == 0) {   /* a pending game may have no folder yet */
         ini_remove_section(dir);
         net_pending_forget(dir);
         if (net_queued(dir))
@@ -1869,6 +1952,14 @@ int main(int argc, char **argv)
     if (opt_launch) {
         for (i = 0; i < game_count; i++)
             if (stricmp(games[i].dir, opt_launch) == 0) {
+                if (games[i].flags & GF_NETPEND) {  /* not all here: the rest first */
+                    if (!cfg_server[0]) {
+                        printf("WAVE86: %s is not all here yet, and WAVE86.INI has no server=.\n", games[i].name);
+                        return 1;
+                    }
+                    net_continue(&games[i]);
+                    return 0;
+                }
                 launch(&games[i], 0);   /* returns only when run bare */
                 return 0;
             }
@@ -2126,12 +2217,24 @@ int main(int argc, char **argv)
         case 0x1B:
             quit();
         case 0x0D:
-            if (game_count) {
+            if (game_count && (games[sel].flags & GF_NETPEND)) {
+                int i;                  /* not all here yet: the rest, then the list again */
+                net_continue(&games[sel]);
+                scan_games();
+                i = net_apply_pending();
+                if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
+                redraw(sel, top);
+                if (i == -2) net_arrived_notice();
+            } else if (game_count) {
                 launch(&games[sel], 0);
                 redraw(sel, top);       /* back from a bare-mode run */
             }
             break;
         case 's': case 'S':
+            if (game_count && (games[sel].flags & GF_NETPEND)) {
+                ui_status("NOT ALL OF IT IS HERE YET: ENTER FETCHES THE REST.");
+                break;
+            }
             if (game_count && games[sel].setup[0]) {
                 launch(&games[sel], 1);
                 redraw(sel, top);

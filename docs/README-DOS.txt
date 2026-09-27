@@ -155,7 +155,12 @@ needed to give PGUSINIT's path.
 Space marks a game for the install queue and I then fetches every
 marked game, one after another - the launcher cannot download in the
 background (DOS runs one program at a time), but it can work through a
-list while you are elsewhere. A download that stops half way - Esc, a
+list while you are elsewhere. A game is in your games list from the
+moment its install starts (its GAMES.INI section says
+netinstall=pending, and its picture is fetched before its files); greyed
+and tagged PENDING until it is whole, Enter on it fetches the rest, Del
+takes it out even with no folder yet, and the section then says
+netinstall=done. A download that stops half way - Esc, a
 dropped line, even the power going - leaves a note in the game's folder
 and carries on next time from inside the very file it stopped in, so a
 large disc image is not fetched again from the start, and

@@ -610,7 +610,7 @@ static void iniWord(char *dst, unsigned n, const char *s) {
   dst[i] = 0;
 }
 
-static void musicStart(const char *exePath) {
+static void loadSettings(const char *exePath) {
   char path[120];
   FILE *f;
   int n;
@@ -644,6 +644,10 @@ static void musicStart(const char *exePath) {
     }
     fclose(f);
   }
+}
+
+static void musicStart(const char *exePath) {
+  loadSettings(exePath);
   if (!musicWanted) return;
   cpu_identify();
   mus_init();
@@ -674,6 +678,51 @@ static int doList(IpAddr_t addr, uint16_t port, const char *outfile) {
   }
   fclose(f);
   printf("WAVEGET: game list saved, %lu bytes\n", total);
+  return 0;
+}
+
+/* ---------------------------------------------------------- THUMB */
+/* The game's picture on its own, into <folder>\THUMBS\<THEME>.THM, the
+   moment an install starts - before its files, and without touching the
+   pack, whose file count the resume note keeps. Quiet, and never fatal:
+   no picture is 0 as well. */
+static int doThumb(IpAddr_t addr, uint16_t port, const char *key, const char *folder) {
+  char path[120], out[160], theme[12];
+  unsigned char thm[1024];
+  unsigned len = 0;
+  unsigned i;
+  if (!artKind[0] || stricmp(artKind, "0") == 0 || stricmp(artKind, "none") == 0) return 0;
+  strcpy(theme, themeName[0] ? themeName : "exodos");
+  sprintf(path, "/thumb/%s%cart=%s&theme=%s&thumb=36x10", key, strchr(key, '?') ? '&' : '?', artKind, theme);
+  int16_t n; uint16_t start;
+  if (httpGet(addr, port, path, &n, &start)) return 0;     /* none, or no server: the pack brings it later */
+  clockTicks_t t0 = TIMER_GET_CURRENT();
+  while (1) {
+    if (n > (int16_t)start) {
+      unsigned k = (unsigned)(n - start);
+      if (len + k > sizeof(thm)) return 0;                 /* not a picture of ours */
+      memcpy(thm + len, inBuf + start, k); len += k;
+    }
+    start = 0;
+    n = recvStep();
+    if (n == -2) return 2;
+    if (n == -1) break;
+    if (n == 0) {
+      if (Timer_diff(t0, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(10000ul)) return 0;
+      continue;
+    }
+    t0 = TIMER_GET_CURRENT();
+  }
+  if (len < 8 || memcmp(thm, "W86T", 4) != 0) return 0;
+  for (i = 0; theme[i]; i++) theme[i] = (char)toupper((unsigned char)theme[i]);
+  mkdir(folder);
+  sprintf(out, "%s\\THUMBS", folder);
+  mkdir(out);
+  sprintf(out, "%s\\THUMBS\\%s.THM", folder, theme);
+  FILE *f = fopen(out, "wb");
+  if (!f) return 0;
+  fwrite(thm, 1, len, f);
+  fclose(f);
   return 0;
 }
 
@@ -943,7 +992,9 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
   uiStatus("");
 
   char line[200]; uint16_t lineLen = 0;
-  FILE *cur = NULL; unsigned long remain = 0, done = 0; int files = 0;
+  FILE *cur = NULL; unsigned long remain = 0, done = 0, got = 0; int files = 0;
+  /* done counts what is on the disk, resumed bytes included, for the
+     progress; got only what this connection brought, for the rate */
   char curName[80] = "", full[160], tmp[160];
   unsigned long curSize = 0;
   int renaming = 0, checked = 0, unverified = 0, skipped = 0, waited = 0;
@@ -991,7 +1042,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
           }
         }
         if (crcWanted) crc = crcAdd(crc, inBuf + pos, chunk);
-        pos += chunk; remain -= chunk; done += chunk;
+        pos += chunk; remain -= chunk; done += chunk; got += chunk;
         partBytes = curSize - remain;    /* safely written: resume from here */
         partCrc = crc;
         partCrcKnown = crcWanted && !unverified;
@@ -1139,7 +1190,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
     if (Timer_diff(tShow, TIMER_GET_CURRENT()) > TIMER_MS_TO_TICKS(screenOn ? 200 : 500)) {
       tShow = TIMER_GET_CURRENT();
       unsigned long secs = Timer_diff(tStart, tShow) * TIMER_TICK_LEN / 1000;
-      unsigned long kbs = secs ? (done / 1024) / secs : 0;
+      unsigned long kbs = secs ? (got / 1024) / secs : 0;
       if (screenOn) uiProgress(curName, done, kbTotal, kbs, secs);
       else if (kbTotal) printf("\r%-24s %6luK of %luK  %3lu%%  %4lu KB/s   ", curName, done / 1024, kbTotal, (done / 1024) * 100 / kbTotal, kbs);
       else         printf("\r%-24s %6luK  %4lu KB/s   ", curName, done / 1024, kbs);
@@ -1212,7 +1263,7 @@ static int streamBody(IpAddr_t addr, uint16_t port, const char *path, const char
     sprintf(extra, "%s%s", reconnects ? " after reconnecting" : "", rescued ? " (stalls kicked awake)" : "");
     if (strlen(done_line) + strlen(extra) < sizeof(done_line)) strcat(done_line, extra);
   }
-  if (screenOn) { uiProgress(curName, done, kbTotal, secs ? (done / 1024) / secs : 0, secs); msg(done_line); }
+  if (screenOn) { uiProgress(curName, done, kbTotal, secs ? (got / 1024) / secs : 0, secs); msg(done_line); }
   else printf("\r%-70s\n", done_line);
   logLine(done_line + 9);
   return 0;
@@ -1494,6 +1545,7 @@ static int doUpdate(IpAddr_t addr, uint16_t port, const char *dir) {
 /* ---------------------------------------------------------- main */
 static void usage(void) {
   puts("WAVEGET LIST host:port outfile\nWAVEGET GET host:port DIR gamesdir [kb [key [cdrom]]]\n"
+       "WAVEGET THUMB host:port key gamefolder\n"
        "WAVEGET DISK host:port key\nWAVEGET UPDATE host:port [dir]");
   exit(1);
 }
@@ -1543,6 +1595,9 @@ int main(int argc, char **argv) {
     rc = doList(addr, port, argv[3]);
   } else if (stricmp(argv[1], "DISK") == 0 && argc >= 4) {
     rc = doDisk(addr, port, argv[3]);
+  } else if (stricmp(argv[1], "THUMB") == 0 && argc >= 5) {
+    loadSettings(argv[0]);
+    rc = doThumb(addr, port, argv[3], argv[4]);
   } else if (stricmp(argv[1], "UPDATE") == 0) {
     musicStart(argv[0]);
     rc = doUpdate(addr, port, argc > 3 ? argv[3] : NULL);

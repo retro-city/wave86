@@ -329,12 +329,17 @@ void net_pending_reset(void)
    did not make it. */
 void net_mark_pending(const NetGame *g)
 {
+    net_mark_pending_raw(g->dir, g->title, g->exe, g->src, net_size(g));
+}
+
+void net_mark_pending_raw(const char *dir, const char *title, const char *exe, const char *src, unsigned long kb)
+{
     char path[PATH_LEN + 16];
     FILE *f;
     net_path(path, "NETGAME.TXT");
     f = fopen(path, "a");
     if (!f) return;
-    fprintf(f, "%s|%s|%s|%s|%lu\n", g->dir, g->title, g->exe, g->src, net_size(g));
+    fprintf(f, "%s|%s|%s|%s|%lu\n", dir, title, exe, src, kb);
     fclose(f);
 }
 
@@ -367,18 +372,31 @@ static int adopt_game(const char *dir, const char *title, const char *exe)
 {
     char path[PATH_LEN + 16];
     Game *g;
-    if (game_count >= MAX_GAMES)
-        return -1;
+    int i;
     sprintf(path, "%s\\%s\\%s", gamedir, dir, exe);
     if (access(path, 0) != 0)
         return -1;
-    g = &games[game_count];
-    memset(g, 0, sizeof(*g));
-    strncpy(g->dir, dir, FN_LEN - 1);
-    strncpy(g->name, title[0] ? title : dir, NAME_LEN - 1);
-    strncpy(g->exe, exe, FN_LEN - 1);
-    game_count++;
-    return game_count - 1;
+    i = find_game(dir);                 /* listed already as pending, with nothing to run */
+    if (i < 0) {
+        if (game_count >= MAX_GAMES)
+            return -1;
+        i = game_count++;
+        g = &games[i];
+        memset(g, 0, sizeof(*g));
+        strncpy(g->dir, dir, FN_LEN - 1);
+        strncpy(g->name, title[0] ? title : dir, NAME_LEN - 1);
+    }
+    strncpy(games[i].exe, exe, FN_LEN - 1);
+    return i;
+}
+
+/* whether the game's program is in its folder */
+static int exe_here(const char *dir, const char *exe)
+{
+    char path[PATH_LEN + 16];
+    if (!exe[0]) return 0;
+    sprintf(path, "%s\\%s\\%s", gamedir, dir, exe);
+    return access(path, 0) == 0;
 }
 
 /* whether the game's folder holds anything at all */
@@ -410,7 +428,7 @@ int net_apply_pending(void)
     char path[PATH_LEN + 16], keep[PATH_LEN + 16];
     char line[112], copy[112], firstdir[9] = "", emptydir[9] = "";
     FILE *f, *rest;
-    int empty = 0, left = 0;
+    int empty = 0, left = 0, has;
 
     net_path(path, "NETGAME.TXT");
     f = fopen(path, "r");
@@ -435,34 +453,46 @@ int net_apply_pending(void)
            whose folder never appeared */
         sprintf(path, "%s\\%s\\WAVE86.RSM", gamedir, dir);
         unfinished = access(path, 0) == 0;
-        i = unfinished ? -1 : find_game(dir);
-        if (i < 0 && !unfinished && exe[0] && folder_has_files(dir))
+        has = folder_has_files(dir);
+        /* the scan lists a pending game whether or not its folder has
+           anything to run: arrived means files, no note, and a program */
+        i = (unfinished || !has) ? -1 : find_game(dir);
+        if (i >= 0 && !exe_here(dir, games[i].exe))
+            i = -1;                         /* listed as pending, but nothing there runs */
+        if (i < 0 && !unfinished && has && exe[0])
             i = adopt_game(dir, title, exe);    /* the server said what runs: is it there? */
         if (i < 0) {
             /* A folder with files in it and no note left behind came whole
                (WAVEGET checks every file's sum before it says so), and the
                scan still found nothing to run: fetching it again would bring
-               the same files, so it leaves the queue, and the notice says
-               where to look. Without files it never really arrived. */
-            if (!unfinished && folder_has_files(dir)) {
+               the same files, so it leaves the queue and is no longer
+               pending, and the notice says where to look. Without files it
+               never really arrived. */
+            if (!unfinished && has) {
+                int j = find_game(dir);
                 empty = 1;
                 strcpy(emptydir, net_pending_dir);  /* the one the notice names */
+                ini_write_key(dir, "netinstall", "done");
+                if (j >= 0) {                   /* off the list: nothing in it runs */
+                    memmove(&games[j], &games[j + 1], (game_count - j - 1) * sizeof(Game));
+                    game_count--;
+                }
                 continue;
             }
             if (rest) { fputs(copy, rest); fputc('\n', rest); left++; }
             net_queue_add(dir, kb[0] ? strtoul(kb, NULL, 10) : 0);
             continue;
         }
-        if (title[0]) {
-            strncpy(games[i].name, title, NAME_LEN - 1);
-            ini_write_name(dir, title);
+        {   /* its section, whole and done, in one rewrite */
+            static const char *const keys[] = { "name", "exe", "source", "netinstall" };
+            const char *vals[4];
+            if (title[0]) strncpy(games[i].name, title, NAME_LEN - 1);
+            if (exe_here(dir, exe)) strncpy(games[i].exe, exe, FN_LEN - 1);   /* the server's, when it is there */
+            games[i].flags |= stricmp(src, "tdc") == 0 ? GF_TDC : GF_EXODOS;
+            games[i].flags &= ~GF_NETPEND;
+            vals[0] = games[i].name; vals[1] = games[i].exe; vals[2] = src; vals[3] = "done";
+            ini_write_keys(dir, keys, vals, 4);
         }
-        if (exe[0]) {
-            strncpy(games[i].exe, exe, FN_LEN - 1);
-            ini_write_key(dir, "exe", exe);
-        }
-        games[i].flags |= stricmp(src, "tdc") == 0 ? GF_TDC : GF_EXODOS;
-        ini_write_key(dir, "source", src);
         sort_games();                   /* indices move: hold on to the name */
         if (!firstdir[0]) {
             strncpy(firstdir, dir, 8);

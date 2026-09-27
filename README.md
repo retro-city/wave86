@@ -799,7 +799,21 @@ their way in, and anything that did not arrive - a folder that never
 appeared, or one with a resume note in it - goes straight back into the
 queue when the launcher comes up again. So a queue interrupted by `Esc`,
 a dropped line or the power switch is still there afterwards: press `I`
-and it carries on. Inside the batch, `Esc` (exit code 2) stops the rest
+and it carries on. The game itself is in the list from the moment its
+install starts: its section goes into GAMES.INI right away, with `name=`
+and `source=` as the server lists them, `netinstall=pending`, `netkey=`
+and `netkb=` (what WAVEGET was asked for) and `netexe=` (the server's
+program for it; `exe=` follows once that is really in the folder). The
+batch fetches every game's picture first, one short `WAVEGET THUMB`
+request each (the server's `/thumb/`), so the entries have their
+thumbnails before any files arrive; the pack still carries the picture
+last, which keeps a resume note's file count what it was. Until the
+install finishes the game sits in the games list greyed, with a PENDING
+tag, Enter on it (or `WAVE86 /launch`) fetches the rest with the same
+request, which is what its resume note counts against, S does not run
+its setup, and Del takes it out of the list even when no folder exists
+yet. When the folder is whole with its program in it, the section turns
+to `netinstall=done`. Inside the batch, `Esc` (exit code 2) stops the rest
 of the queue, while a game the server cannot provide (3) is skipped and
 the next one starts.
 
@@ -824,8 +838,9 @@ trust.
 
 A game takes minutes to arrive on a 486, so `WAVEGET` takes the screen
 while it works: the launcher's colours in a band across the top, a
-progress bar in the same gradient, KB done and left, the rate, the time
-remaining and the files as they land. It plays the soundtrack too - the
+progress bar in the same gradient, KB done and left, the rate (what
+this connection brings; a resume's skipped bytes stay out of it), the
+time remaining and the files as they land. It plays the soundtrack too - the
 launcher's music engine (`src/music.c`) built again in large model and
 linked into WAVEGET, reading the same `MUSIC\` folder. `M`, `+`, `-`,
 `<` and `>` do what they do in the menu; `Esc` stops the download. The

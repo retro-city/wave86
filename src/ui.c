@@ -130,8 +130,8 @@ void ui_keybar(const Game *sel)
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
     updown[0] = CH_UP; updown[1] = CH_DOWN; updown[2] = 0;
     (void)updown;
-    keychip(&x, "ENTER", "RUN", game_count == 0);
-    keychip(&x, "S", "SETUP", !sel || !sel->setup[0]);
+    keychip(&x, "ENTER", sel && (sel->flags & GF_NETPEND) ? "INSTALL" : "RUN", game_count == 0);
+    keychip(&x, "S", "SETUP", !sel || !sel->setup[0] || (sel->flags & GF_NETPEND));
     keychip(&x, "N", "NET", 0);                  /* with no server= it asks; R (rescan) still works */
     keychip(&x, "F2", "NAME", game_count == 0);
     keychip(&x, "/", "SEARCH", game_count == 0);
@@ -280,7 +280,7 @@ void ui_list(int sel, int top)
         {
             const Game *g = &games[gi];
             int is_sel = (gi == sel);
-            unsigned char at = is_sel ? A(15, 5) : A(7, 0);
+            unsigned char at = is_sel ? A(15, 5) : (g->flags & GF_NETPEND) ? A(8, 0) : A(7, 0);
             char nm[LIST_W];
 
             if (is_sel) {
@@ -341,6 +341,8 @@ void ui_details(int sel)
     thumb = ui_show_details ? NULL : thumb_open(g, &cols, &rows);
     if (thumb) {
         thumb_draw(thumb, cols, rows);
+        if (g->flags & GF_NETPEND)      /* between the name and the picture */
+            scr_puts(PANE_X + 2, 11, "PENDING: ENTER FETCHES THE REST.", A(12, 0));
         return;
     }
 
@@ -380,10 +382,17 @@ void ui_details(int sel)
             pill(&x, 14, "CD", 10);     /* the disc is on this machine */
         else if (g->flags & GF_CDBAT)
             pill(&x, 14, "NET CD", 10); /* it comes off the server as it plays */
+        if (g->flags & GF_NETPEND)
+            pill(&x, 14, "PENDING", 12); /* the install off the server stopped part way */
     }
 
-    scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
-    scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
+    if (g->flags & GF_NETPEND) {
+        scr_puts(PANE_X + 2, 20, "NOT ALL OF IT IS HERE YET.", A(12, 0));
+        scr_puts(PANE_X + 2, 21, "ENTER FETCHES THE REST.", A(8, 0));
+    } else {
+        scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
+    }
 }
 
 /* F2: the name being typed, white on the selection colour, gold cursor */

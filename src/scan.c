@@ -400,6 +400,26 @@ int scan_games(void)
         }
     }
 
+    /* games still on their way in from the server (netinstall=pending in
+       the INI) are listed too, folder or no folder: Enter fetches the rest */
+    {
+        char dir[FN_LEN];
+        unsigned pos = 0;
+        while (ini_next_pending(&pos, dir)) {
+            int j = find_game(dir);
+            if (j < 0 && game_count < MAX_GAMES) {
+                const char *e = ini_game(dir, "netexe");    /* the server's word, until it is there */
+                Game *g = &games[j = game_count++];
+                memset(g, 0, sizeof(Game));
+                strncpy(g->dir, dir, FN_LEN - 1);
+                strncpy(g->name, dir, NAME_LEN - 1);
+                if (e) strncpy(g->exe, e, FN_LEN - 1);
+            }
+            if (j >= 0)
+                games[j].flags |= GF_NETPEND;
+        }
+    }
+
     ini_apply();
 
     /* a folder we have not seen before gets its own section, so the

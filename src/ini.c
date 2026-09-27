@@ -156,7 +156,9 @@ void ini_load(const char *fname)
                 for (k = 0; cfg_theme[k]; k++)          /* just the word */
                     if (cfg_theme[k] == ' ' || cfg_theme[k] == ';' || cfg_theme[k] == '\t')
                         cfg_theme[k] = 0;
-            } else if (strnicmp(s, "server=", 7) == 0) {
+            } else if (strnicmp(s, "server=", 7) == 0 && !cfg_server[0]) {
+                /* the first load only: a reload after a write keeps what the run
+                   has (the address typed at N, or WAVESRV) */
                 strncpy(cfg_server, trim(s + 7), sizeof(cfg_server) - 1);
                 cfg_server[sizeof(cfg_server) - 1] = 0;
             }
@@ -209,7 +211,7 @@ void ini_apply(void)
             val = trim(eq + 1);
             if (stricmp(key, "name") == 0)
                 set_field(cur->name, NAME_LEN, val);
-            else if (stricmp(key, "exe") == 0)
+            else if (stricmp(key, "exe") == 0 && val[0])   /* an empty exe= leaves the scan's */
                 set_field(cur->exe, FN_LEN, val);
             else if (stricmp(key, "setup") == 0)
                 set_field(cur->setup, FN_LEN, val);
@@ -268,18 +270,31 @@ static int section_is(const char *line, const char *dir)
  * Streams the file to WAVE86.TMP and swaps it in, so it needs no more
  * memory than one line.
  */
-int ini_write_key(const char *dir, const char *key, const char *name)
+/* the keys of the list not written yet, at the end of the section */
+static void keys_rest(FILE *out, const char *const *keys, const char *const *vals, unsigned char *done, int n)
+{
+    int k;
+    for (k = 0; k < n; k++)
+        if (!done[k]) {
+            fprintf(out, "%s=%s\n", keys[k], vals[k]);
+            done[k] = 1;
+        }
+}
+
+/* several keys of one game's section set, or added, in one rewrite of the
+   file: a key already there is replaced where it stands, the others go at
+   the section's end, and a game without a section gets one. Eight at most. */
+int ini_write_keys(const char *dir, const char *const *keys, const char *const *vals, int n)
 {
     char tmp[PATH_LEN + 16];
     char buf[LINE_LEN], line[LINE_LEN];
-    char keyeq[24];
+    unsigned char done[8];
     FILE *in, *out;
     const char *file = section_file();
-    int in_target = 0, seen = 0, done = 0;
-    unsigned kl;
+    int in_target = 0, seen = 0, k;
 
-    sprintf(keyeq, "%s=", key);
-    kl = strlen(keyeq);
+    if (n > 8) n = 8;
+    memset(done, 0, sizeof(done));
     tmp_name(tmp, file);
 
     out = fopen(tmp, "w");
@@ -296,37 +311,69 @@ int ini_write_key(const char *dir, const char *key, const char *name)
             strcpy(line, buf);
             t = trim(line);
             if (t[0] == '[') {
-                if (in_target && !done) {
-                    fprintf(out, "%s%s\n", keyeq, name);
-                    done = 1;
-                }
+                if (in_target)
+                    keys_rest(out, keys, vals, done, n);
                 in_target = section_is(t, dir);
                 if (in_target)
                     seen = 1;
-            } else if (in_target && !done) {
-                if (strnicmp(t, keyeq, kl) == 0) {
-                    fprintf(out, "%s%s\n", keyeq, name);   /* replace */
-                    done = 1;
+            } else if (in_target) {
+                int hit = 0;
+                for (k = 0; k < n; k++) {
+                    unsigned kl = strlen(keys[k]);
+                    if (!done[k] && strnicmp(t, keys[k], kl) == 0 && t[kl] == '=') {
+                        fprintf(out, "%s=%s\n", keys[k], vals[k]);   /* replace */
+                        done[k] = hit = 1;
+                        break;
+                    }
+                }
+                if (hit)
                     continue;
-                }
-                if (t[0] == 0) {                    /* section ends */
-                    fprintf(out, "%s%s\n", keyeq, name);
-                    done = 1;
-                }
+                if (t[0] == 0)                      /* section ends */
+                    keys_rest(out, keys, vals, done, n);
             }
             fputs(buf, out);
         }
         fclose(in);
-        if (in_target && !done)
-            fprintf(out, "%s%s\n", keyeq, name);
+        if (in_target)
+            keys_rest(out, keys, vals, done, n);
     }
-    if (!seen)
-        fprintf(out, "\n[%s]\n%s%s\n", dir, keyeq, name);
+    if (!seen) {
+        fprintf(out, "\n[%s]\n", dir);
+        keys_rest(out, keys, vals, done, n);
+    }
     fclose(out);
     remove(file);
     if (rename(tmp, file) != 0)
         return 1;
     ini_load(ini_path);                 /* pick the change up */
+    return 0;
+}
+
+int ini_write_key(const char *dir, const char *key, const char *name)
+{
+    return ini_write_keys(dir, &key, &name, 1);
+}
+
+/* the next section, from *pos on, whose netinstall= says pending: its
+   name into dir, *pos past it. 0 when there are no more. */
+int ini_next_pending(unsigned *pos, char *dir)
+{
+    char buf[LINE_LEN], sect[FN_LEN] = "";
+    while (*pos < pool_used) {
+        char *s = buf;
+        *pos = line_at(*pos, buf);
+        if (s[0] == '[') {
+            char *e = strchr(s, ']');
+            if (!e) continue;
+            *e = 0;
+            strncpy(sect, trim(s + 1), FN_LEN - 1);
+            sect[FN_LEN - 1] = 0;
+        } else if (sect[0] && strnicmp(s, "netinstall=", 11) == 0 && stricmp(trim(s + 11), "pending") == 0) {
+            strcpy(dir, sect);
+            sect[0] = 0;                /* once per section */
+            return 1;
+        }
+    }
     return 0;
 }
 

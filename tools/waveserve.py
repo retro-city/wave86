@@ -1381,7 +1381,7 @@ class H(BaseHTTPRequestHandler):
             self._head("text/plain", len(body))
             self.wfile.write(body)
             return
-        m = re.match(r'^/(info|pack|disk)/([^/]+)$', p)
+        m = re.match(r'^/(info|pack|disk|thumb)/([^/]+)$', p)
         g = None
         if m:
             key, _, query = m.group(2).partition("?")
@@ -1399,6 +1399,17 @@ class H(BaseHTTPRequestHandler):
         # wait=1 gets its answer started first and "W" lines while it waits;
         # any other just waits, and a 404 if there turns out to be no game.
         args = dict((kv.split("=", 1) + [""])[:2] for kv in query.split("&") if kv)
+        if m.group(1) == "thumb":       # the picture alone, the moment an install starts: no zip opened for it
+            kind, theme = args.get("art", "title").lower(), args.get("theme", "exodos").lower()
+            m_ = re.match(r"^(\d+)x(\d+)$", args.get("thumb", ""))
+            cols, rows = (max(8, min(38, int(m_.group(1)))), max(4, min(10, int(m_.group(2))))) if m_ else (26, 7)
+            thm = ART_SRC.thumb(g, kind, theme, cols, rows) if THUMBS_DIR and g.get("art") else None
+            if not thm:
+                self.send_error(404)
+                return
+            self._head("application/octet-stream", len(thm))
+            self.wfile.write(thm)
+            return
         patient = m.group(1) == "pack" and args.get("wait") == "1"
         if not patient and not resolve(g):
             self.send_error(404)
@@ -1466,7 +1477,8 @@ class H(BaseHTTPRequestHandler):
                     netdrive_image(*g["net_later"])
         # ?art=<kind>&theme=<name>: a picture for the details pane, made from
         # the collection's artwork, as the last file of the pack (so a resume
-        # note from before there was one still counts the files right)
+        # note from before there was one still counts the files right; the
+        # launcher fetches it first on its own, through /thumb/)
         kind, theme = args.get("art", "").lower(), args.get("theme", "exodos").lower()
         if kind and THUMBS_DIR and g.get("art"):
             m_ = re.match(r"^(\d+)x(\d+)$", args.get("thumb", ""))    # the size the launcher shows
