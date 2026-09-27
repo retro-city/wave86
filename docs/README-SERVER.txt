@@ -55,12 +55,14 @@ What happens
 ------------
 The server lists every game in eXoDOS.torrent at once, but fetches
 nothing until a DOS machine asks for a game. Then it downloads only that
-game's pieces from the swarm into cache= (~/wave86-torrent by default)
+game's pieces from the swarm into cache= (~/.wave86/torrent by default)
 and sends the game on while they arrive. The whole collection is
 hundreds of gigabytes; the cache holds only what has been asked for.
 Pictures for the launcher's details pane are made once per game into
-thumbs= (~/wave86-thumbs), and the NetDrive volumes for playing off the
-server go into netdrive= (~/wave86-cd).
+thumbs= (~/.wave86/thumbs), and the NetDrive volumes for playing off the
+server go into netdrive= (~/.wave86/cd). A server from before 0.6 kept
+them in ~/wave86-torrent, ~/wave86-thumbs and ~/wave86-cd; this one
+moves them under ~/.wave86 when it starts. Stop the old server first.
 
 An eXoDOS collection already on the disk (or an eXoDOS Lite install) can
 be used instead of, or as well as, the torrent: put its folder, the one

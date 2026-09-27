@@ -1173,6 +1173,55 @@ UPDATE_NAMES = ["WAVE86.EXE", "WAVEGET.EXE", "DRVOFF.EXE", "MEMLIM.EXE", "SLOWDO
 UPDATE_DIR = None
 
 
+# The server's own folders live under ~/.wave86: cd (the NetDrive volumes),
+# thumbs (the pictures) and torrent (the pieces fetched from the swarm).
+# Before 0.6 they were ~/wave86-cd, ~/wave86-thumbs and ~/wave86-torrent;
+# one still there is moved the first time the new default is used, since
+# the volumes and the pieces are gigabytes that would otherwise be made or
+# fetched again.
+HOME_DIR = "~/.wave86"
+OLD_HOMES = {"cd": "~/wave86-cd", "thumbs": "~/wave86-thumbs", "torrent": "~/wave86-torrent"}
+
+
+def port_free(host, port):
+    """whether nothing listens on the port yet: another server running
+    keeps its folders where they are"""
+    import socket
+    s = socket.socket()
+    try:
+        s.bind((host or "0.0.0.0", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def move_old_homes(a):
+    """the old folders to their places under ~/.wave86, for the settings
+    that are at their defaults there (a folder chosen by hand stays put)"""
+    wanted = {"cd": a.netdrive, "thumbs": a.thumbs, "torrent": a.cache if a.torrent else None}
+    moves = []
+    for name, path in wanted.items():
+        new = os.path.abspath(os.path.expanduser(path)) if path else None
+        old = os.path.expanduser(OLD_HOMES[name])
+        if new == os.path.abspath(os.path.expanduser(f"{HOME_DIR}/{name}")) and not os.path.exists(new) and os.path.isdir(old):
+            moves.append((name, old, new))
+    if not moves:
+        return
+    if not port_free(a.interface, a.port):
+        MON.log(f"port {a.port} is taken, another server may be using {', '.join(OLD_HOMES[n] for n, _, _ in moves)}:"
+                f" left where they are")
+        return
+    for name, old, new in moves:
+        try:
+            os.makedirs(os.path.dirname(new), exist_ok=True)
+            os.rename(old, new)
+            MON.log(f"moved {OLD_HOMES[name]} to {HOME_DIR}/{name}")
+        except OSError as e:
+            MON.log(f"could not move {OLD_HOMES[name]} to {HOME_DIR}/{name} ({e}): starting afresh there")
+
+
 def netdrive_packaged(here):
     """the release package's NetDrive server for this machine, from its
     netdrive/ folder (Michael Brutman's build for every platform), or None"""
@@ -1736,7 +1785,7 @@ def main():
                                                     "the built programs go out anyway")
     ap.add_argument("--torrent", metavar="FILE", help="the collection's .torrent: list every game in it, and fetch "
                                                       "a game's pieces from the swarm when somebody asks for it")
-    ap.add_argument("--cache", metavar="DIR", default="~/wave86-torrent", help="where the pieces are kept (default %(default)s)")
+    ap.add_argument("--cache", metavar="DIR", default="~/.wave86/torrent", help="where the pieces are kept (default %(default)s)")
     ap.add_argument("--torrent-port", type=int, default=6881, help="the port other peers reach us on (default 6881)")
     ap.add_argument("--torrent-upload", default="1024", metavar="KB/S", help="what we give back to the swarm, at most "
                                                                               "(default 1024; 0 for no limit, off for nothing)")
@@ -1748,7 +1797,7 @@ def main():
     ap.add_argument("--torrent-connections", type=int, default=200, help="peers at most (default 200)")
     ap.add_argument("--interface", default="", metavar="ADDR", help="the address WAVE86 reaches the server on "
                                                                      "(default: every address this machine has)")
-    ap.add_argument("--thumbs", metavar="DIR", default="~/wave86-thumbs",
+    ap.add_argument("--thumbs", metavar="DIR", default="~/.wave86/thumbs",
                     help="where the pictures made for the details pane are kept (default %(default)s; "
                          "'none' sends no pictures)")
     ap.add_argument("--torrent-portmap", action="store_true", help="ask the router (UPnP, NAT-PMP) to let peers in on that "
@@ -1769,6 +1818,7 @@ def main():
     MON.headless = a.headless or not sys.stdout.isatty()
     if a.log:
         MON.logfile = open(a.log, "a")
+    move_old_homes(a)
     global UPDATE_DIR
     if a.update:
         UPDATE_DIR = os.path.abspath(a.update)

@@ -2,7 +2,7 @@
 """torrentfs - the files inside a torrent, read as if they were on disk.
 
     t = Torrent("eXoDOS.torrent")           what is in it: no network, no libtorrent
-    swarm = Swarm(t, "~/wave86-cache")      the pieces: fetched when asked for, kept
+    swarm = Swarm(t, "~/.wave86/torrent")   the pieces: fetched when asked for, kept
     tree = Tree(t, swarm)
     with tree.open("eXo/eXoDOS/Commander Keen 4 - Secret of the Oracle (1991).zip") as f:
         zipfile.ZipFile(f).namelist()       costs the pieces the zip's directory is in

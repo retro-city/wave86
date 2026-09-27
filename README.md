@@ -504,10 +504,18 @@ colours of the theme the INI names, at the size the launcher shows.
 
 The server makes each picture once, from `Images/MS-DOS/` in the eXoDOS
 folder (or from the metadata zip in the torrent, one piece per picture,
-when there is no such folder), into `--thumbs DIR` (`~/wave86-thumbs`;
+when there is no such folder), into `--thumbs DIR` (`~/.wave86/thumbs`;
 `--thumbs none` turns pictures off). It needs ffmpeg on the PATH; without
-it the server says so once and sends none. A picture is 3 to 5 KB and
-comes last in the pack.
+it the server says so once and sends none. A picture is 3 to 5 KB; it
+comes last in the pack, and on its own from `/thumb/` when an install
+starts.
+
+The server's own folders are all under `~/.wave86`: `cd` for the
+NetDrive volumes, `thumbs` for the pictures and `torrent` for the pieces
+fetched from the swarm. Before 0.6 they were `~/wave86-cd`,
+`~/wave86-thumbs` and `~/wave86-torrent`; the server moves one it finds
+there to its new place when it starts, unless the port is taken (another
+server may still be using it) or the setting points somewhere else.
 
 ## Games from eXoDOS or the Total DOS Collection over the network
 
@@ -720,9 +728,9 @@ leaves the mounting to it and calls it with `/U` afterwards.
 
 A 300 MB disc does not have to travel to the DOS disk at all. With
 
-    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd --netdrive ~/wave86-cd
+    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd --netdrive ~/.wave86/cd
 
-the server wraps each game's ISO in a FAT volume under `~/wave86-cd`
+the server wraps each game's ISO in a FAT volume under `~/.wave86/cd`
 (built once, at index time) and runs Michael Brutman's mTCP NetDrive
 server on UDP port 2002 to hand those volumes out. `make netdrive`
 unpacks his official build of that server for this machine from
@@ -973,7 +981,7 @@ The console gets a line for it:
 
 `tools/torrentfs.py` is the part that turns a file inside a torrent into
 something `zipfile` can read, and works by itself: `torrentfs.py
-eXoDOS.torrent ~/wave86-torrent ls eXo/eXoDOS`, or `get <file> <to>`.
+eXoDOS.torrent ~/.wave86/torrent ls eXo/eXoDOS`, or `get <file> <to>`.
 Its tests (`python3 tools/test_torrentfs.py`) use a swarm that lives in
 memory and need neither libtorrent nor a network.
 
@@ -1018,7 +1026,7 @@ overwrites itself.
 The server sends what `make` put in `build/`. `--update DIR` adds
 everything in DIR, and anything there with the same name wins:
 
-    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --update ~/wave86-push
+    python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --update ~/.wave86/push
 
 That is the way to push a `WAVE86.INI`, a driver, whatever else. Three
 files are deliberately not in the default set: `WAVE.BAT`, because

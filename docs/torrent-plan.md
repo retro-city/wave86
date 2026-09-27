@@ -159,8 +159,8 @@ the torrent for the rest. `g["zip"]` becomes a source path.
 
 ### 5. Command line
 
-    waveserve.py ~/Downloads/eXoDOS --torrent eXoDOS.torrent --cache ~/wave86-cache
-    make waveserve TORRENT=eXoDOS.torrent CACHE=~/wave86-cache
+    waveserve.py ~/Downloads/eXoDOS --torrent eXoDOS.torrent --cache ~/.wave86/torrent
+    make waveserve TORRENT=eXoDOS.torrent CACHE=~/.wave86/torrent
 
 The cache only grows in the first version; its size is on the console and
 it can be deleted with the server stopped.
