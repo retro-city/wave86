@@ -83,7 +83,7 @@ In the games list:
 | F1 or ? | a menu of everything, each with its key |
 | M | music on or off |
 | + / -, < / > | volume, previous / next track |
-| F4 | music style: all, MIDI, MOD or AdLib |
+| F4 | music format: all, MIDI, MOD or AdLib |
 | Esc | back to DOS |
 
 In the server's games (N):
@@ -98,7 +98,7 @@ In the server's games (N):
 | / or S | search; F3 searches on |
 | F1 or ? | the menu: L fetches the list again, C switches between the disc with the game and the disc on the server, U updates WAVE86 itself |
 | M | music on or off |
-| F4 | music style: all, MIDI, MOD or AdLib |
+| F4 | music format: all, MIDI, MOD or AdLib |
 | Esc | back to the games |
 
 With no `server=` in the INI, N asks for the address first, adds port
@@ -1240,7 +1240,7 @@ list fetch from a waveserve here, the chain the 486 uses. Needs mtools
     src/theme.c    the three looks (theme=): logo, tagline, colours
     src/scan.c     finding games and their executables
     src/ini.c      WAVE86.INI
-    src/music.c    AdLib detection, IMF player, playlist, music style, volume
+    src/music.c    AdLib detection, IMF player, playlist, music format, volume
     src/mod.c      Sound Blaster DMA, ProTracker loader, sequencer, mixer
     src/midi.c     MPU-401 detection, MIDI file loader and player, note bookkeeping
     src/cpu.c      CPU and memory identification for the header line

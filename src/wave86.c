@@ -987,7 +987,7 @@ static int find_title(int net, int from, int again)
     X(g09, "M",     "MUSIC ON/OFF",            K_MUSIC) \
     X(g10, "+/-",   "VOLUME CONTROL",          '+') \
     X(g11, "</>",   "PREVIOUS/NEXT SONG",      '>') \
-    X(g17, "F4",    "MUSIC STYLE",             K_F4) \
+    X(g17, "F4",    "MUSIC FORMAT",            K_F4) \
     X(g12, "ESC",   "QUIT TO DOS",             0x1B)
 #define NET_MENU(X) \
     X(n01, "ENTER", "INSTALL IT, OR THE QUEUE", 0x0D) \
@@ -1002,7 +1002,7 @@ static int find_title(int net, int from, int again)
     X(n10, "M",     "MUSIC ON/OFF",            K_MUSIC) \
     X(n11, "+/-",   "VOLUME CONTROL",          '+') \
     X(n12, "</>",   "PREVIOUS/NEXT SONG",      '>') \
-    X(n14, "F4",    "MUSIC STYLE",             K_F4) \
+    X(n14, "F4",    "MUSIC FORMAT",            K_F4) \
     X(n13, "ESC",   "BACK TO THE GAMES",       0x1B)
 /* the text and the tables live in far memory: the data segment is full */
 #define MENU_TEXT(id, k, l, c) static const char __far id##k_[] = k, id##l_[] = l;
@@ -1933,7 +1933,7 @@ static void music_key(void)
     }
     if (!mus_ntracks) {
         if (cfg_musicstyle)
-            sprintf(msg, "NO %s TRACKS TO PLAY HERE. F4 CHOOSES ANOTHER STYLE.",
+            sprintf(msg, "NO %s TRACKS TO PLAY HERE. F4 CHOOSES ANOTHER FORMAT.",
                     cfg_musicstyle == 1 ? "MIDI" : cfg_musicstyle == 2 ? "MOD" : "ADLIB");
         else
             sprintf(msg, "NO TRACKS IN %s%sMUSIC", home_dir,
@@ -1977,7 +1977,7 @@ static const char *music_style(void)
         style_items[i].code = '1' + i;
         dim[i] = (unsigned char)(count[i] <= 0);
     }
-    sprintf(title, " MUSIC STYLE: %s ", what[sel]);
+    sprintf(title, " MUSIC FORMAT: %s ", what[sel]);
     for (;;) {
         unsigned k;
         int pick = -1;
@@ -1992,7 +1992,7 @@ static const char *music_style(void)
         if (pick >= 0 && !dim[pick]) {
             mus_set_style(pick);
             ini_write_global("musicstyle", mus_style_name(pick));
-            sprintf(msg, "MUSIC STYLE %s: %d TRACK%s.", what[pick], mus_ntracks,
+            sprintf(msg, "MUSIC FORMAT %s: %d TRACK%s.", what[pick], mus_ntracks,
                     mus_ntracks == 1 ? "" : "S");
             return msg;
         }
