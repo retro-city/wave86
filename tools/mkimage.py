@@ -363,14 +363,16 @@ def fill_with_mtools(img, off, stage):
             sys.exit(f"mkimage: mcopy {n}: {r.stderr.strip()}")
 
 
-def autoexec_bat(flavour):
+def autoexec_bat(flavour, doskey=False):
     """AUTOEXEC.BAT after the D6 package's: the card's numbers and the
     environment, then the boot menu's item, by the name (or number) the
     kernel put in CONFIG. 1 the sound cards (PMINIT, all in one call), the
     SD card on W:, the CD-ROM on D:, the mouse, the packet driver and DHCP;
     2 without the network; 3 without W: and the CD-ROM; 4 the sound cards
     and W: only; 5 a prompt in C:\\WAVE86. WMODE names the mode for the
-    launcher, which opens on the network view in Network mode."""
+    launcher, which opens on the network view in Network mode. With doskey,
+    items 1 to 4 load Enhanced DOSKEY high: history and Tab completion at
+    the prompt."""
     pminit = "C:\\PICOMEM\\PMINIT /K /SB 1 /GUS 1 /MPU 1"
     pmdfs = "C:\\PICOMEM\\PMDFS S-W"
     # ?: quiet when the driver has no drive to give. Low on MS-DOS: LOADHIGH into an
@@ -379,6 +381,7 @@ def autoexec_bat(flavour):
     mouse = "LH C:\\WAVE86\\EXTRAS\\CTMOUSE"
     drvoff = "C:\\WAVE86\\DRVOFF D:"
     net = ["LH C:\\PICOMEM\\PM2000 0x60", "C:\\WAVE86\\DHCP -retries 2 -timeout 10"]
+    key = ["LH C:\\DOS\\DOSKEY"] if doskey else []
     std, local, netm, mem, safe = menu_names(flavour)
     return bat([
         "@ECHO OFF",
@@ -395,19 +398,19 @@ def autoexec_bat(flavour):
         "GOTO %CONFIG%",
         f":{std}",
         "SET WMODE=Standard",
-        drvoff, pminit, pmdfs, shcdx, mouse] + net + [
+        drvoff, pminit, pmdfs, shcdx, mouse] + key + net + [
         "GOTO WAVE",
         f":{local}",
         "SET WMODE=Local",
-        pminit, pmdfs, shcdx, mouse,
+        pminit, pmdfs, shcdx, mouse] + key + [
         "GOTO WAVE",
         f":{netm}",
         "SET WMODE=Network",
-        drvoff, pminit, mouse] + net + [
+        drvoff, pminit, mouse] + key + net + [
         "GOTO WAVE",
         f":{mem}",
         "SET WMODE=Memory",
-        pminit, pmdfs,
+        pminit, pmdfs] + key + [
         "GOTO WAVE",
         f":{safe}",
         "SET WMODE=Safe",
@@ -523,8 +526,20 @@ def stage_tree(work, a):
         for n in ("EDIT.EXE",):
             if not any(x.upper() == n for x in os.listdir(os.path.join(stage, "DOS"))):
                 notes.append(f"{n} is not in {a.dos}")
+    a.have_doskey = False
+    if a.doskey and a.flavour != "fdos":   # FreeCOM has history and Tab completion of its own
+        found = {x.upper(): x for x in os.listdir(a.doskey)}
+        if "DOSKEY.COM" in found:
+            d = os.path.join(stage, "DOS")
+            os.makedirs(d, exist_ok=True)   # on MS-DOS it goes over that DOS's own DOSKEY
+            for n in ("DOSKEY.COM", "DOSKEY.TXT"):
+                if n in found:
+                    shutil.copy(os.path.join(a.doskey, found[n]), os.path.join(d, n))
+            a.have_doskey = True
+        else:
+            notes.append(f"no DOSKEY.COM in {a.doskey}: the prompt has no history or Tab completion")
     open(os.path.join(stage, "CONFIG.SYS"), "w", newline="").write(config_sys(have_cdmke, a.flavour))
-    open(os.path.join(stage, "AUTOEXEC.BAT"), "w", newline="").write(autoexec_bat(a.flavour))
+    open(os.path.join(stage, "AUTOEXEC.BAT"), "w", newline="").write(autoexec_bat(a.flavour, a.have_doskey))
     return stage, notes
 
 
@@ -547,10 +562,11 @@ def clone(src, dst):
         shutil.copyfile(src, dst)
 
 
-def boot_test(img, off, geom, work, seconds, chs):
+def boot_test(img, off, geom, work, seconds, chs, doskey=False):
     """Boot a copy of the image in dosbox-x, headless, from the hard disk.
     With chs, the boot sector's INT 13h extension check is turned into a
-    no (SYS /FORCE:CHS does the same byte), the path the card takes.
+    no (SYS /FORCE:CHS does the same byte), the path the card takes. With
+    doskey, MEM /C must show DOSKEY resident.
     Returns (finished, results dict)."""
     tag = "chs" if chs else "lba"
     test = os.path.join(work, f"test-{tag}.img")
@@ -567,6 +583,7 @@ def boot_test(img, off, geom, work, seconds, chs):
     stub = bat(["@echo off", "set MK=MARKER", "md C:\\RESULTS",
                 "ver > C:\\RESULTS\\VER.TXT", "set > C:\\RESULTS\\SET.TXT",
                 "WAVE86 /diag > C:\\RESULTS\\DIAG.TXT",
+                "mem /c > C:\\RESULTS\\MEM.TXT",
                 "dir C:\\ > C:\\RESULTS\\DIRC.TXT",
                 f"echo {MARKER.replace('MARKER', '%MK%')} > C:\\RESULTS\\DONE.TXT"])
     open(os.path.join(work, "WAVE.BAT"), "w", newline="").write(stub)
@@ -619,6 +636,8 @@ def boot_test(img, off, geom, work, seconds, chs):
               "WMODE=STANDARD", path):
         if v not in setting:
             problems.append(f"AUTOEXEC.BAT did not leave {v.strip()} in the environment")
+    if doskey and "DOSKEY" not in results.get("MEM.TXT", "").upper():
+        problems.append("DOSKEY is not resident (MEM /C does not list it)")
     return not problems, problems
 
 
@@ -631,6 +650,8 @@ def main():
     ap.add_argument("--cdmke", help="folder with CDMKE.SYS, the MKE CD-ROM driver")
     ap.add_argument("--gus", help="folder with the Gravis UltraSound files for C:\\ULTRASND")
     ap.add_argument("--dos", help="folder with FreeDOS utilities (EDIT, MEM, XCOPY...) for C:\\DOS")
+    ap.add_argument("--doskey", help="folder with Enhanced DOSKEY (DOSKEY.COM, DOSKEY.TXT) for C:\\DOS: history and "
+                                     "Tab completion on the EDR-DOS and MS-DOS images (FreeDOS's shell has its own)")
     ap.add_argument("--kernel", choices=("freedos", "edrdos"), default="edrdos",
                     help="the kernel under the FreeDOS boot sector: EDR-DOS (default; --edr folder) or FreeDOS")
     ap.add_argument("--edr", default=os.path.join(ROOT, "build", "edrdos"),
@@ -650,7 +671,7 @@ def main():
             sys.exit(f"mkimage: {tool} not found (dosbox-x; brew install mtools)")
     if a.kernel == "edrdos" and not a.edr:
         sys.exit("mkimage: --kernel edrdos needs --edr <folder with kernel.sys and command.com>")
-    for d in (a.dist, a.picomem, a.mtcp, a.cdmke, a.gus, a.dos, a.edr):
+    for d in (a.dist, a.picomem, a.mtcp, a.cdmke, a.gus, a.dos, a.doskey, a.edr):
         if d and not os.path.isdir(d):
             sys.exit(f"mkimage: no folder {d}")
     for d in a.dos_disks:
@@ -692,7 +713,7 @@ def main():
     if not a.no_test:
         ok = []
         for chs in (False, True):
-            good, problems = boot_test(img, off, geom, work, a.seconds, chs)
+            good, problems = boot_test(img, off, geom, work, a.seconds, chs, a.have_doskey)
             if good is None:
                 continue
             for pr in problems:

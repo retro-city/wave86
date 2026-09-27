@@ -41,6 +41,10 @@ plays a game off the server, and discs stay on the server. 4 gives the
 most memory to a game: no drivers but the sound cards and W:. 5 loads
 nothing and stops at a prompt.
 
+1 to 4 also load Enhanced DOSKEY (C:\DOS\DOSKEY.COM, 10K in upper
+memory): at the prompt, Up and Down bring back earlier commands and Tab
+completes a command, file or folder name. DOSKEY -H lists the history.
+
 EDR-DOS shows no countdown; the menu says the default and the time.
 
 The server

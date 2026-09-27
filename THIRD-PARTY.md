@@ -46,7 +46,12 @@ listed as the files state them.
 - `DISKTEST.EXE`: "DiskTest, by James Pearce"; "Portions Copyright (c) 1983,90 Borland".
 - `DOSDRV/`: CDMKE.SYS 4.12 with README.TXT (Matsushita-Kotobuki, as above);
   CTMOUSE.EXE (CuteMouse, GPL); DOSKEY.COM with DOSKEY.TXT ("(C) Copyright 2011
-  Paul Houle and 2018 Wengier", Enhanced DOSKEY 2.8); CRTFIX.EXE, CRTFIX.PAS,
+  Paul Houle and 2018 Wengier", Enhanced DOSKEY 2.8; DOSKEY.TXT's "Licence"
+  section: GNU GPL v2.0, "see the file gpl-2.0.txt in the src directory of the
+  package" - the D6 package has the program and DOSKEY.TXT only, no src
+  directory; upstream http://paulhoule.com/doskey; `make picomem-image` unpacks the two into
+  `build/doskey` and puts them in C:\DOS on the EDR-DOS and MS-DOS images,
+  over MS-DOS's own DOSKEY there, unless `DOSKEY_DIR=` is empty); CRTFIX.EXE, CRTFIX.PAS,
   CRTFIX.TXT, CRT.TPU (CRTFix 1.16 "by Eugene Toder, 2001"); UNP.EXE with
   UNP.DOC and WHATSNEW.411 (UNP 4.11 "Written by Ben Castricum");
   UNIVBE67.EXE (SciTech UniVBE 6.7; the file carries "CauseWay DOS Extender

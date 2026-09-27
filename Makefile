@@ -247,9 +247,9 @@ picomem-release: picomem-image
 # and the EDR-DOS kernel, each unpacked into build/ on first use; make
 # update-third-party refreshes them from where they came (the *_URL, *_VER
 # and *_REF variables say where).
-# An empty folder variable (CDMKE_DIR=, GUS_DIR=, DOS_DIR=)
+# An empty folder variable (CDMKE_DIR=, GUS_DIR=, DOS_DIR=, DOSKEY_DIR=)
 # leaves that piece out; a folder of your own (PICOMEM_DIR=, MTCP_TOOLS=,
-# CDMKE_DIR=, GUS_DIR=, DOS_DIR=, EDR_DIR=) is used instead
+# CDMKE_DIR=, GUS_DIR=, DOS_DIR=, DOSKEY_DIR=, EDR_DIR=) is used instead
 # of the unpacked one. The image boots in dosbox-x before it is declared
 # done - twice, LBA and then CHS, with the FreeDOS boot sector (the
 # EDR-DOS kernel boots under it too), once with a DOS_DISKS image, whose own boot
@@ -306,12 +306,17 @@ FREEDOS_REPO ?= https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/reposit
 DOS_PKGS ?= edit mem more xcopy deltree attrib find tree label himemx jemm
 DOS_ZIPS = $(foreach p,$(DOS_PKGS),$(TP)/dosutils/$(p).zip)
 DOS_DIR ?= build/dosutils
-PICOMEM_INPUTS = $(PICOMEM_DIR) $(MTCP_TOOLS) $(CDMKE_DIR) $(GUS_DIR) $(DOS_DIR) $(if $(filter edrdos,$(KERNEL)),$(EDR_DIR))
+# Enhanced DOSKEY 2.8 (Paul Houle and Wengier, GPL), from the D6 package's
+# DOSDRV folder: history and Tab completion at the EDR-DOS and MS-DOS
+# prompt (FreeDOS's FreeCOM has both built in)
+DOSKEY_DIR ?= build/doskey
+PICOMEM_INPUTS = $(PICOMEM_DIR) $(MTCP_TOOLS) $(CDMKE_DIR) $(GUS_DIR) $(DOS_DIR) $(DOSKEY_DIR) $(if $(filter edrdos,$(KERNEL)),$(EDR_DIR))
 # the build/ defaults are unpacked by the rules below; anything else must be there already
-PICOMEM_FETCH = $(filter build/picomem build/mtcp build/cdmke build/ultrasnd build/dosutils build/edrdos,$(PICOMEM_INPUTS))
+PICOMEM_FETCH = $(filter build/picomem build/mtcp build/cdmke build/ultrasnd build/dosutils build/doskey build/edrdos,$(PICOMEM_INPUTS))
 picomem-image: picomem-folders dist $(PICOMEM_FETCH)
 	python3 tools/mkimage.py --dist dist/wave86 --picomem "$(PICOMEM_DIR)" --mtcp "$(MTCP_TOOLS)" \
 	  $(if $(CDMKE_DIR),--cdmke "$(CDMKE_DIR)") $(if $(GUS_DIR),--gus "$(GUS_DIR)") $(if $(DOS_DIR),--dos "$(DOS_DIR)") \
+	  $(if $(DOSKEY_DIR),--doskey "$(DOSKEY_DIR)") \
 	  --kernel $(KERNEL) $(if $(filter edrdos,$(KERNEL)),--edr "$(EDR_DIR)") $(foreach d,$(DOS_DISKS),--dos-disk $(d)) \
 	  --size $(IMAGE_MB) $(if $(IMAGE),-o "$(IMAGE)") $(MKIMAGE_ARGS)
 
@@ -347,6 +352,11 @@ build/mtcp: $(MTCP_ZIP)
 	@mkdir -p build
 	rm -rf build/mtcp && unzip -q -o -d build/mtcp $(MTCP_ZIP)
 	@ls build/mtcp
+
+build/doskey: $(PICOMEM_D6)
+	@rm -rf build/doskey.part && mkdir -p build/doskey.part
+	cd build/doskey.part && unzip -q -o -j $(abspath $(PICOMEM_D6)) PM_D6_CONFIG/DOSDRV/DOSKEY.COM PM_D6_CONFIG/DOSDRV/DOSKEY.TXT
+	@rm -rf build/doskey && mv build/doskey.part build/doskey && ls build/doskey | tr '\n' ' ' && echo
 
 build/cdmke: $(CDMKE_ZIP)
 	@mkdir -p build
