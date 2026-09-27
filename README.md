@@ -454,10 +454,10 @@ carries three:
 
 The version in the names is the tag's (`RELEASE_VER=`; the launcher's
 own version when built by hand), and a tag with a hyphen in it, like
-`v0.5-pre1`, is published as a pre-release. The image is built on a macOS runner
-with Homebrew's dosbox-x and mtools, boot tests and all, after the Linux
-job has made the release; the Actions tab can also build it by hand
-(Run workflow), as an artifact.
+`v0.6-pre1`, is published as a pre-release. The image is built and
+boot-tested on an Ubuntu 26.04 runner with its own dosbox-x and mtools,
+after the first job has made the release, on every push as well as for
+a tag; the push builds leave it as an artifact.
 
 The code is compiled for the 8086 instruction set with the medium memory
 model (far code, near data), and comes out around 90 KB.

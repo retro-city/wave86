@@ -49,11 +49,10 @@ jobs:
 
   picomem:
     # The EDR-DOS disk for a PicoMEM 2, built and boot-tested in dosbox-x:
-    # on macOS, with Homebrew's dosbox-x and mtools, as on the machine the
-    # images are made on. After the dos job, so the release exists by then.
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # Ubuntu 26.04's dosbox-x (2026.01.02) and mtools do it as Homebrew's do
+    # on a Mac. After the dos job, so the release exists by then.
     needs: dos
-    runs-on: macos-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -62,9 +61,9 @@ jobs:
         run: echo "RELEASE_VER=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: dosbox-x and mtools
-        run: brew install dosbox-x mtools
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dosbox-x mtools
 
-      - name: Open Watcom V2 (host tools for macOS)
+      - name: Open Watcom V2 (host tools for Linux)
         run: make toolchain
 
       - name: The EDR-DOS image, built, boot-tested and zipped (wave86-<version>-picomem-hdd.zip)

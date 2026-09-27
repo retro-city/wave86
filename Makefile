@@ -18,9 +18,11 @@ VERSION := $(shell sed -n 's/.*VERSION_STR *"\([^"]*\)".*/\1/p' src/wave86.h)
 TP = third-party
 
 # -0: 8086 instructions only  -mm: medium model (far code, so the launcher can pass 64 KB of it; near data)  -os: optimize for size
-# -s: no stack-overflow probes (the code segment is full); -k4096: twice the
-# default stack in their place, so the margin is real rather than checked
+# -s: no stack-overflow probes; -k4096: twice the default stack in their
+# place, so the margin is real rather than checked. The small tools
+# (MEMLIM, DRVOFF) stay in the small model they were tested in.
 CFLAGS = -q -bcl=dos -0 -mm -os -wx -s -k4096
+TOOL_CFLAGS = -q -bcl=dos -0 -ms -os -wx -s -k4096
 
 SRCS = src/wave86.c src/ui.c src/vga.c src/scan.c src/ini.c src/music.c \
        src/mod.c src/cpu.c src/net.c src/theme.c
@@ -37,9 +39,9 @@ build/WAVE86.DEF: WAVE86.INI
 	cp $< $@
 
 # MEMLIM hides extended memory from a game that cannot cope with all of it
-build/MEMLIM.EXE: src/memlim.c
+build/MEMLIM.EXE: src/memlim.c Makefile
 	@mkdir -p build
-	cd build && wcl $(CFLAGS) -fe=MEMLIM.EXE ../src/memlim.c
+	cd build && wcl $(TOOL_CFLAGS) -fe=MEMLIM.EXE ../src/memlim.c
 	@rm -f build/*.o
 
 # SLOWDOWN (Bret Johnson, freeware: the COM and its DOC travel together,
@@ -52,7 +54,7 @@ build/SLOWDOWN.COM: $(TP)/slowdown/SLOWDOWN.COM $(TP)/slowdown/SLOWDOWN.DOC
 	@mkdir -p build
 	cp $(TP)/slowdown/SLOWDOWN.COM $(TP)/slowdown/SLOWDOWN.DOC build/
 
-build/WAVE86.EXE: $(SRCS) src/wave86.h
+build/WAVE86.EXE: $(SRCS) src/wave86.h Makefile
 	@mkdir -p build
 	cd build && wcl $(CFLAGS) -fe=WAVE86.EXE $(addprefix ../,$(SRCS))
 	@rm -f build/*.o
@@ -118,9 +120,9 @@ MTCP_SRC  = $(wildcard net/mtcp/TCPLIB/*.CPP) net/mtcp/TCPLIB/IPASM.ASM
 net: build/WAVEGET.EXE build/DHCP.EXE build/MTCP.CFG build/NE2000.COM build/NETDRIVE.SYS build/NETDRIVE.EXE build/DRVOFF.EXE
 
 # DRVOFF X: frees a drive letter, so the CD can have D: beside NetDrive
-build/DRVOFF.EXE: net/DRVOFF.C
+build/DRVOFF.EXE: net/DRVOFF.C Makefile
 	@mkdir -p build
-	cd build && wcl $(CFLAGS) -fe=DRVOFF.EXE ../net/DRVOFF.C
+	cd build && wcl $(TOOL_CFLAGS) -fe=DRVOFF.EXE ../net/DRVOFF.C
 	@rm -f build/*.o
 
 # mTCP NetDrive (GPL): a remote disk image as a drive letter, for CD images kept on the server
@@ -331,7 +333,7 @@ build/edrdos: $(EDR_ZIP)
 	cd build/edrdos.part && unzip -q -o $(abspath $(EDR_ZIP))
 	@rm -rf build/edrdos && mv build/edrdos.part build/edrdos && ls build/edrdos | tr '\n' ' ' && echo
 
-build/dosutils: $(DOS_ZIPS)
+build/dosutils: $(DOS_ZIPS) Makefile
 	@rm -rf build/dosutils.part && mkdir -p build/dosutils.part
 	for z in $(DOS_ZIPS); do unzip -q -j -o $$z 'BIN/*' -d build/dosutils.part || { echo "no BIN/ in $$z"; exit 1; }; done
 	@rm -rf build/dosutils && mv build/dosutils.part build/dosutils && ls build/dosutils | tr '\n' ' ' && echo
