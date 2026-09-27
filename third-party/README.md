@@ -18,18 +18,18 @@ repository.
     netdrive/   his mTCP NetDrive server, every platform in one zip
     cdmke/      CDMKE.SYS, the Panasonic/MKE CD-ROM driver (the PicoGUS copy)
     dosutils/   FreeDOS 1.3 packages: EDIT, MEM, MORE, XCOPY, DELTREE, ATTRIB,
-                FIND, TREE, LABEL, HIMEMX, JEMM (JEMM386, JEMMEX, JLOAD), LBACACHE
-    4dos/       4DOS 8.00, the official package
+                FIND, TREE, LABEL, HIMEMX, JEMM (JEMM386, JEMMEX, JLOAD), LBACACHE (kept; not on the image)
+    4dos/       4DOS 8.00, the official package (kept; the build does not use it)
     edrdos/     the EDR-DOS kernel, SvarDOS's release zip
     slowdown/   SLOWDOWN 3.10, the COM and its DOC, from the FreeDOS package
 
 The Makefile unpacks what a target needs into `build/` on first use
-(`build/mtcp`, `build/4dos`, `build/picomem` = the D6 package's PICOMEM
+(`build/mtcp`, `build/picomem` = the D6 package's PICOMEM
 folder plus `drivers/NE2000.COM`...), so a `make clean` costs no download.
 
 Refreshing from upstream: `make update-third-party`, or one piece at a
 time (`make update-mtcp`, `update-netdrive`, `update-picomem`,
-`update-cdmke`, `update-gus`, `update-dosutils`, `update-4dos`,
+`update-cdmke`, `update-gus`, `update-dosutils`,
 `update-edrdos`, `update-slowdown`). A refresh that brings the same bytes
 changes nothing; one that brings new ones replaces the file and its line
 in `SOURCES.txt`, for you to look at and commit. A site that does not

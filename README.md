@@ -83,10 +83,10 @@ directly, which is handy for a boot-into-game AUTOEXEC.
 
 ### A ready-made disk for a PicoMem 2
 
-`make picomem-image` builds `build/pmwave-fdos.img`, a 512 MB hard-disk
-image (volume label `WAVE_FD`) that boots FreeDOS straight into the
+`make picomem-image` builds `build/pmwave-edrdos.img`, a 512 MB hard-disk
+image (volume label `WAVE_EDR`) that boots EDR-DOS straight into the
 launcher on a machine with a PicoMem 2 - or, below, the same image on
-EDR-DOS (label `WAVE_EDR`) or on a DOS of your own (`WAVE_MS` for MS-DOS),
+FreeDOS (label `WAVE_FD`) or on a DOS of your own (`WAVE_MS` for MS-DOS),
 named after what it runs: copy it into the `HDD` folder of the card's SD card, pick it
 as HDD0 in the card's BIOS Setup (S at its "Press S for Setup" prompt;
 Disk menu, with PicoMEM Boot Code on), and make `EXODOS` and `CDROM`
@@ -96,57 +96,53 @@ folders on the SD's root for the games and the discs. On the image:
     C:\PICOMEM     the card's DOS tools (PMINIT, PMDFS, PM2000, NE2000, PMMOUSE...) and CDMKE.SYS
     C:\MTCP        Michael Brutman's mTCP client programs (FTP, Telnet, Ping, HTGet...)
     C:\ULTRASND    the Gravis UltraSound software (ULTRASND.INI, ULTRINIT, ULTRAMID, the patches)
-    C:\DOS         FreeDOS utilities: EDIT, MEM, MORE, XCOPY, DELTREE, ATTRIB, FIND, TREE, LABEL
-    C:\4DOS        4DOS 8.00, the shell, with its help (4HELP, or F1 at the prompt), its
-                   licence, and a 4DOS.INI that puts it in upper memory
+    C:\DOS         FreeDOS utilities: EDIT, MEM, MORE, XCOPY, DELTREE, ATTRIB, FIND, TREE, LABEL,
+                   and HIMEMX and JEMM386, the memory managers
 
-CONFIG.SYS shows a menu for five seconds, then takes 1, which is the
-pair Phil's Computer Lab's FreeDOS boots with: HIMEMX for XMS and
-`JEMM386 RAM` for EMS and upper memory (`DOS=HIGH,UMB`, with
-`X=D000-D7FF` keeping the upper memory off the card's own BIOS and RAM
-window and the 8 KB after it), and 4DOS as the shell, staying in memory:
-on the card, 4DOS swapping itself out while a program runs crashed as
-it came back, to XMS, EMS and disk alike, so its 4DOS.INI says
-`Swapping=None`. 2 adds LBACACHE, an 8 MB disk cache - for C:, the image the card serves
-through its BIOS; W:, the SD card through PMDFS, is a network-redirector
-drive that DOS hands straight to the card, and no disk cache touches it.
-3 has FreeCOM as the shell, and an eXoDOS start batch (its menus want
-4DOS) runs in a 4DOS of its own that swaps to XMS and ends with the
-batch: AUTOEXEC sets `WAVESHELL` when CONFIG says 3, and the launcher's
-batch runs `%WAVESHELL% call RUN.BAT`. That is the item for memory:
-4DOS.COM is 305 KB and, resident and not swapping as in 1, it holds
-some 290 KB of the 640 whatever loads high. 6 is 1 with `I=B000-B7FF`,
-the mono text area (unused with a VGA in colour) as 32 KB more upper
-memory, for a board whose ROMs leave JEMM386 a single 32 KB block - too
-little for the drivers, and no room at all for an EMS page frame; the
-other lever is BIOS Setup's shadowing of C800-DFFF, which, off, gives
-the ranges back. `WAVE86 /diag` prints the largest free upper block and
-whether DOS has them linked. 3 has FreeCOM
-instead of 4DOS, which leaves a game more conventional memory but reads
-the eXoDOS start batches' CHOICE menus differently. 4 and 5 are the two
-other setups that ran on the card while the fault was hunted: JEMMEX
-with `NOEMS NOHI NOINVLPG X=A000-FFFF` and 4DOS not swapping, and no
-memory manager at all with FreeCOM. Then NetDrive's driver (in upper
-memory where there is any),
-and `CDMKE.SYS /D:MSCD000 /P:250 /Q`, the Panasonic/MKE driver for the
-card's emulated CD-ROM; the shell is 4DOS 8.00 - the same one as on an
-MS-DOS machine set up with it, so batch files and habits carry over,
-and most of what feels different about FreeDOS is FreeCOM's, not the
-kernel's - with 2048 bytes of environment, its environment, aliases
-and history in upper memory, and FreeDOS's COMMAND.COM left in the root
-as a fallback (the CONFIG.SYS comment has the line).
-AUTOEXEC.BAT sets `BLASTER=A220 I5 D1 T3`, `ULTRASND=240,1,1,5,5` and
-`ULTRADIR` (the last two only while `C:\ULTRASND\ULTRASND.INI` exists),
-runs `PMINIT /SB 1 /GUS 1 /MPU 1` in one call (its source loops over the
-switches), mounts the SD card as W: with `PMDFS S-W`, gives the CD-ROM D:
-through SHSUCDX, loads CuteMouse, the NE2000 packet driver (IRQ 3, port
-300, the card's defaults) and `DHCP -retries 2 -timeout 10` (twenty
-seconds at most with the Wi-Fi down; Esc skips it), and ends in
-`CALL WAVE.BAT`. WAVE86.INI has `gamedir=W:\EXODOS`,
-`cdrom_storage=W:\CDROM`, `imgmount=PICOMEM` and `cdrom_letter=D`;
-`server=` is yours to fill in. Every card step is behind `IF EXIST`, and
-the numbers (IRQs, port, packet interrupt) are `SET` lines at the top of
-the batch, so a different jumper is a one-line edit.
+CONFIG.SYS and AUTOEXEC.BAT follow the ones in the card's D6 package,
+without comments, and open with a boot menu, ten seconds and then 1:
+
+    1  PicoMEM - Standard Mode (CD, DFS and Network)
+    2  PicoMEM - Local Mode (CD and DFS)
+    3  PicoMEM - Network Mode
+    4  PicoMEM - Memory Optimized
+    5  Safe Mode
+
+1 loads HIMEMX and `JEMM386 RAM X=D000-D7FF` (XMS, EMS and upper memory,
+with the card's own BIOS and RAM window kept out of it), `DOS=HIGH,UMB`,
+NetDrive's driver and `CDMKE.SYS /D:MSCD000 /P:250 /Q`, the driver for
+the card's emulated CD-ROM, both high. AUTOEXEC.BAT then frees D: for
+the disc (`DRVOFF D:`), runs `PMINIT /K /SB 1 /GUS 1 /MPU 1`, mounts the
+SD card as W: with `PMDFS S-W`, gives the CD-ROM D: through SHSUCDX,
+loads CuteMouse and the card author's packet driver (`PM2000 0x60`),
+runs `DHCP -retries 2 -timeout 10` (twenty seconds at most with the
+Wi-Fi down; Esc skips it) and ends in `CALL WAVE.BAT`. 2 is 1 without
+NetDrive, the packet driver and DHCP. 3 is for playing games straight
+off the server: NetDrive and the network, no W: and no CD-ROM driver,
+and `WMODE=Network` in the environment, which makes the launcher open
+on the network view with Enter playing the game off the server (I
+installs it), discs left on the server and every disc mounted in
+software over NetDrive whatever `imgmount=` says. 4 gives JEMM386
+`I=B000-B7FF` as well - the mono text area, unused with a VGA in colour,
+as 32 KB more upper memory - and loads nothing but the sound cards and
+W: before the launcher. 5 loads no memory manager and no driver and
+stops at a prompt in C:\WAVE86. Each item sets `WMODE` (Standard,
+Local, Network, Memory, Safe). BLASTER, ULTRASND and ULTRADIR are set as
+the D6 package sets them, and every number - IRQs, port, packet
+interrupt - is written into the command that uses it. The shell is COMMAND.COM with 2048 bytes
+of environment. EDR-DOS's
+kernel has no MENU, so its CONFIG.SYS asks with ECHO, TIMEOUT and SWITCH
+and sets CONFIG itself (STD, LOCAL, NET, MEM, SAFE, as DOS 6's [menu]
+does; FreeDOS's MENU sets the number); its wait shows no countdown - the
+kernel polls the keyboard and prints nothing - so the prompt says "1 in
+10 seconds" instead. AUTOEXEC.BAT goes to the item's label either way. WAVE86.INI has `gamedir=W:\EXODOS`, `cdrom_storage=W:\CDROM`,
+`imgmount=PICOMEM` and `cdrom_letter=D`; `server=` is yours to fill in.
+There is no disk cache: one would speed up C:, the image the card serves
+through its BIOS, and never W:, the SD card through PMDFS, which DOS
+hands straight to the card as a network drive. `WAVE86 /diag` prints
+the largest free upper block and whether DOS has the blocks linked; the
+other lever for upper memory is BIOS Setup's shadowing of C800-DFFF,
+which, off, gives the ranges back.
 
 Discs: `imgmount=PICOMEM` with no `cdmount_picomem=` command, since
 the PicoMem 2 has no DOS command to hand it an image yet: the discs go
@@ -165,15 +161,13 @@ card repository's `drivers/` folder, whole (C:\PICOMEM is the package's
 PICOMEM folder plus the packet driver; `PICOMEM_DIR=` uses a folder of
 your own), mTCP's client zip (`MTCP_TOOLS=` for your own), CDMKE.SYS,
 the PicoGUS project's copy (`CDMKE_DIR=` empty leaves it out, and the
-CONFIG.SYS line becomes a comment), the Gravis UltraSound software, the
-`ultrasnd.zip` in that `drivers/` folder (`GUS_DIR=` empty leaves it out, then C:\ULTRASND is
-empty and the GUS lines stay off; `GUS_DIR=` also takes an unzipped copy
-of your own), the FreeDOS utilities as the 1.3 packages from ibiblio
-(`DOS_PKGS=` is the list, `DOS_DIR=` a folder of your own, `DOS_DIR=`
-empty leaves C:\DOS out), and 4DOS 8.00 as the official package, with
-its LICENSE.TXT, which its licence says must travel with it
-(`FOURDOS_DIR=` empty keeps FreeCOM as the shell). The Makefile unpacks
-each into `build/` on first use. `make update-third-party` (or
+boot menu's items 1 and 2 load no CD-ROM driver), the Gravis UltraSound
+software, the `ultrasnd.zip` in that `drivers/` folder (`GUS_DIR=` empty
+leaves it out, then C:\ULTRASND is empty, though AUTOEXEC.BAT still sets
+ULTRASND; `GUS_DIR=` also takes an unzipped copy of your own), the
+FreeDOS utilities as the 1.3 packages from ibiblio (`DOS_PKGS=` is the
+list, `DOS_DIR=` a folder of your own, `DOS_DIR=` empty leaves C:\DOS
+out). The Makefile unpacks each into `build/` on first use. `make update-third-party` (or
 `update-mtcp`, `update-picomem`, `update-gus`... one at a time) fetches
 them afresh from where they came, says what changed, and leaves them for
 you to commit; `make check-third-party`, which CI runs, says whether
@@ -185,18 +179,19 @@ folder given by hand that does not exist fails before anything is built.
 
 #### Other kernels, and a DOS of your own
 
-The tooling on the image - WAVE86, the card's programs, mTCP, 4DOS, the
-cache - does not care which DOS is under it, so the builder takes three:
+The tooling on the image - WAVE86, the card's programs, mTCP - does not
+care which DOS is under it, so the builder takes three:
 
-- `make picomem-image` - the FreeDOS kernel, as above: `pmwave-fdos.img`.
-- `make picomem-image KERNEL=edrdos` - the EDR-DOS kernel (Enhanced
-  DR-DOS, the one SvarDOS boots), a drop-in for KERNEL.SYS under the same
+- `make picomem-image` - the EDR-DOS kernel (Enhanced DR-DOS, the one
+  SvarDOS boots), as above, a drop-in for KERNEL.SYS under the FreeDOS
   boot sector, from its release zip in `third-party/edrdos` (`EDR_VER=`,
   `EDR_DIR=` for a folder of your own): `pmwave-edrdos.img`. Its licence
   is a grey area - a 2022 grant from DRDOS, Inc. in the repository,
   Caldera's 1997 non-commercial terms still in the tree - fine for this
-  repo, not for anything commercial. Reports itself as DR DOS 7.01; 4DOS
-  runs on it.
+  repo, not for anything commercial. Reports itself as DR DOS 7.01.
+- `make picomem-image KERNEL=freedos` - the FreeDOS kernel, off
+  `dos/FREEDOS.IMG`: `pmwave-fdos.img`. The same files and menu; its
+  CONFIG.SYS has FreeDOS's MENU lines.
 - `make picomem-image DOS_DISKS="~/dos/Disk1.img ~/dos/Disk2.img"` - your
   own licensed DOS, from its setup floppies (the bootable one first, with
   SYS.COM and EXPAND.EXE on it). Nothing of it enters the repo: the builder
@@ -207,17 +202,17 @@ cache - does not care which DOS is under it, so the builder takes three:
   that works for MS-DOS (its boot sector wants IO.SYS in the first
   directory entry); then the rest of the tree goes on with mtools, which
   leaves what is there alone. CONFIG.SYS gets DOS 6's own `[menu]` with
-  the same three kinds of setup - `HIMEM.SYS` and `EMM386.EXE RAM
-  X=D000-D7FF`, HIMEM alone, or neither - instead of JEMMEX, AUTOEXEC.BAT `SMARTDRV
-  /X 8192` as its cache (the FreeDOS image has none: LBACACHE was tried
-  and taken out), its DBLSPACE.BIN or DRVSPACE.BIN taken off the root so
-  IO.SYS loads no DoubleSpace driver, and WAVE86.INI `slowcache=0`, since
-  MS-DOS 6.22's memory managers crash when SLOWDOWN touches the CPU
-  cache. Named after the disks: `pmwave-msdos.img` for IO.SYS,
-  `pmwave-pcdos.img` for IBMBIO.COM. Built and boot-tested here with
-  MS-DOS 6.22's three setup disks (29 tools into C:\DOS, 4DOS as the
-  shell, `MS-DOS 6.22` under it); PC DOS follows the same route but has
-  not been tried. The disks are only ever read.
+  the same five items, `HIMEM.SYS /TESTMEM:OFF` and `EMM386.EXE RAM
+  X=D000-D7FF` in place of HIMEMX and JEMM386, SHSUCDX loaded low (its
+  LOADHIGH into an EMM386 block ended in a fault loop in the boot test),
+  its DBLSPACE.BIN or DRVSPACE.BIN taken off the root so IO.SYS loads no
+  DoubleSpace driver,
+  and WAVE86.INI `slowcache=0`, since MS-DOS 6.22's memory managers
+  crash when SLOWDOWN touches the CPU cache. Named after the disks:
+  `pmwave-msdos.img` for IO.SYS, `pmwave-pcdos.img` for IBMBIO.COM.
+  Built and boot-tested here with MS-DOS 6.22's three setup disks (29
+  tools into C:\DOS, `MS-DOS 6.22` under it); PC DOS follows the same
+  route but has not been tried. The disks are only ever read.
 
 The image is shaped the way the card reads disks: its BIOS is DOSBox's
 INT 13h, CHS only, assuming 16 heads and 63 sectors and shifting to 32
@@ -232,24 +227,25 @@ shipped WAVE86.INI with those keys set in place (a live key replaced, a
 commented-out example brought to life; the comments stay, and the build
 prints each line it changed). Then the self-test: a copy of the image
 boots in dosbox-x, headless, from the hard disk (no floppy), with the
-launcher's WAVE.BAT swapped for a stub that records `ver`, `set`,
-`WAVE86 /diag` and what the PMINIT line expands to. The build passes
-only if the image's own CONFIG.SYS and AUTOEXEC.BAT get that far, with
-XMS from JEMMEX, the 2048-byte environment, PATH, MTCPCFG and BLASTER
-in place, ULTRASND and ULTRADIR set together and `/GUS 1` on the PMINIT
-line exactly when the Gravis files are there - once as dosbox-x boots
-it (LBA) and once with the boot sector forced to CHS, the card's path.
+launcher's WAVE.BAT swapped for a stub that records `ver`, `set` and
+`WAVE86 /diag`. The build passes only if the image's own CONFIG.SYS and
+AUTOEXEC.BAT get that far along the boot menu's item 1 (ten seconds, no
+key), with XMS from
+the memory manager, the 2048-byte environment, PATH, MTCPCFG, BLASTER,
+ULTRASND, ULTRADIR and WMODE=Standard in the environment - once as
+dosbox-x boots it (LBA) and once with the boot sector forced to CHS, the
+card's path.
 That second run patches one byte of the FreeDOS boot sector (EDR-DOS
 boots under the same one); an image SYS'd from `DOS_DISKS=` has that
 DOS's own sector, which the patch does not know, so it boots once, the
 LBA way, and the build says so. The PicoMem programs and DHCP find no
 card in dosbox-x and give up, which is the point: the batch gets past
 them. About a minute; the results stay in `build/<name>-work/`
-(`build/pmwave-fdos-work/` for the default).
+(`build/pmwave-edrdos-work/` for the default).
 
 What dosbox-x cannot tell you, to check on the card itself:
 
-- Whether the card's tools see the card at all: JEMMEX's `X=D000-D5FF`
+- Whether the card's tools see the card at all: JEMM386's `X=D000-D7FF`
   is meant to keep its UMBs off the card's window, and is the first
   thing to look at if PMINIT, PMDFS and PM2000 all fail at once (the
   window moves with a `BIOS` line in the SD's config.txt).
@@ -267,9 +263,9 @@ What dosbox-x cannot tell you, to check on the card itself:
   loaded when PM2000.COM is missing) does not, per the author's notes,
   and a transfer that stalls at the same place every time is what that
   looks like: the frame fails its checksum on every retransmission.
-  Whether JEMMEX gets in the way of the card's Sound Blaster is not
+  Whether JEMM386 gets in the way of the card's Sound Blaster is not
   documented (the PicoMem 1 warning is about EMM386 and software DMA);
-  `NOEMS` after `X=D000-D5FF` is the next thing to try, then no JEMMEX.
+  `NOEMS` after `X=D000-D7FF` is the next thing to try, then no JEMM386.
 - Big writes through PMDFS, a redirector drive: `netwrite=512` in the
   INI if WAVEGET stumbles writing to W:.
 

@@ -127,6 +127,7 @@ extern int net_count;
 extern char cfg_server[32];     /* ini server=a.b.c.d:port */
 extern char net_pending_dir[9]; /* folder of the last download, after net_apply_pending */
 extern int net_cdmode;          /* 1 = leave CDs on the server (NET CD), 0 = download them */
+extern int wmode_network;       /* WMODE=Network in the environment: Enter plays off the server */
 extern int net_rawcd;           /* 1 = a card mounts the discs: fetch cue/bin untouched */
 unsigned long net_size(const NetGame *g);   /* the download in the current mode */
 int net_load(void);             /* offsets into NETLIST.TXT; count */

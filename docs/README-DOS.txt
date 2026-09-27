@@ -16,16 +16,15 @@ Setting up
 WAVE86 /diag prints what it found when something looks wrong.
 
 A PicoMem 2 can have all of this on a ready-made disk: make picomem-image
-on the build machine writes a 512 MB FreeDOS image with the launcher, the
+on the build machine writes a 512 MB EDR-DOS image with the launcher, the
 card's tools, mTCP, the Gravis files and a CONFIG.SYS and AUTOEXEC.BAT
 that do everything below, for the HDD folder of the card's SD card (the
 project README says what to check). Its packet driver line is
 LH PM2000 0x60, the card author's driver, which reads the port and IRQ
 off the card and reads odd-sized packets right (the stock NE2000 driver
 does not, the author notes: a download that stalls at the same place
-every time is that); the NE2000 line stays as a REM to swap back. The
-card's NE2000 defaults to IRQ 3 (BIOS Setup, Other menu), while its
-Sound Blaster and GUS take IRQ 5. Its WAVE86.INI
+every time is that). The card's NE2000 defaults to IRQ 3 (BIOS Setup,
+Other menu), while its Sound Blaster and GUS take IRQ 5. Its WAVE86.INI
 says theme=picomem: the launcher in black and gold, after the card;
 theme=exodos or theme=wave86 there brings back the other looks.
 
@@ -57,18 +56,23 @@ the games list switches the PicoMEM's sound card: 1 runs PMINIT /SB 1
 (Sound Blaster), 2 runs PMINIT /GUS 1 (Gravis UltraSound), through the
 batch loop like a game; the image's AUTOEXEC.BAT already runs the
 Sound Blaster (and the GUS when its files are there) at boot.
-The disk cache in the boot menu (LBACACHE, or SMARTDRV on MS-DOS)
-speeds up C:, the image the card serves through its BIOS; it does
-nothing for W:, the SD card through PMDFS, which DOS hands straight to
-the card as a network drive.
-Memory: 4DOS.COM is 305 KB, and kept resident without swapping (boot
-menu item 1) it holds most of the conventional memory a game wants.
-Item 3 boots FreeCOM and runs an eXoDOS start batch in a 4DOS of its
-own that swaps to XMS and ends with the batch (AUTOEXEC sets WAVESHELL,
-the launcher's batch uses it). Item 6 adds I=B000-B7FF to JEMM386, 32
-KB more upper memory when the board's ROMs leave it one block; BIOS
-Setup's shadowing of C800-DFFF, turned off, can give more. WAVE86 /diag
-shows the largest free upper block.
+The image's boot menu, ten seconds and then 1 (EDR-DOS shows no
+countdown; its prompt says so): 1 Standard Mode loads
+everything - HIMEMX and JEMM386, NetDrive, the card's CD-ROM driver,
+the sound cards, W:, the mouse, the packet driver, DHCP; 2 Local Mode
+leaves the network out; 3 Network Mode leaves W: and the CD-ROM driver
+out and sets WMODE=Network, on which the launcher opens on the network
+view, Enter plays the game off the server (I installs it), discs stay
+on the server and every disc is mounted in software over NetDrive; 4
+Memory Optimized gives JEMM386 I=B000-B7FF (the mono text area as 32 KB
+more upper memory) and loads only the sound cards and W: before the
+launcher; 5 Safe Mode loads nothing and stops at a prompt in C:\WAVE86.
+Each item sets WMODE; SET WMODE=Network by hand does the same anywhere.
+No disk cache: one would speed up C:
+only, never W:, the SD card through PMDFS, which DOS hands straight to
+the card as a network drive. 4DOS is not on the image; COMMAND.COM has
+2048 bytes of environment. WAVE86 /diag shows the largest free upper
+block; BIOS Setup's shadowing of C800-DFFF, turned off, can give more.
 A transfer that goes silent is dropped after 15 s and carried on over
 a new connection in the same run ("connecting again to carry on");
 netreconnect= in WAVE86.INI is that wait, nettimeout=120 how long

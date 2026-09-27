@@ -174,6 +174,22 @@ static void put_cmd(FILE *f, const char *var, const char *cmd)
         fprintf(f, "set %s=%s\n", var, buf);
 }
 
+/* WMODE=Network in the environment (the PicoMem image's boot menu): the
+   launcher opens on the network view, Enter plays a game off the server,
+   and discs come over NetDrive, mounted in software */
+int wmode_network = 0;
+static int wmode_net(void)
+{
+    const char *e = getenv("WMODE");
+    return e && stricmp(e, "NETWORK") == 0;
+}
+
+/* imgmount= from the INI; SOFTWARE in network mode */
+static const char *mount_mode(void)
+{
+    return wmode_network ? "SOFTWARE" : ini_global("imgmount");
+}
+
 /* What the game batches need to know about discs, from the INI: where the
    images are (cdrom_storage=), how to mount them (imgmount=SOFTWARE, or a
    card with its own CD-ROM emulation: PICOGUS, PICOMEM), the card's command
@@ -187,7 +203,7 @@ static void emit_cd_env(FILE *f)
 
     if ((v = cd_root()) != NULL)
         fprintf(f, "set WAVECDROM=%s\n", v);
-    v = ini_global("imgmount");
+    v = mount_mode();
     if (v && v[0]) {
         for (i = 0; i < (int)sizeof(mode) - 1 && v[i]; i++)
             mode[i] = (char)toupper((unsigned char)v[i]);
@@ -321,7 +337,7 @@ static int write_imgmount(const Game *g, const char *img, const char *iso)
     FILE *f;
 
     mode[0] = cmd[0] = cmdu[0] = 0;
-    if ((v = ini_global("imgmount")) != NULL)
+    if ((v = mount_mode()) != NULL)
         for (i = 0; i < (int)sizeof(mode) - 1 && v[i]; i++) {
             mode[i] = (char)toupper((unsigned char)v[i]);
             mode[i + 1] = 0;
@@ -1721,9 +1737,10 @@ int main(int argc, char **argv)
                 home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
         ini_load(path);
         theme_select(cfg_theme);
-        net_cdmode = cfg_netcd;
+        wmode_network = wmode_net();
+        net_cdmode = cfg_netcd || wmode_network;
         {   /* a card mounts the discs itself: it can have them untouched */
-            const char *m = ini_global("imgmount");
+            const char *m = mount_mode();
             net_rawcd = m && m[0] && stricmp(m, "SOFTWARE") != 0;
         }
     }
@@ -1902,7 +1919,11 @@ int main(int argc, char **argv)
             return 1;
         }
     }
-    if (net_view_pending() || opt_dumpnet) {
+    if (wmode_network && cfg_server[0] && !net_view_pending() && !opt_dumpnet) {
+        if (net_load() == 0)            /* no list yet: WAVEGET fetches it, and we come back here */
+            net_fetch_list();
+        view = 1;
+    } else if (net_view_pending() || opt_dumpnet) {
         net_load();
         view = 1;
         if (opt_netsel) {
@@ -1914,6 +1935,8 @@ int main(int argc, char **argv)
     vid_text_mode();
     vid_set_palette();
     if (view) net_redraw(nsel0, nsel0 > 13 ? nsel0 - 13 : 0); else redraw(sel, top);
+    if (view && wmode_network)
+        ui_status("NETWORK MODE: ENTER PLAYS A GAME OFF THE SERVER, I INSTALLS IT.");
     if (ini_moved) {                    /* the sections went to GAMES.INI just now: say so once */
         char m[PATH_LEN + 40];
         sprintf(m, "THE GAMES' SETTINGS NOW LIVE IN %s", ini_games_path());
@@ -1999,7 +2022,13 @@ int main(int argc, char **argv)
                     ui_status("NOTHING PLAYS OFF THIS SERVER: IT HAS NO NETDRIVE. ENTER INSTALLS IT.");
                 }
                 continue;
-            case 0x0D: case 'i': case 'I':  /* install the queue, or this one when nothing is queued */
+            case 0x0D:                      /* network mode: play it; otherwise as I */
+                if (wmode_network && net_count && net_get(nsel)->netplay) {
+                    net_play(nsel);
+                    net_redraw(nsel, ntop);
+                    continue;
+                }
+            case 'i': case 'I':             /* install the queue, or this one when nothing is queued */
                 if (net_count)
                     net_install(nsel, net_qcount > 0, &sel, &top);
                 continue;

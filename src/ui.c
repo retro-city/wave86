@@ -604,6 +604,9 @@ void ui_net_details(int sel)
         sprintf(q, "QUEUED: %d GAMES, %s. ENTER FETCHES", net_qcount, sz);
         scr_puts(PANE_X + 2, 20, q, A(14, 0));
         scr_puts(PANE_X + 2, 21, "THEM ALL; Q SHOWS THEM FIRST.", A(8, 0));
+    } else if (g->netplay && wmode_network) {
+        scr_puts(PANE_X + 2, 20, "ENTER PLAYS IT OFF THE SERVER,", A(8, 0));
+        scr_puts(PANE_X + 2, 21, "I INSTALLS IT, SPACE QUEUES IT.", A(8, 0));
     } else if (g->netplay) {
         scr_puts(PANE_X + 2, 20, "ENTER INSTALLS IT, SPACE QUEUES IT,", A(8, 0));
         scr_puts(PANE_X + 2, 21, "P PLAYS IT OFF THE SERVER.", A(8, 0));
@@ -723,9 +726,12 @@ void ui_net_keybar(int cur)
 {
     int x = 2;
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
-    keychip(&x, "ENTER", "INSTALL", net_count == 0);
+    keychip(&x, "ENTER", wmode_network ? "PLAY" : "INSTALL", net_count == 0);
     keychip(&x, "SPACE", "QUEUE", net_count == 0);
-    keychip(&x, "P", "PLAY", net_count == 0 || !net_get(cur)->netplay);
+    if (wmode_network)
+        keychip(&x, "I", "INSTALL", net_count == 0);
+    else
+        keychip(&x, "P", "PLAY", net_count == 0 || !net_get(cur)->netplay);
     keychip(&x, "Q", "VIEW QUEUE", net_qcount == 0);
     keychip(&x, "/", "SEARCH", net_count == 0);
     keychip(&x, "M", "MENU", 0);        /* the rest is in there: C, I, L, U ... */

@@ -194,36 +194,37 @@ dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 	cd dist && rm -f wave86-$(VERSION)-dos.zip && zip -q -r wave86-$(VERSION)-dos.zip wave86
 	@ls -la dist/wave86-$(VERSION)-dos.zip
 
-# A ready-made disk for a PicoMem 2 (tools/mkimage.py): FreeDOS, the
+# A ready-made disk for a PicoMem 2 (tools/mkimage.py): EDR-DOS, the
 # launcher in C:\WAVE86, the card's DOS tools in C:\PICOMEM, mTCP in
 # C:\MTCP, the Gravis UltraSound files in C:\ULTRASND, booting into WAVE86
 # with the SD card on W:. The pieces are in third-party/ (its README and
 # THIRD-PARTY.md say what and whose): the PicoMEM D6 release package and
 # the card repository's drivers folder (the tools, the Gravis zip), mTCP's
 # client zip, CDMKE.SYS (the PicoGUS project's copy), the FreeDOS utilities,
-# 4DOS and the EDR-DOS kernel, each unpacked into build/ on first use; make
+# and the EDR-DOS kernel, each unpacked into build/ on first use; make
 # update-third-party refreshes them from where they came (the *_URL, *_VER
 # and *_REF variables say where).
-# An empty folder variable (CDMKE_DIR=, GUS_DIR=, DOS_DIR=, FOURDOS_DIR=)
+# An empty folder variable (CDMKE_DIR=, GUS_DIR=, DOS_DIR=)
 # leaves that piece out; a folder of your own (PICOMEM_DIR=, MTCP_TOOLS=,
-# CDMKE_DIR=, GUS_DIR=, DOS_DIR=, FOURDOS_DIR=, EDR_DIR=) is used instead
+# CDMKE_DIR=, GUS_DIR=, DOS_DIR=, EDR_DIR=) is used instead
 # of the unpacked one. The image boots in dosbox-x before it is declared
-# done - twice, LBA and then CHS, with the FreeDOS boot sector
-# (KERNEL=edrdos shares it), once with a DOS_DISKS image, whose own boot
+# done - twice, LBA and then CHS, with the FreeDOS boot sector (the
+# EDR-DOS kernel boots under it too), once with a DOS_DISKS image, whose own boot
 # sector the CHS patch does not know; the work files stay in build/
 # whatever IMAGE says, so the image can go straight to the SD card.
 #   make picomem-image
 #   make picomem-image IMAGE=/Volumes/SD/HDD/PMWAVE.IMG IMAGE_MB=500
 #   make picomem-image PICOMEM_DIR=$$HOME/picomem-drivers GUS_DIR=$$HOME/ultrasnd CDMKE_DIR=
 IMAGE ?=
-# KERNEL=edrdos boots the EDR-DOS (SvarDOS) kernel under the FreeDOS boot
+# The image boots the EDR-DOS (SvarDOS) kernel under the FreeDOS boot
 # sector, from its release zip in third-party/edrdos (a grey-area licence:
 # fine for this repo, not for anything commercial - THIRD-PARTY.md);
-# DOS_DISKS="disk1.img disk2.img" builds with your own licensed DOS instead,
-# its own SYS and its own tools (the disks are only read; the list is split
-# on spaces, so no path in it can have one). The image is named after what
-# it runs: build/pmwave-fdos.img, -edrdos, -msdos, -pcdos; IMAGE= overrides.
-KERNEL ?= freedos
+# KERNEL=freedos boots FreeDOS's own kernel instead, and
+# DOS_DISKS="disk1.img disk2.img" your own licensed DOS, with its own SYS
+# and its own tools (the disks are only read; the list is split on spaces,
+# so no path in it can have one). The image is named after what it runs:
+# build/pmwave-edrdos.img, -fdos, -msdos, -pcdos; IMAGE= overrides.
+KERNEL ?= edrdos
 EDR_VER ?= 20260309
 EDR_URL ?= https://github.com/SvarDOS/edrdos/releases/download/v$(EDR_VER)/edrdos_$(EDR_VER).zip
 EDR_ZIP = $(TP)/edrdos/edrdos_$(EDR_VER).zip
@@ -255,32 +256,26 @@ GUS_URL ?= $(PICOMEM_URL)/ultrasnd.zip
 GUS_ZIP = $(TP)/picomem/drivers/ultrasnd.zip
 GUS_DIR ?= build/ultrasnd
 MKIMAGE_ARGS ?=
-# FreeDOS utilities for C:\DOS: EDIT and a few friends, the memory managers
-# of the boot menu, and LBACACHE, the disk cache the menu's item 2 loads
-# (GPL; the FreeDOS 1.3 packages, in third-party/dosutils)
+# FreeDOS utilities for C:\DOS: EDIT and a few friends, and HIMEMX and
+# JEMM386, the memory managers (GPL; the FreeDOS 1.3 packages, in
+# third-party/dosutils)
 FREEDOS_REPO ?= https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.3/base
-DOS_PKGS ?= edit mem more xcopy deltree attrib find tree label himemx jemm lbacache
+DOS_PKGS ?= edit mem more xcopy deltree attrib find tree label himemx jemm
 DOS_ZIPS = $(foreach p,$(DOS_PKGS),$(TP)/dosutils/$(p).zip)
 DOS_DIR ?= build/dosutils
-# 4DOS 8.00 as the shell (JP Software's 2004 notice licence: distribute with
-# LICENSE.TXT; not OSI-approved); FOURDOS_DIR= empty keeps FreeCOM
-FOURDOS_URL ?= https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/util/user/4dos/4dos800.zip
-FOURDOS_ZIP = $(TP)/4dos/4dos800.zip
-FOURDOS_DIR ?= build/4dos
-FOURDOS_FILES = 4DOS.COM 4DOS.HLP 4HELP.EXE KSTACK.COM OPTION.EXE HELPCFG.EXE BATCOMP.EXE LICENSE.TXT README.TXT INTRO.TXT
-PICOMEM_INPUTS = $(PICOMEM_DIR) $(MTCP_TOOLS) $(CDMKE_DIR) $(GUS_DIR) $(DOS_DIR) $(FOURDOS_DIR) $(if $(filter edrdos,$(KERNEL)),$(EDR_DIR))
+PICOMEM_INPUTS = $(PICOMEM_DIR) $(MTCP_TOOLS) $(CDMKE_DIR) $(GUS_DIR) $(DOS_DIR) $(if $(filter edrdos,$(KERNEL)),$(EDR_DIR))
 # the build/ defaults are unpacked by the rules below; anything else must be there already
-PICOMEM_FETCH = $(filter build/picomem build/mtcp build/cdmke build/ultrasnd build/dosutils build/4dos build/edrdos,$(PICOMEM_INPUTS))
+PICOMEM_FETCH = $(filter build/picomem build/mtcp build/cdmke build/ultrasnd build/dosutils build/edrdos,$(PICOMEM_INPUTS))
 picomem-image: picomem-folders dist $(PICOMEM_FETCH)
 	python3 tools/mkimage.py --dist dist/wave86 --picomem "$(PICOMEM_DIR)" --mtcp "$(MTCP_TOOLS)" \
-	  $(if $(CDMKE_DIR),--cdmke "$(CDMKE_DIR)") $(if $(GUS_DIR),--gus "$(GUS_DIR)") $(if $(DOS_DIR),--dos "$(DOS_DIR)") $(if $(FOURDOS_DIR),--4dos "$(FOURDOS_DIR)") \
+	  $(if $(CDMKE_DIR),--cdmke "$(CDMKE_DIR)") $(if $(GUS_DIR),--gus "$(GUS_DIR)") $(if $(DOS_DIR),--dos "$(DOS_DIR)") \
 	  --kernel $(KERNEL) $(if $(filter edrdos,$(KERNEL)),--edr "$(EDR_DIR)") $(foreach d,$(DOS_DISKS),--dos-disk $(d)) \
 	  --size $(IMAGE_MB) $(if $(IMAGE),-o "$(IMAGE)") $(MKIMAGE_ARGS)
 
 # a folder given by hand that is not there fails here, before the dist is built
 picomem-folders:
 	@for d in $(filter-out $(PICOMEM_FETCH),$(PICOMEM_INPUTS)); do \
-	  test -d "$$d" || { echo "picomem-image: no folder $$d (PICOMEM_DIR, MTCP_TOOLS, CDMKE_DIR, GUS_DIR, DOS_DIR, FOURDOS_DIR or EDR_DIR)"; exit 1; }; done
+	  test -d "$$d" || { echo "picomem-image: no folder $$d (PICOMEM_DIR, MTCP_TOOLS, CDMKE_DIR, GUS_DIR, DOS_DIR or EDR_DIR)"; exit 1; }; done
 
 # C:\PICOMEM: the D6 package's PICOMEM folder, the packet driver, and any
 # program put straight into third-party/picomem (a fix from the author, as
@@ -299,11 +294,6 @@ build/edrdos: $(EDR_ZIP)
 	@rm -rf build/edrdos.part && mkdir -p build/edrdos.part
 	cd build/edrdos.part && unzip -q -o $(abspath $(EDR_ZIP))
 	@rm -rf build/edrdos && mv build/edrdos.part build/edrdos && ls build/edrdos | tr '\n' ' ' && echo
-
-build/4dos: $(FOURDOS_ZIP)
-	@rm -rf build/4dos.part && mkdir -p build/4dos.part
-	cd build/4dos.part && unzip -q -o $(abspath $(FOURDOS_ZIP)) $(FOURDOS_FILES)
-	@rm -rf build/4dos && mv build/4dos.part build/4dos && ls build/4dos | tr '\n' ' ' && echo
 
 build/dosutils: $(DOS_ZIPS)
 	@rm -rf build/dosutils.part && mkdir -p build/dosutils.part
@@ -337,7 +327,7 @@ build/ultrasnd: $(GUS_ZIP)
 # check-third-party, which CI runs, says whether every recorded file is
 # there and unchanged.
 FETCH = python3 tools/thirdparty.py fetch
-UPDATES = update-picomem update-mtcp update-netdrive update-cdmke update-gus update-dosutils update-4dos update-edrdos update-slowdown
+UPDATES = update-picomem update-mtcp update-netdrive update-cdmke update-gus update-dosutils update-edrdos update-slowdown
 update-third-party:
 	@rc=0; for t in $(UPDATES); do $(MAKE) -s $$t || rc=1; done; exit $$rc
 update-picomem:
@@ -352,8 +342,6 @@ update-gus:
 	@$(FETCH) $(GUS_ZIP) $(GUS_URL)
 update-dosutils:
 	@for p in $(DOS_PKGS); do $(FETCH) $(TP)/dosutils/$$p.zip $(FREEDOS_REPO)/$$p.zip || exit 1; done
-update-4dos:
-	@$(FETCH) $(FOURDOS_ZIP) $(FOURDOS_URL)
 update-edrdos:
 	@$(FETCH) $(EDR_ZIP) $(EDR_URL)
 update-slowdown:
@@ -426,4 +414,4 @@ clean:
 	rm -rf build
 
 .PHONY: all run test dostest dosrun netdrive waveserve dist picomem-image picomem-folders bootsector clean music music-files thumbs net cdrom \
-        slowdown toolchain check-third-party update-third-party update-picomem update-mtcp update-netdrive update-cdmke update-gus update-dosutils update-4dos update-edrdos update-slowdown
+        slowdown toolchain check-third-party update-third-party update-picomem update-mtcp update-netdrive update-cdmke update-gus update-dosutils update-edrdos update-slowdown

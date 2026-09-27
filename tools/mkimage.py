@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A bootable hard-disk image for a PicoMem 2: FreeDOS, the launcher, the
+"""A bootable hard-disk image for a PicoMem 2: EDR-DOS (or FreeDOS), the launcher, the
 card's DOS tools, mTCP, booting straight into WAVE86.
 
     make picomem-image                  (unpacks the pieces from third-party/, then runs this)
@@ -165,44 +165,6 @@ def install_boot_sector(img, off, label):
         f.write(new)
 
 
-# 4DOS's settings: its environment, aliases and history up in the UMBs the
-# memory manager provides, and no swapping - on the PicoMem machine 4DOS
-# swapping itself out while a program runs, to XMS, EMS or disk alike, ended
-# in a fault as it came back, so it stays in memory. 4DOS.HLP has every
-# directive.
-FOURDOS_INI = "\r\n".join([
-    "; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
-    "; 4DOS's environment, aliases and history go to upper memory where the",
-    "; memory manager provides it, and 4DOS itself stays in memory while a",
-    "; program runs: swapping it out - to XMS, EMS or disk - crashed on the",
-    "; PicoMem machine when it came back. Swapping=XMS is the setting to try",
-    "; on a machine where it works; it gives a game the memory back.",
-    "; 4HELP, or F1 at the prompt, explains these and every other directive.",
-    "UMBLoad=Yes",
-    "UMBEnvironment=Yes",
-    "UMBAlias=Yes",
-    "UMBHistory=Yes",
-    "Swapping=None",
-    "EditMode=Insert",
-    "LocalAliases=Yes",
-    "LocalHistory=Yes",
-    "",
-]) + "\r\n"
-# the same for the boot menu's item 4: nothing in upper memory either
-# SWAP.INI: 4DOS as the shell an eXoDOS batch runs in under FreeCOM (the
-# boot menu's item 3): swapping to XMS, so the game gets the memory. As
-# the shell of the whole session, swapping crashed on the card when it
-# came back over a TSR loaded meanwhile; a child that loads after every
-# TSR and ends with the batch has none of that to come back over.
-FOURDOS_SWAP_INI = FOURDOS_INI.replace("Swapping=None", "Swapping=XMS").replace(
-    "; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
-    "; SWAP.INI - 4DOS while an eXoDOS batch runs (the boot menu's item 3): swapping to XMS.")
-FOURDOS_NOSWAP_INI = FOURDOS_INI.replace("UMBLoad=Yes", "UMBLoad=No").replace("UMBEnvironment=Yes", "UMBEnvironment=No") \
-    .replace("UMBAlias=Yes", "UMBAlias=No").replace("UMBHistory=Yes", "UMBHistory=No") \
-    .replace("; 4DOS.INI - WAVE86 on a PicoMem 2, written by make picomem-image.",
-             "; NOSWAP.INI - 4DOS for the boot menu's item 4: nothing in upper memory, no swapping.")
-
-
 FLAVOURS = {"fdos": "FreeDOS", "edrdos": "EDR-DOS (the SvarDOS kernel)", "msdos": "MS-DOS", "pcdos": "PC DOS", "dos": "DOS"}
 
 
@@ -218,140 +180,79 @@ def flavour_of(a):
     return "dos"
 
 
-def config_sys(have_cdmke, fourdos=False, flavour="fdos"):
+# the boot menu: its items, the CONFIG.SYS block names for the DOSes whose
+# menus set CONFIG to a name (FreeDOS's MENU sets the number), and WMODE,
+# which AUTOEXEC.BAT sets for the launcher
+MENU_ITEMS = ("PicoMEM - Standard Mode (CD, DFS and Network)",
+              "PicoMEM - Local Mode (CD and DFS)",
+              "PicoMEM - Network Mode",
+              "PicoMEM - Memory Optimized",
+              "Safe Mode")
+MENU_NAMES = ("STD", "LOCAL", "NET", "MEM", "SAFE")
+WMODES = ("Standard", "Local", "Network", "Memory", "Safe")
+JEMM = "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF"
+NETDRIVE = "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"
+CDMKE = "DEVICEHIGH=C:\\PICOMEM\\CDMKE.SYS /D:MSCD000 /P:250 /Q"
+
+
+def menu_names(flavour):
+    return tuple(str(i + 1) for i in range(len(MENU_ITEMS))) if flavour == "fdos" else MENU_NAMES
+
+
+SHELL = "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P"
+
+
+def config_sys(have_cdmke, flavour):
+    """CONFIG.SYS after the D6 package's, with a five-item boot menu, ten
+    seconds then 1. 1 Standard: HIMEMX and JEMM386 RAM (XMS, EMS, upper
+    memory; the card's window kept out), DOS high, NetDrive and the card's
+    CD-ROM driver high. 2 Local: without NetDrive. 3 Network: without the
+    CD-ROM driver (discs come over NetDrive, mounted in software). 4 Memory
+    Optimized: the memory manager with the mono text area as 32 KB more
+    upper memory, no drivers. 5 Safe: nothing. The FreeDOS kernel has MENU;
+    EDR-DOS's has ECHO, TIMEOUT and SWITCH (no countdown: its wait polls the
+    keyboard and prints nothing, so the prompt says the default and the
+    time), and SET CONFIG= gives AUTOEXEC.BAT the same %CONFIG%."""
     if flavour in ("msdos", "pcdos", "dos"):
-        return config_sys_dos(have_cdmke, fourdos, flavour)
-    menu = flavour == "fdos"            # EDR-DOS's kernel has no MENU lines
-
-    def P(*items):                      # the prefix that gives a line to those menu items
-        return "".join(str(n) for n in items) + "?" if menu else ""
-
-    c = [f"; {FLAVOURS[flavour]} on a PicoMem 2 - written by make picomem-image (tools/mkimage.py)"]
-    if menu:
-        c += ["; A menu: five seconds, then 1. 1 is the setup meant for the card: the",
-              "; pair Phil's Computer Lab's FreeDOS boots with, HIMEMX for XMS and",
-              "; JEMM386 RAM for EMS and upper memory, the card's own range kept out,",
-              "; and 4DOS as the shell, staying in memory (swapping itself out crashed",
-              "; on the card, to XMS, EMS and disk alike - and, resident, it holds",
-              "; some 290 KB of the 640). 2 adds LBACACHE, a disk cache (AUTOEXEC",
-              "; loads it when CONFIG says 2). 3 has FreeCOM as the shell, and an",
-              "; eXoDOS start batch (its menus want 4DOS) runs in a 4DOS of its own,",
-              "; swapping to XMS, that ends with the batch (AUTOEXEC sets WAVESHELL",
-              "; when CONFIG says 3, and the launcher's batch uses it): the game gets",
-              "; the memory. 4 and 5 are the two other setups that ran on the card",
-              "; while the fault was hunted: JEMMEX with no EMS and nothing in upper",
-              "; memory, and no memory manager at all. 6 is 1 with I=B000-B7FF: the",
-              "; mono text area, unused with a VGA in colour, as 32 KB more of upper",
-              "; memory on a board whose ROMs leave JEMM386 one block. The lines",
-              "; that start with digits belong to those choices; F8 still steps.",
-              "MENU",
-              "MENU  1 - HIMEMX + JEMM386 RAM X=D000-D7FF; 4DOS, not swapping",
-              "MENU  2 - as 1, with LBACACHE, an 8 MB disk cache",
-              "MENU  3 - as 1, FreeCOM as the shell; 4DOS, swapping, only while a batch runs",
-              "MENU  4 - JEMMEX X=A000-FFFF NOEMS NOHI NOINVLPG; 4DOS not swapping, low",
-              "MENU  5 - no memory manager; FreeCOM as the shell",
-              "MENU  6 - as 1, with I=B000-B7FF: 32 KB more upper memory",
-              "MENU",
-              "MENUDEFAULT=1,5"]
-    c += ["; HIMEMX for extended memory, JEMM386 RAM for EMS and upper memory, so",
-          "; DOS, the drivers and the TSRs go up there and a game gets the",
-          "; conventional memory. X= keeps its UMBs off the PicoMem's own 24 KB at",
-          "; D000-D5FF (16 KB of BIOS, then 8 KB of RAM the card's tools talk",
-          "; through) and the 8 KB after it, which the card's own D6 configuration",
-          "; keeps free as well; the range moves with a BIOS line in the SD card's",
-          "; config.txt. (The PicoMem wiki warns that EMM386 breaks the Sound Blaster",
-          "; of a PicoMem 1, whose DMA was done in software; the 2 has real DMA. If",
-          "; sound fails here, try NOEMS after X=, then HIMEMX alone.)",
-          P(1, 2, 3, 6) + "DEVICE=C:\\DOS\\HIMEMX.EXE",
-          P(1, 2, 3) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF",
-          P(6) + "DEVICE=C:\\DOS\\JEMM386.EXE RAM X=D000-D7FF I=B000-B7FF"]
-    if menu:
-        c.append(P(4) + "DEVICE=C:\\WAVE86\\EXTRAS\\JEMMEX.EXE X=A000-FFFF NOEMS NOHI NOINVLPG")
-    c += [P(1, 2, 3, 4, 6) + "DOS=HIGH,UMB",
-          "FILES=30",
-          "BUFFERS=20",
-          "LASTDRIVE=Z",
-          "; mTCP NetDrive reserves D: and E:; AUTOEXEC.BAT frees D: for the disc",
-          "; (DRVOFF D:), so discs kept on the server come in on E:",
-          P(1, 2, 3, 6) + "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2"]
-    if menu:
-        c.append(P(4, 5) + "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2")
-    c += ["; the PicoMem 2's emulated CD-ROM drive: a Panasonic/MKE interface on",
-          "; port 250 (no IRQ, no DMA), device MSCD000; SHSUCDX in AUTOEXEC.BAT",
-          "; gives it D:. /Q: no Abort/Retry prompt when there is no drive - and",
-          "; there is none until the card's firmware has the emulation (PM2-6-21-26",
-          "; lists it as planned). WAVE86 (imgmount=PICOMEM) asks you to load a",
-          "; game's disc on the card and waits for a key."]
-    line = "DEVICE=C:\\PICOMEM\\CDMKE.SYS /D:MSCD000 /P:250 /Q"
-    if have_cdmke:
-        c.append(line)
+        return config_sys_dos(have_cdmke)
+    cd = [CDMKE] if have_cdmke else []
+    common = ["FILES=30", "BUFFERS=20", "LASTDRIVE=Z"]
+    himem = "DEVICE=C:\\DOS\\HIMEMX.EXE"
+    if flavour == "fdos":
+        c = ["MENU"] + [f"MENU {i + 1} - {t}" for i, t in enumerate(MENU_ITEMS)] + ["MENU", "MENUDEFAULT=1,10",
+             "1234?" + himem,
+             "123?" + JEMM,
+             "4?" + JEMM + " I=B000-B7FF",
+             "1234?DOS=HIGH,UMB"] + common + ["13?" + NETDRIVE] + ["12?" + x for x in cd] + \
+            [SHELL + "=C:\\AUTOEXEC.BAT"]
     else:
-        c += ["; CDMKE.SYS was not there when this image was made (make picomem-image",
-              "; takes it from third-party/cdmke unless CDMKE_DIR= is empty). Put it",
-              "; in C:\\PICOMEM and take the semicolon off:",
-              "; " + line]
-    if fourdos:
-        c += ["; 4DOS 8.00 is the shell, from C:\\4DOS (its 4DOS.INI keeps it in memory,",
-              "; its environment and history high); /P runs C:\\AUTOEXEC.BAT. COMMAND.COM",
-              "; stays in the root as a fallback:",
-              "; SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P" + (r"=C:\AUTOEXEC.BAT" if menu else ""),
-              P(1, 2, 6) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
-        if menu:
-            c += [P(4) + "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS @C:\\4DOS\\NOSWAP.INI /E:2048 /P",
-                  P(3, 5) + "SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P=C:\\AUTOEXEC.BAT"]
-    else:
-        c.append("SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P" + (r"=C:\AUTOEXEC.BAT" if menu else ""))
+        std, local, net, mem, safe = MENU_NAMES
+        c = [f"ECHO {i + 1} - {t}" for i, t in enumerate(MENU_ITEMS)] + \
+            ["ECHO Press 1-5 (1 in 10 seconds)", "TIMEOUT=10", "SWITCH=" + ",".join(MENU_NAMES), "GOTO=BOOT",
+             f":{std}", f"SET CONFIG={std}", himem, JEMM, "DOS=HIGH,UMB", NETDRIVE] + cd + ["RETURN",
+             f":{local}", f"SET CONFIG={local}", himem, JEMM, "DOS=HIGH,UMB"] + cd + ["RETURN",
+             f":{net}", f"SET CONFIG={net}", himem, JEMM, "DOS=HIGH,UMB", NETDRIVE, "RETURN",
+             f":{mem}", f"SET CONFIG={mem}", himem, JEMM + " I=B000-B7FF", "DOS=HIGH,UMB", "RETURN",
+             f":{safe}", f"SET CONFIG={safe}", "RETURN",
+             ":BOOT"] + common + [SHELL]
     return bat(c)
 
 
-def config_sys_dos(have_cdmke, fourdos, flavour):
-    """CONFIG.SYS for a licensed DOS whose SYS put it on the image: its own
-    HIMEM and EMM386 from C:\\DOS instead of JEMMEX, the rest the same, and
-    DOS 6's own [menu] for the three kinds of memory setup"""
-    name = FLAVOURS[flavour]
-    c = [f"REM {name} on a PicoMem 2 - written by make picomem-image (tools/mkimage.py)",
-         "REM A menu: five seconds, then EMM. EMM is the setup meant for the card;",
-         "REM XMS and NONE are for finding out what a hang or a memory-manager",
-         "REM fault is about, one piece at a time: HIMEM alone, or neither.",
-         "[menu]",
-         "menuitem=EMM, HIMEM and EMM386: XMS, EMS, upper memory",
-         "menuitem=XMS, HIMEM only: XMS, nothing in upper memory",
-         "menuitem=NONE, no memory manager",
-         "menudefault=EMM,5",
-         "[common]",
-         "FILES=30",
-         "BUFFERS=20",
-         "STACKS=9,256",
-         "LASTDRIVE=Z",
-         "[EMM]",
-         "REM HIMEM for extended memory, EMM386 for EMS and upper memory (DOS, the",
-         "REM drivers and the TSRs go up there), X= keeping its UMBs off the PicoMem's",
-         "REM own 24 KB at D000-D5FF and the 8 KB after it, which the card's own D6",
-         "REM configuration keeps free as well (the range moves with a BIOS line in",
-         "REM the SD card's config.txt). If sound fails, try NOEMS after X=.",
-         "DEVICE=C:\\DOS\\HIMEM.SYS",
-         "DEVICE=C:\\DOS\\EMM386.EXE RAM X=D000-D7FF",
-         "DOS=HIGH,UMB",
-         "REM mTCP NetDrive reserves D: and E:; AUTOEXEC.BAT frees D: for the disc",
-         "REM (DRVOFF D:), so discs kept on the server come in on E:",
-         "DEVICEHIGH=C:\\WAVE86\\NETDRIVE.SYS -d:2",
-         "[XMS]",
-         "DEVICE=C:\\DOS\\HIMEM.SYS",
-         "DOS=HIGH",
-         "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2",
-         "[NONE]",
-         "DEVICE=C:\\WAVE86\\NETDRIVE.SYS -d:2",
-         "[common]",
-         "REM the PicoMem 2's emulated CD-ROM drive (see the FreeDOS image's notes):",
-         "REM none until the card's firmware has it; WAVE86 asks for a disc by hand."]
-    line = "DEVICE=C:\\PICOMEM\\CDMKE.SYS /D:MSCD000 /P:250 /Q"
-    c.append(line if have_cdmke else "REM " + line + "   (no CDMKE.SYS was given)")
-    if fourdos:
-        c += ["REM 4DOS 8.00 is the shell, from C:\\4DOS; COMMAND.COM stays in the root:",
-              "REM SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P",
-              "SHELL=C:\\4DOS\\4DOS.COM C:\\4DOS /E:2048 /P"]
-    else:
-        c.append("SHELL=C:\\COMMAND.COM C:\\ /E:2048 /P")
+def config_sys_dos(have_cdmke):
+    """the same for a licensed DOS whose SYS put it on the image: its own
+    HIMEM and EMM386 from C:\\DOS, and DOS 6's [menu]"""
+    cd = [CDMKE] if have_cdmke else []
+    himem = "DEVICE=C:\\DOS\\HIMEM.SYS /TESTMEM:OFF"
+    emm = "DEVICE=C:\\DOS\\EMM386.EXE RAM X=D000-D7FF"
+    std, local, net, mem, safe = MENU_NAMES
+    c = ["[menu]"] + [f"menuitem={n}, {t}" for n, t in zip(MENU_NAMES, MENU_ITEMS)] + [f"menudefault={std},10",
+         "[common]", "FILES=30", "BUFFERS=20", "STACKS=9,256", "LASTDRIVE=Z",
+         f"[{std}]", himem, emm, "DOS=HIGH,UMB", NETDRIVE] + cd + \
+        [f"[{local}]", himem, emm, "DOS=HIGH,UMB"] + cd + \
+        [f"[{net}]", himem, emm, "DOS=HIGH,UMB", NETDRIVE,
+         f"[{mem}]", himem, emm + " I=B000-B7FF", "DOS=HIGH,UMB",
+         f"[{safe}]",
+         "[common]", SHELL]
     return bat(c)
 
 
@@ -462,77 +363,60 @@ def fill_with_mtools(img, off, stage):
             sys.exit(f"mkimage: mcopy {n}: {r.stderr.strip()}")
 
 
-def autoexec_bat():
+def autoexec_bat(flavour):
+    """AUTOEXEC.BAT after the D6 package's: the card's numbers and the
+    environment, then the boot menu's item, by the name (or number) the
+    kernel put in CONFIG. 1 the sound cards (PMINIT, all in one call), the
+    SD card on W:, the CD-ROM on D:, the mouse, the packet driver and DHCP;
+    2 without the network; 3 without W: and the CD-ROM; 4 the sound cards
+    and W: only; 5 a prompt in C:\\WAVE86. WMODE names the mode for the
+    launcher, which opens on the network view in Network mode."""
+    pminit = "C:\\PICOMEM\\PMINIT /K /SB 1 /GUS 1 /MPU 1"
+    pmdfs = "C:\\PICOMEM\\PMDFS S-W"
+    # ?: quiet when the driver has no drive to give. Low on MS-DOS: LOADHIGH into an
+    # EMM386 block died in the boot test (a fault loop); JEMM386 takes it high
+    shcdx = ("" if flavour in ("msdos", "pcdos", "dos") else "LH ") + "C:\\WAVE86\\SHCDX86.COM /D:?MSCD000,D"
+    mouse = "LH C:\\WAVE86\\EXTRAS\\CTMOUSE"
+    drvoff = "C:\\WAVE86\\DRVOFF D:"
+    net = ["LH C:\\PICOMEM\\PM2000 0x60", "C:\\WAVE86\\DHCP -retries 2 -timeout 10"]
+    std, local, netm, mem, safe = menu_names(flavour)
     return bat([
         "@ECHO OFF",
-        "REM WAVE86 on a PicoMem 2 - written by make picomem-image (tools/mkimage.py).",
-        "REM The card's numbers, all in one place. The PicoMem itself is on IRQ 7 (the",
-        "REM jumper its firmware requires); Sound Blaster and GUS share IRQ 5 and",
-        "REM DMA 1 (the DMA jumper on the board must say 1 too); the NE2000 is on",
-        "REM IRQ 3 at port 300, the card's defaults (BIOS Setup, Other menu: a card",
-        "REM set to another IRQ leaves the packet driver deaf and DHCP waiting).",
         "SET BLASTER=A220 I5 D1 T3",
-        "REM The GUS (port,DMA,DMA,IRQ,IRQ): PMINIT reads ULTRASND, games read both",
-        "REM variables and load their patches from ULTRADIR. Set only when the Gravis",
-        "REM files are in C:\\ULTRASND, so a game without them falls back to the SB.",
-        "SET PMGUS=",
-        "IF EXIST C:\\ULTRASND\\ULTRASND.INI SET ULTRASND=240,1,1,5,5",
-        "IF EXIST C:\\ULTRASND\\ULTRASND.INI SET ULTRADIR=C:\\ULTRASND",
-        "IF EXIST C:\\ULTRASND\\ULTRASND.INI SET PMGUS=/GUS 1",
-        "SET PKTINT=0x60",
-        "SET NE_IRQ=3",
-        "SET NE_PORT=0x300",
-        "PATH C:\\WAVE86;C:\\DOS;C:\\4DOS;C:\\MTCP;C:\\PICOMEM",
-        "REM A disk cache (8 MB of extended memory): the card's disk is read through",
-        "REM its BIOS a sector at a time, so DIR and the launcher's list wait on it",
-        "REM once, not every time. SMARTDRV on an MS-DOS image; LBACACHE under",
-        "REM FreeDOS when the boot menu's item 2 was chosen (the kernel sets CONFIG).",
-        "IF EXIST C:\\DOS\\SMARTDRV.EXE LH C:\\DOS\\SMARTDRV.EXE /X 8192",
-        "IF \"%CONFIG%\"==\"2\" LH C:\\DOS\\LBACACHE.COM 8192",
-        "REM Boot menu item 3: FreeCOM is the shell, and an eXoDOS start batch runs",
-        "REM in a 4DOS of its own that swaps to XMS and ends with the batch (the",
-        "REM launcher's batch runs %WAVESHELL% call RUN.BAT): the game gets the",
-        "REM memory 4DOS would hold. Set it by hand under any item to try it.",
-        "IF \"%CONFIG%\"==\"3\" SET WAVESHELL=C:\\4DOS\\4DOS.COM @C:\\4DOS\\SWAP.INI /C",
-        "PROMPT $P$G",
+        "SET ULTRASND=240,1,1,5,5",
+        "SET ULTRADIR=C:\\ULTRASND",
+        "SET MTCPCFG=C:\\WAVE86\\MTCP.CFG",
         "SET TEMP=C:\\TEMP",
         "SET TMP=C:\\TEMP",
-        "SET MTCPCFG=C:\\WAVE86\\MTCP.CFG",
-        "REM D: for the disc, E: for NetDrive (NETDRIVE.SYS -d:2 in CONFIG.SYS)",
-        "IF EXIST C:\\WAVE86\\DRVOFF.EXE C:\\WAVE86\\DRVOFF D:",
-        "REM The PicoMem 2's sound cards, one PMINIT call (it takes any number of",
-        "REM switches, in order): Sound Blaster 2.0 + OPL3 from BLASTER, the GUS",
-        "REM from ULTRASND when the Gravis files are there, General MIDI on port",
-        "REM 330. (Adlib, CMS and Tandy are BIOS Setup options.)",
-        "IF EXIST C:\\PICOMEM\\PMINIT.EXE C:\\PICOMEM\\PMINIT /SB 1 %PMGUS% /MPU 1",
-        "SET PMGUS=",
-        "REM The SD card as W: (W:\\EXODOS holds the games, W:\\CDROM the discs)",
-        "IF EXIST C:\\PICOMEM\\PMDFS.EXE C:\\PICOMEM\\PMDFS S-W",
-        "REM The card's CD-ROM (CDMKE.SYS in CONFIG.SYS) on D:; ? = quietly none,",
-        "REM which it is until the firmware has the emulation. WAVE86 asks for a",
-        "REM game's disc to be loaded on the card (imgmount=PICOMEM, W:\\CDROM).",
-        "IF EXIST C:\\WAVE86\\SHCDX86.COM LH C:\\WAVE86\\SHCDX86.COM /D:?MSCD000,D",
-        "REM A PS/2 or serial mouse. For a USB mouse on the PicoMem (USB Host and",
-        "REM USB Mouse on in BIOS Setup, Advanced) use PMMOUSE instead of CTMOUSE:",
-        "REM IF EXIST C:\\PICOMEM\\PMMOUSE.EXE LH C:\\PICOMEM\\PMMOUSE",
-        "IF EXIST C:\\WAVE86\\EXTRAS\\CTMOUSE.EXE LH C:\\WAVE86\\EXTRAS\\CTMOUSE",
-        "REM The network: the card's NE2000 over Wi-Fi (wifi.txt on the SD card),",
-        "REM the card author's packet driver PM2000 on INT 60h (it reads the port",
-        "REM and IRQ off the card, and reads odd-sized packets right, which the",
-        "REM stock NE2000 driver under it does not - a transfer that stalls at",
-        "REM the same place every time is that), then DHCP: two tries of 10 s, so",
-        "REM a boot with the Wi-Fi down reaches the menu after 20 s (Esc skips",
-        "REM the wait). To go back to the stock driver, swap the REM below.",
-        "IF EXIST C:\\PICOMEM\\PM2000.COM LH C:\\PICOMEM\\PM2000 %PKTINT%",
-        "IF NOT EXIST C:\\PICOMEM\\PM2000.COM IF EXIST C:\\PICOMEM\\NE2000.COM LH C:\\PICOMEM\\NE2000 %PKTINT% %NE_IRQ% %NE_PORT%",
-        "REM LH C:\\PICOMEM\\NE2000 %PKTINT% %NE_IRQ% %NE_PORT%",
-        "IF EXIST C:\\WAVE86\\DHCP.EXE C:\\WAVE86\\DHCP -retries 2 -timeout 10",
-        "SET PKTINT=",
-        "SET NE_IRQ=",
-        "SET NE_PORT=",
+        "PATH C:\\WAVE86;C:\\DOS;C:\\MTCP;C:\\PICOMEM",
+        "PROMPT $P$G",
         "C:",
         "CD \\WAVE86",
-        "CALL WAVE.BAT"])
+        "GOTO %CONFIG%",
+        f":{std}",
+        "SET WMODE=Standard",
+        drvoff, pminit, pmdfs, shcdx, mouse] + net + [
+        "GOTO WAVE",
+        f":{local}",
+        "SET WMODE=Local",
+        pminit, pmdfs, shcdx, mouse,
+        "GOTO WAVE",
+        f":{netm}",
+        "SET WMODE=Network",
+        drvoff, pminit, mouse] + net + [
+        "GOTO WAVE",
+        f":{mem}",
+        "SET WMODE=Memory",
+        pminit, pmdfs,
+        "GOTO WAVE",
+        f":{safe}",
+        "SET WMODE=Safe",
+        "ECHO Safe Mode: nothing is loaded. PMDFS S-W puts the SD card on W:, WAVE86 starts the launcher.",
+        "GOTO END",
+        ":WAVE",
+        "CALL WAVE.BAT",
+        ":END"])
+
 
 def rewrite_ini(text, settings):
     """The global section of a WAVE86.INI with these keys set: a live key
@@ -616,9 +500,7 @@ def stage_tree(work, a):
     have = {x.upper() for x in os.listdir(p)}
     for n in ("PMINIT.EXE", "PMDFS.EXE", "PM2000.COM"):
         if n not in have:
-            notes.append(f"{n} is not in {a.picomem}; the AUTOEXEC line for it will be skipped"
-                         + ((" (NE2000.COM, the stock driver, loads instead)" if "NE2000.COM" in have
-                             else " (nor is NE2000.COM: no packet driver will load)") if n == "PM2000.COM" else ""))
+            notes.append(f"{n} is not in {a.picomem}, and AUTOEXEC.BAT runs it")
     if a.cdmke:
         for n in os.listdir(a.cdmke):
             if n.upper() == "CDMKE.SYS":
@@ -627,37 +509,22 @@ def stage_tree(work, a):
                 shutil.copy(os.path.join(a.cdmke, n), os.path.join(p, "CDMKE.TXT"))
     have_cdmke = any(n.upper() == "CDMKE.SYS" for n in os.listdir(p))
     if not have_cdmke:
-        notes.append("no CDMKE.SYS: the CD-ROM DEVICE line in CONFIG.SYS is commented out")
+        notes.append("no CDMKE.SYS: the boot menu's items 1 and 2 load no CD-ROM driver")
     g = os.path.join(stage, "ULTRASND")
     if a.gus:
         copy_tree(a.gus, g)
         if not any(n.upper() == "ULTRASND.INI" for n in os.listdir(g)):
-            notes.append(f"{a.gus} has no ULTRASND.INI, which AUTOEXEC.BAT looks for before"
-                         " setting ULTRASND/ULTRADIR: the GUS stays off until it is there")
+            notes.append(f"{a.gus} has no ULTRASND.INI; AUTOEXEC.BAT sets ULTRASND all the same")
     else:
         os.makedirs(g)
-        notes.append("C:\\ULTRASND is empty (no --gus folder: GUS_DIR= was empty or names"
-                     " nothing); the GUS stays off until ULTRASND.INI and the rest are copied there")
+        notes.append("C:\\ULTRASND is empty (no --gus folder); AUTOEXEC.BAT sets ULTRASND all the same")
     if a.dos and not a.dos_disks:       # a licensed DOS brings its own utilities
         copy_tree(a.dos, os.path.join(stage, "DOS"))
         for n in ("EDIT.EXE",):
             if not any(x.upper() == n for x in os.listdir(os.path.join(stage, "DOS"))):
                 notes.append(f"{n} is not in {a.dos}")
-    fourdos = False
-    if a.fourdos:
-        d = os.path.join(stage, "4DOS")
-        copy_tree(a.fourdos, d)
-        fourdos = any(x.upper() == "4DOS.COM" for x in os.listdir(d))
-        if not fourdos:
-            notes.append(f"no 4DOS.COM in {a.fourdos}: COMMAND.COM stays the shell")
-        elif not any(x.upper() == "LICENSE.TXT" for x in os.listdir(d)):
-            sys.exit(f"mkimage: {a.fourdos} has no LICENSE.TXT, which 4DOS's licence says must travel with it")
-        else:
-            open(os.path.join(d, "4DOS.INI"), "w", newline="").write(FOURDOS_INI)
-            open(os.path.join(d, "NOSWAP.INI"), "w", newline="").write(FOURDOS_NOSWAP_INI)
-            open(os.path.join(d, "SWAP.INI"), "w", newline="").write(FOURDOS_SWAP_INI)
-    open(os.path.join(stage, "CONFIG.SYS"), "w", newline="").write(config_sys(have_cdmke, fourdos, a.flavour))
-    open(os.path.join(stage, "AUTOEXEC.BAT"), "w", newline="").write(autoexec_bat())
+    open(os.path.join(stage, "CONFIG.SYS"), "w", newline="").write(config_sys(have_cdmke, a.flavour))
+    open(os.path.join(stage, "AUTOEXEC.BAT"), "w", newline="").write(autoexec_bat(a.flavour))
     return stage, notes
 
 
@@ -701,9 +568,6 @@ def boot_test(img, off, geom, work, seconds, chs):
                 "ver > C:\\RESULTS\\VER.TXT", "set > C:\\RESULTS\\SET.TXT",
                 "WAVE86 /diag > C:\\RESULTS\\DIAG.TXT",
                 "dir C:\\ > C:\\RESULTS\\DIRC.TXT",
-                # the AUTOEXEC's PMINIT line built the same way, to see what it got
-                "SET PMGUS=", "IF EXIST C:\\ULTRASND\\ULTRASND.INI SET PMGUS=/GUS 1",
-                "echo /SB 1 %PMGUS% /MPU 1 > C:\\RESULTS\\PMINIT.TXT",
                 f"echo {MARKER.replace('MARKER', '%MK%')} > C:\\RESULTS\\DONE.TXT"])
     open(os.path.join(work, "WAVE.BAT"), "w", newline="").write(stub)
     r = mtool("mcopy", test, off, "-o", os.path.join(work, "WAVE.BAT"), "::/WAVE86/WAVE.BAT")
@@ -744,24 +608,17 @@ def boot_test(img, off, geom, work, seconds, chs):
     if "DOS    :" not in diag:
         problems.append("WAVE86 /diag did not run")
     if "XMS    :" in diag and "no driver" in diag:
-        problems.append("no XMS: JEMMEX from CONFIG.SYS did not load")
+        problems.append("no XMS: the memory manager in CONFIG.SYS did not load")
     env = re.search(r"Environ: \d+ of (\d+) bytes", diag)
     if not env or int(env.group(1)) < 2048:
         problems.append("the shell's environment is not the 2048 bytes CONFIG.SYS asks for")
     setting = results.get("SET.TXT", "").upper()
-    for v in ("MTCPCFG=C:\\WAVE86\\MTCP.CFG", "BLASTER=A220", "PATH=C:\\WAVE86;C:\\DOS;C:\\4DOS;C:\\MTCP;C:\\PICOMEM\n"):
+    path = "PATH=C:\\WAVE86;C:\\DOS;C:\\MTCP;C:\\PICOMEM\n"
+    # WMODE=STANDARD: the boot menu's first item was taken (ten seconds, no key), and AUTOEXEC.BAT went its way
+    for v in ("MTCPCFG=C:\\WAVE86\\MTCP.CFG", "BLASTER=A220 I5 D1 T3", "ULTRASND=240,1,1,5,5", "ULTRADIR=C:\\ULTRASND",
+              "WMODE=STANDARD", path):
         if v not in setting:
             problems.append(f"AUTOEXEC.BAT did not leave {v.strip()} in the environment")
-    if "PMGUS=" in setting:
-        problems.append("PMGUS was not cleared after the PMINIT line")
-    gus = "ULTRASND=" in setting
-    pminit = results.get("PMINIT.TXT", "").strip()
-    print(f"    GUS: ULTRASND {'set' if gus else 'not set'} (the Gravis files are "
-          f"{'there' if gus else 'not there'}); PMINIT would get: {pminit}")
-    if gus != ("ULTRADIR=C:\\ULTRASND" in setting):
-        problems.append("ULTRASND and ULTRADIR were not set together")
-    if gus != ("/GUS 1" in pminit) or "/SB 1" not in pminit or "/MPU 1" not in pminit:
-        problems.append("the PMINIT line did not come out as meant")
     return not problems, problems
 
 
@@ -774,16 +631,16 @@ def main():
     ap.add_argument("--cdmke", help="folder with CDMKE.SYS, the MKE CD-ROM driver")
     ap.add_argument("--gus", help="folder with the Gravis UltraSound files for C:\\ULTRASND")
     ap.add_argument("--dos", help="folder with FreeDOS utilities (EDIT, MEM, XCOPY...) for C:\\DOS")
-    ap.add_argument("--4dos", dest="fourdos", help="folder with 4DOS 8.00 (4DOS.COM, 4DOS.HLP, LICENSE.TXT...): the shell")
-    ap.add_argument("--kernel", choices=("freedos", "edrdos"), default="freedos",
-                    help="the kernel under the FreeDOS boot sector: FreeDOS (default) or EDR-DOS (--edr folder)")
-    ap.add_argument("--edr", help="folder with EDR-DOS's kernel.sys and command.com (the SvarDOS edrdos release zip)")
+    ap.add_argument("--kernel", choices=("freedos", "edrdos"), default="edrdos",
+                    help="the kernel under the FreeDOS boot sector: EDR-DOS (default; --edr folder) or FreeDOS")
+    ap.add_argument("--edr", default=os.path.join(ROOT, "build", "edrdos"),
+                    help="folder with EDR-DOS's kernel.sys and command.com (the SvarDOS edrdos release zip, unpacked)")
     ap.add_argument("--dos-disk", dest="dos_disks", action="append", default=[], metavar="IMG",
                     help="your own licensed DOS instead: its bootable floppy image first (with SYS.COM and EXPAND.EXE), "
                          "then the other setup disks; that DOS's SYS puts itself on the image and its EXPAND unpacks "
                          "its tools into C:\\DOS. MS-DOS 6.22 and PC DOS layouts.")
     ap.add_argument("--size", type=int, default=512, help="image size in MB (default 512)")
-    ap.add_argument("-o", "--out", help="the image to write (default build/pmwave-<flavour>.img: fdos, edrdos, msdos, pcdos)")
+    ap.add_argument("-o", "--out", help="the image to write (default build/pmwave-<flavour>.img: edrdos, fdos, msdos, pcdos)")
     ap.add_argument("--seconds", type=int, default=180, help="how long each boot test may take (default 180)")
     ap.add_argument("--no-test", action="store_true", help="skip the dosbox-x boot tests")
     a = ap.parse_args()
@@ -793,7 +650,7 @@ def main():
             sys.exit(f"mkimage: {tool} not found (dosbox-x; brew install mtools)")
     if a.kernel == "edrdos" and not a.edr:
         sys.exit("mkimage: --kernel edrdos needs --edr <folder with kernel.sys and command.com>")
-    for d in (a.dist, a.picomem, a.mtcp, a.cdmke, a.gus, a.dos, a.fourdos, a.edr):
+    for d in (a.dist, a.picomem, a.mtcp, a.cdmke, a.gus, a.dos, a.edr):
         if d and not os.path.isdir(d):
             sys.exit(f"mkimage: no folder {d}")
     for d in a.dos_disks:
