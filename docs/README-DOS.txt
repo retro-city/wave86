@@ -1,8 +1,8 @@
 WAVE86 - the DOS side
 =====================
 
-A game launcher for MS-DOS: 8086 and up, VGA best, AdLib or Sound
-Blaster for the music. Full notes: https://github.com/retro-city/wave86
+A game launcher for MS-DOS: 8086 and up, VGA best, AdLib, Sound
+Blaster or an MPU-401 for the music. Full notes: https://github.com/retro-city/wave86
 
 Setting up
 ----------
@@ -53,7 +53,9 @@ type a few letters of it, Enter; F3 searches on. Left and right turn
 the page. In the games list / and F3 search, left and right page, the
 same way, and Del removes a game from the disk after a yes. F1 (or ?)
 in either list opens a menu of everything it does, each with its key;
-M turns the music on and off. A in
+M turns the music on and off, and F4 chooses what plays: all of
+MUSIC\, or only its MIDI (.MID, on an MPU-401), MOD (.MOD, on a Sound
+Blaster) or AdLib (.IMF and .WLF) tracks. A in
 the games list switches the PicoMEM's sound card: 1 runs PMINIT /SB 1
 (Sound Blaster), 2 runs PMINIT /GUS 1 (Gravis UltraSound), through the
 batch loop like a game; the image's AUTOEXEC.BAT already runs the
@@ -184,8 +186,8 @@ be your server - the protocol is plain HTTP with no authentication.
 
 While a game comes in, WAVEGET shows a progress screen - the bar, the
 rate, the files as they land - and, with netmusic=1 in WAVE86.INI,
-plays the soundtrack from MUSIC\ on the AdLib. M, +, -, < and > work
-there as they do in the menu, Esc stops the download.
+plays the soundtrack from MUSIC\ on the AdLib or the MPU-401. M, +, -,
+< and > work there as they do in the menu, Esc stops the download.
 
 When a game will not start
 --------------------------

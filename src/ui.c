@@ -40,8 +40,8 @@ static void thumb_draw(FILE *f, int cols, int rows);
 #define LIST_ROWS  14          /* rows 8..21 */
 #define QBOX_Y     5           /* the queue box: rows 5..20 at most */
 #define QBOX_ROWS  12
-#define MENU_Y     13          /* the menu: the bottom half, rows 13..24 */
-#define MENU_ROWS  8           /* items per column, two columns */
+#define MENU_Y     12          /* the menu: the bottom half, rows 12..24 */
+#define MENU_ROWS  9           /* items per column, two columns */
 #define MENU_COLW  39
 
 static void draw_logo(void)

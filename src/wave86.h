@@ -106,11 +106,14 @@ extern int mus_present;         /* AdLib or Sound Blaster usable */
 extern int mus_on;              /* playing (M toggles) */
 extern int mus_vol;             /* 0..10 */
 extern int mus_ntracks;
-extern int mus_kind;            /* 0 = IMF on AdLib, 1 = MOD on SB */
+extern int mus_kind;            /* 0 = IMF on AdLib, 1 = MOD on SB, 2 = MIDI on MPU-401 */
 extern char mus_track[9];       /* current track base name */
 extern int cfg_modrate;         /* ini modrate=: -1 auto, 0 off, Hz */
 extern int cfg_adlib;           /* ini adlib=: -1 auto, 0 off, 1 force */
 extern int cfg_music;           /* ini music=: 1 = autoplay at startup */
+extern int cfg_musicstyle;      /* ini musicstyle=: 0 all, 1 midi, 2 mod, 3 adlib (F4) */
+extern int cfg_mpu;             /* ini mpu=: -1 auto, 0 off, 1 force */
+extern unsigned cfg_mpuport;    /* ini mpuport=: hex port, 0 = BLASTER's P or 330 */
 extern int cfg_netcd;           /* ini netcd=: 1 = NET CD instead of LOCAL CD */
 
 /* --- net.c: the eXoDOS list and downloads (WAVEGET.EXE does the TCP) --- */
@@ -194,6 +197,24 @@ void mus_toggle(void);
 void mus_volume(int delta);
 int mus_vu(void);               /* live level, 0..10 bar cells */
 void mus_skip(int dir);         /* +1 next / -1 previous track */
+int mus_style_count(int style); /* tracks a musicstyle would play here, -1 no card */
+const char *mus_style_name(int style);  /* "all", "midi", "mod", "adlib" */
+int mus_style_parse(const char *s);     /* the other way; anything else is all */
+void mus_set_style(int style);  /* F4: the playlist again, for that style */
+
+/* --- midi.c: MIDI files on an MPU-401 --- */
+extern int mpu_present;
+extern unsigned mpu_port;
+extern int mpu_ack_reset, mpu_ack_uart;
+int mpu_init(void);             /* does one answer a reset; 1 = one is there */
+void mpu_uart_mode(int on);     /* 1 for a MIDI song, 0 = reset it, on every way out */
+int midi_load(const char *path);
+void midi_free(void);
+void midi_start(unsigned pit_div);  /* from the top, every channel reset */
+int midi_tick(void);            /* the timer's share; 1 = the song is over */
+void midi_silence(void);        /* every sounding note off, sustain up */
+void midi_volume(void);         /* mus_vol changed */
+int midi_level(void);           /* for the VU, 0..1000 */
 
 /* --- misc --- */
 unsigned dos_free_kb(void);

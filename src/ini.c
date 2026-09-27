@@ -45,6 +45,8 @@ static unsigned line_at(unsigned pos, char *buf)
 int cfg_modrate = -1;           /* modrate= : MOD mixer rate, 0 disables */
 int cfg_adlib = -1;             /* adlib=   : 1 force FM on, 0 off */
 int cfg_music = 0;              /* music=   : 1 = play at startup */
+int cfg_mpu = -1;               /* mpu=     : MPU-401 for MIDI, -1 find, 0 off, 1 force */
+unsigned cfg_mpuport = 0;       /* mpuport= : its port in hex, 0 = BLASTER's P or 330 */
 char cfg_theme[16] = "";        /* theme=   : exodos (default) or wave86 */
 int cfg_netcd = 0;              /* netcd=   : 1 = leave CDs on the server (NET CD) */
 
@@ -147,6 +149,12 @@ void ini_load(const char *fname)
                 cfg_adlib = atoi(trim(s + 6));
             } else if (strnicmp(s, "music=", 6) == 0) {
                 cfg_music = atoi(trim(s + 6)) ? 1 : 0;
+            } else if (strnicmp(s, "musicstyle=", 11) == 0) {
+                cfg_musicstyle = mus_style_parse(trim(s + 11));
+            } else if (strnicmp(s, "mpu=", 4) == 0) {
+                cfg_mpu = atoi(trim(s + 4));
+            } else if (strnicmp(s, "mpuport=", 8) == 0) {
+                cfg_mpuport = (unsigned)strtoul(trim(s + 8), NULL, 16);
             } else if (strnicmp(s, "netcd=", 6) == 0) {
                 cfg_netcd = atoi(trim(s + 6)) ? 1 : 0;
             } else if (strnicmp(s, "theme=", 6) == 0) {

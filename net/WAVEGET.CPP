@@ -91,6 +91,15 @@ static uint16_t hdrLen = 0;
 volatile uint8_t CtrlBreakDetected = 0;
 void __interrupt __far ctrlBreakHandler() { CtrlBreakDetected = 1; }
 
+/* A critical error (a full or write-protected disk, a drive gone) fails
+   the call that met it: Abort would have DOS end WAVEGET on the spot,
+   with the packet driver, the timer and the music still hooked to it. */
+static int __far critFail(unsigned deverr, unsigned, unsigned __far *) {
+  if (deverr & 0x0800) return _HARDERR_FAIL;
+  if (deverr & 0x2000) return _HARDERR_IGNORE;
+  return _HARDERR_ABORT;              /* DOS allows nothing else */
+}
+
 /*
  * The launcher's music engine (src/music.c, src/mod.c) and CPU probe,
  * built in large model and linked in here: a download takes minutes and
@@ -98,19 +107,26 @@ void __interrupt __far ctrlBreakHandler() { CtrlBreakDetected = 1; }
  * four are what music.c expects of whoever links it - the launcher fills
  * them from WAVE86.INI, we choose them:
  *   cfg_modrate 0 leaves the MOD mixer and its DMA out of it, so only the
- *   IMF tracks play, a few OPL register writes per timer tick, which the
- *   packet driver does not notice;
+ *   IMF and MIDI tracks play, a few OPL or MPU-401 writes per timer tick,
+ *   which the packet driver does not notice;
  *   cfg_music 1 means start playing at once (netmusic=0 in the INI, read
  *   below, turns the whole thing off);
- *   cfg_adlib -1 means detect (the INI's adlib= overrides).
+ *   cfg_adlib and cfg_mpu -1 mean detect, cfg_mpuport 0 BLASTER's P or
+ *   330, cfg_musicstyle 0 every kind (the INI's adlib=, mpu=, mpuport=
+ *   and musicstyle= override them).
  * mus_init() registers mus_shutdown with atexit, so every exit path here
- * unhooks the timer and silences the OPL.
+ * unhooks the timer, silences the OPL and sends every sounding MIDI note
+ * its Note Off.
  */
 extern "C" {
   char home_dir[80] = "";
   int cfg_adlib = -1;
   int cfg_music = 1;
   int cfg_modrate = 0;
+  int cfg_mpu = -1;
+  unsigned cfg_mpuport = 0;
+  extern int cfg_musicstyle;        /* music.c's: 0 all */
+  int mus_style_parse(const char *s);
   void mus_init(void);
   void mus_poll(void);
   void mus_toggle(void);
@@ -488,7 +504,7 @@ static void uiMusic(void) {
   if (!screenOn) return;
   playing = musicWanted && mus_present && mus_ntracks && mus_on;
   if (!musicWanted)      strcpy(what, "MUSIC OFF (netmusic=0)");
-  else if (!mus_present) strcpy(what, "NO ADLIB OR SOUND BLASTER FOUND");
+  else if (!mus_present) strcpy(what, "NO ADLIB, SOUND BLASTER OR MPU-401");
   else if (!mus_ntracks) sprintf(what, "NO TRACKS IN %sMUSIC", home_dir);
   else if (!mus_on)      strcpy(what, "MUSIC OFF (M)");
   else                   strcpy(what, mus_track);
@@ -600,8 +616,8 @@ static void uiProgress(const char *file, unsigned long done, unsigned long total
 }
 
 /* MUSIC\ sits next to WAVEGET.EXE; netmusic=0 in WAVE86.INI says no,
-   netcrc=0 turns the checksums off, and adlib= is honoured the way the
-   launcher honours it */
+   netcrc=0 turns the checksums off, and adlib=, mpu=, mpuport= and
+   musicstyle= are honoured the way the launcher honours them */
 /* a word from an INI line: up to a space, a tab or a ; comment */
 static void iniWord(char *dst, unsigned n, const char *s) {
   unsigned i = 0;
@@ -641,6 +657,9 @@ static void loadSettings(const char *exePath) {
         reconnectMs = secs == 0 ? 0 : (secs < 5 ? 5000ul : secs > 3600 ? 3600000ul : secs * 1000ul);
       }
       else if (strnicmp(buf, "adlib=", 6) == 0) cfg_adlib = atoi(buf + 6);
+      else if (strnicmp(buf, "mpu=", 4) == 0) cfg_mpu = atoi(buf + 4);
+      else if (strnicmp(buf, "mpuport=", 8) == 0) cfg_mpuport = (unsigned)strtoul(buf + 8, NULL, 16);
+      else if (strnicmp(buf, "musicstyle=", 11) == 0) cfg_musicstyle = mus_style_parse(buf + 11);
     }
     fclose(f);
   }
@@ -1552,6 +1571,7 @@ static void usage(void) {
 
 int main(int argc, char **argv) {
   IpAddr_t addr; uint16_t port;
+  _harderr(critFail);
   /* /q:K/N says which of a queue this is. An argument and not an
      environment variable: a DOS environment that is full cannot take
      another SET, and that is exactly the machine this runs on. */

@@ -10,6 +10,10 @@
  * Volume scales only carrier operator levels (modulators keep the
  * timbre), using shadow copies of the stream's 40h/C0h writes so the
  * level can be re-applied when the user changes it.
+ *
+ * The same timer plays MIDI files on an MPU-401 (midi.c), and the
+ * playlist hands MODs to the Sound Blaster mixer (mod.c). musicstyle=
+ * in the INI, or F4 in the launcher, keeps it to one kind.
  */
 #include <dos.h>
 #include <conio.h>
@@ -26,18 +30,19 @@
 #define DIV_700HZ  1704         /* 1193182 / 700: Wolf3D .WLF rate */
 #define SEG_BYTES  60000U       /* per far-memory segment (multiple of 4) */
 #define MAX_SEGS   4            /* up to 240K per tune */
-#define MAX_TRACKS 16
+#define MAX_TRACKS 64
 
 int mus_present = 0;
 int mus_on = 0;
 int mus_vol = 8;                /* 0..10 */
 int mus_ntracks = 0;
-int mus_kind = 0;               /* 0 = IMF on AdLib, 1 = MOD on Sound Blaster */
+int mus_kind = 0;               /* 0 = IMF on AdLib, 1 = MOD on Sound Blaster, 2 = MIDI on MPU-401 */
+int cfg_musicstyle = 0;         /* musicstyle=: 0 all, 1 midi, 2 mod, 3 adlib */
 char mus_track[9] = "";
 
 static int opl_present = 0;
 static int sb_usable = 0;
-static char tracks[MAX_TRACKS][FN_LEN];
+static char __far tracks[MAX_TRACKS][FN_LEN];     /* far: the data segment is full */
 static int cur_track = 0;
 static volatile int track_done = 0;
 
@@ -208,7 +213,12 @@ static void stream_write(unsigned char reg, unsigned char val)
 
 static void __interrupt __far timer_isr(void)
 {
-    if (playing) {
+    if (playing && mus_kind == 2) {
+        if (midi_tick()) {
+            playing = 0;
+            track_done = 1;
+        }
+    } else if (playing) {
         while (mdelay == 0) {
             unsigned char __far *rec;
             if (cseg >= nsegs || coff >= seglen[cseg]) {
@@ -268,9 +278,11 @@ static void ensure_hooked(void)
     pit_set(pit_div);
 }
 
+static void music_path(char *dst, const char __far *name);
+
 static int imf_load(int idx)
 {
-    char path[PATH_LEN];
+    char path[PATH_LEN + 24];
     FILE *f;
     static unsigned char buf[1024];
     unsigned n;
@@ -283,7 +295,7 @@ static int imf_load(int idx)
     track_done = 0;
     notes_off();
 
-    sprintf(path, "MUSIC\\%s", tracks[idx]);
+    music_path(path, tracks[idx]);
     f = fopen(path, "rb");
     if (!f)
         return 1;
@@ -329,19 +341,10 @@ static int imf_load(int idx)
 
     /* .WLF plays at Wolf3D's 700 Hz, plain .IMF at the standard 560 */
     {
-        const char *dot = strrchr(tracks[idx], '.');
-        pit_div = (dot && stricmp(dot + 1, "WLF") == 0) ? DIV_700HZ
-                                                        : DIV_560HZ;
+        const char __far *dot = _fstrrchr(tracks[idx], '.');
+        pit_div = (dot && _fstricmp(dot + 1, "WLF") == 0) ? DIV_700HZ
+                                                          : DIV_560HZ;
         ensure_hooked();            /* first IMF track hooks the timer */
-    }
-
-    {
-        char base[9], *dot;
-        strncpy(base, tracks[idx], 8);
-        base[8] = 0;
-        dot = strchr(base, '.');
-        if (dot) *dot = 0;
-        strcpy(mus_track, base);
     }
 
     _disable();
@@ -354,21 +357,21 @@ static int imf_load(int idx)
     return 0;
 }
 
-static int cmp_names(const void *a, const void *b)
+/* 0 IMF/WLF on the AdLib, 1 MOD on the Sound Blaster, 2 MIDI on the MPU-401 */
+static int track_kind(int idx)
 {
-    return stricmp((const char *)a, (const char *)b);
-}
-
-static int track_is_mod(int idx)
-{
-    const char *dot = strrchr(tracks[idx], '.');
-    return dot && stricmp(dot + 1, "MOD") == 0;
+    const char __far *dot = _fstrrchr(tracks[idx], '.');
+    if (dot && _fstricmp(dot + 1, "MOD") == 0)
+        return 1;
+    if (dot && _fstricmp(dot + 1, "MID") == 0)
+        return 2;
+    return 0;
 }
 
 /* MUSIC\ lives next to the EXE, wherever the user started us from */
-static void music_path(char *dst, const char *name)
+static void music_path(char *dst, const char __far *name)
 {
-    sprintf(dst, "%s%sMUSIC\\%s", home_dir,
+    sprintf(dst, "%s%sMUSIC\\%Fs", home_dir,
             home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\", name);
 }
 
@@ -383,29 +386,42 @@ static int mus_load(int idx)
     for (tries = 0; tries < mus_ntracks; tries++) {
         int i = (idx + tries) % mus_ntracks;
         int rc;
+        int kind = track_kind(i);
 
-        playing = 0;                    /* stop both engines */
+        playing = 0;                    /* stop every engine */
         if (opl_present)
             notes_off();
+        midi_silence();
         mod_stop();
         mod_free();
+        midi_free();
 
-        if (track_is_mod(i)) {
+        /* the kind first: the timer reads it as soon as playing is set */
+        mus_kind = kind;
+        if (kind == 1) {
             char path[PATH_LEN + 24];
             music_path(path, tracks[i]);
             rc = sb_usable ? mod_load(path) : 1;
-            if (rc == 0) {
-                mus_kind = 1;
+            if (rc == 0)
                 mod_start();
+        } else if (kind == 2) {
+            char path[PATH_LEN + 24];
+            music_path(path, tracks[i]);
+            rc = mpu_present ? midi_load(path) : 1;
+            if (rc == 0) {
+                pit_div = DIV_560HZ;
+                mpu_uart_mode(1);       /* the first MIDI song switches it */
+                midi_start(pit_div);
+                ensure_hooked();
+                track_done = 0;
+                playing = mus_on;
             }
         } else {
             rc = opl_present ? imf_load(i) : 1;
-            if (rc == 0)
-                mus_kind = 0;
         }
         if (rc == 0) {
             char base[9], *dot;
-            strncpy(base, tracks[i], 8);
+            _fstrncpy(base, tracks[i], 8);
             base[8] = 0;
             dot = strchr(base, '.');
             if (dot) *dot = 0;
@@ -420,34 +436,130 @@ static int mus_load(int idx)
     return 1;
 }
 
-static void scan_pattern(const char *pattern)
+/* the files a pattern finds, into the playlist in name order; with
+   store 0 only counted */
+static int scan_pattern(const char *ext, int store)
 {
+    char pattern[PATH_LEN + 24];
     struct find_t ft;
-    unsigned rc = _dos_findfirst(pattern, _A_NORMAL | _A_RDONLY | _A_ARCH,
-                                 &ft);
-    while (rc == 0 && mus_ntracks < MAX_TRACKS) {
-        strncpy(tracks[mus_ntracks], ft.name, FN_LEN - 1);
-        tracks[mus_ntracks][FN_LEN - 1] = 0;
-        mus_ntracks++;
+    unsigned rc;
+    int n = 0;
+
+    music_path(pattern, ext);
+    rc = _dos_findfirst(pattern, _A_NORMAL | _A_RDONLY | _A_ARCH, &ft);
+    while (rc == 0) {
+        n++;
+        if (store && mus_ntracks < MAX_TRACKS) {
+            int i = mus_ntracks++;
+            while (i > 0 && _fstricmp(tracks[i - 1], ft.name) > 0) {
+                _fmemcpy(tracks[i], tracks[i - 1], FN_LEN);
+                i--;
+            }
+            _fstrncpy(tracks[i], ft.name, FN_LEN - 1);
+            tracks[i][FN_LEN - 1] = 0;
+        }
         rc = _dos_findnext(&ft);
+    }
+    return n;
+}
+
+/* the tracks of one kind this machine can play: -1 when it has no card
+   for them. store 1 also puts them in the playlist. */
+static int scan_kind(int kind, int store)
+{
+    switch (kind) {
+    case 0:
+        if (!opl_present) return -1;
+        return scan_pattern("*.IMF", store) + scan_pattern("*.WLF", store);
+    case 1:
+        if (!sb_usable) return -1;
+        return scan_pattern("*.MOD", store);
+    default:
+        if (!mpu_present) return -1;
+        return scan_pattern("*.MID", store);
     }
 }
 
+/* musicstyle: 0 all, 1 MIDI, 2 MOD, 3 AdLib; the kind each one plays */
+static const signed char style_kind[4] = { -1, 2, 1, 0 };
+
 static void scan_tracks(void)
 {
-    char pattern[PATH_LEN + 24];
+    int kind, only = cfg_musicstyle > 0 && cfg_musicstyle < 4 ? style_kind[cfg_musicstyle] : -1;
     mus_ntracks = 0;
-    if (opl_present) {
-        music_path(pattern, "*.IMF");
-        scan_pattern(pattern);
-        music_path(pattern, "*.WLF");
-        scan_pattern(pattern);
+    for (kind = 0; kind < 3; kind++)
+        if (only < 0 || only == kind)
+            scan_kind(kind, 1);
+}
+
+/* F4's box: the tracks a style would play here, -1 for no card */
+int mus_style_count(int style)
+{
+    int kind, n = 0, any = 0;
+    if (style > 0 && style < 4)
+        return scan_kind(style_kind[style], 0);
+    for (kind = 0; kind < 3; kind++) {
+        int c = scan_kind(kind, 0);
+        if (c >= 0) { n += c; any = 1; }
     }
-    if (sb_usable) {
-        music_path(pattern, "*.MOD");
-        scan_pattern(pattern);
+    return any ? n : -1;
+}
+
+static const char *const style_names[4] = { "all", "midi", "mod", "adlib" };
+
+const char *mus_style_name(int style)
+{
+    return style_names[style > 0 && style < 4 ? style : 0];
+}
+
+/* musicstyle= as written: all, midi, mod or adlib; anything else is all */
+int mus_style_parse(const char *s)
+{
+    int i;
+    while (*s == ' ' || *s == '\t') s++;
+    for (i = 1; i < 4; i++) {
+        size_t n = strlen(style_names[i]);
+        if (strnicmp(s, style_names[i], n) == 0 &&
+            (s[n] == 0 || s[n] == ' ' || s[n] == '\t' || s[n] == ';' || s[n] == '\r' || s[n] == '\n'))
+            return i;
     }
-    qsort(tracks, mus_ntracks, FN_LEN, cmp_names);
+    return 0;
+}
+
+/*
+ * F4 chose a style: the playlist again. The track playing carries on
+ * when the style has it; otherwise the first of the new list starts (if
+ * the music is on), or starts at the next M.
+ */
+void mus_set_style(int style)
+{
+    char cur[FN_LEN];
+    int i;
+
+    cfg_musicstyle = style;
+    if (!mus_present)
+        return;
+    cur[0] = 0;
+    if (loaded)
+        _fstrcpy(cur, tracks[cur_track]);
+    scan_tracks();
+    for (i = 0; i < mus_ntracks; i++)
+        if (_fstricmp(tracks[i], cur) == 0) {
+            cur_track = i;
+            return;
+        }
+    playing = 0;
+    if (opl_present)
+        notes_off();
+    midi_silence();
+    mod_stop();
+    mod_free();
+    midi_free();
+    loaded = 0;
+    mus_track[0] = 0;
+    cur_track = 0;
+    if (mus_on && mus_ntracks)
+        mus_load(0);
 }
 
 void mus_init(void)
@@ -468,22 +580,23 @@ void mus_init(void)
         opl_calibrate();                /* how slow is this card's bus? */
         opl_reset();
     }
-    mus_present = opl_present || sb_usable;
+    mpu_init();
+    mus_present = opl_present || sb_usable || mpu_present;
     if (!mus_present)
         return;
-    scan_tracks();
-    if (!mus_ntracks)
-        return;
-
     {
         static int registered = 0;
         if (!registered) {
-            atexit(mus_shutdown);
+            atexit(mus_shutdown);   /* before any track: F4 can bring some */
             registered = 1;
             mus_on = cfg_music;     /* off unless music=1; M turns it on;
                                        later re-inits keep the M state */
         }
     }
+    scan_tracks();
+    if (!mus_ntracks)
+        return;
+
     /* silent start: nothing loaded, no timer hook, no DMA until M */
     if (mus_on)
         mus_load(cur_track < mus_ntracks ? cur_track : 0);
@@ -507,6 +620,19 @@ void mus_diag(void)
                sb_dsp_major, sb_dsp_minor,
                sb_rate ? "on" : "off", sb_rate);
     printf("\n");
+    printf("MPU-401: ");
+    if (mpu_present) {                  /* UART mode, the way a song gets it, and out */
+        mpu_uart_mode(1);
+        mpu_uart_mode(0);
+    }
+    if (cfg_mpu == 0)
+        printf("off (ini mpu=0)\n");
+    else
+        printf("port %Xh, reset %s, UART mode %s -> %s%s\n", mpu_port,
+               mpu_ack_reset > 0 ? "acknowledged" : "no answer",
+               mpu_ack_uart > 0 ? "acknowledged" : "no answer",
+               mpu_present ? "found" : "not found",
+               cfg_mpu == 1 ? " (ini mpu=1)" : "");
     printf("CPU    : %s\n", cpu_desc);
     /*
      * How long this machine takes over one OPL register write. It is not
@@ -531,8 +657,8 @@ void mus_diag(void)
                us, opl_read_ns / 10, opl_read_ns % 10, opl_d1, opl_d2);
         printf("         so the player costs about %lu%% of the CPU\n", us * 560 * 3 / 10000);
     }
-    printf("Tracks : %d in MUSIC\\ (IMF/WLF need FM, MOD needs a DSP)\n",
-           mus_ntracks);
+    printf("Tracks : %d in MUSIC\\ for musicstyle=%s (IMF/WLF need FM, MOD a DSP,\n"
+           "         MID an MPU-401)\n", mus_ntracks, mus_style_name(cfg_musicstyle));
 }
 
 /* everything off and every far buffer returned, for running a game
@@ -545,6 +671,7 @@ void mus_release(void)
         if (segs[i]) { _ffree(segs[i]); segs[i] = NULL; }
     nsegs = 0;
     mod_free();
+    midi_free();
     sb_release();
     mus_present = 0;
     mus_ntracks = 0;
@@ -565,6 +692,8 @@ void mus_shutdown(void)
     }
     if (opl_present)
         opl_reset();
+    midi_silence();             /* after the timer: nothing more comes */
+    mpu_uart_mode(0);           /* and the MPU as the next program expects it */
 }
 
 /* called from the main loop between keys: mix, advance the playlist */
@@ -593,12 +722,15 @@ void mus_toggle(void)
         mus_load(cur_track < mus_ntracks ? cur_track : 0);
         return;
     }
-    if (mus_kind == 0) {
+    if (mus_kind == 0 || mus_kind == 2) {
         if (mus_on) {
             playing = 1;
         } else {
             playing = 0;
-            notes_off();
+            if (mus_kind == 0)
+                notes_off();
+            else
+                midi_silence();
         }
     }
 }
@@ -620,6 +752,8 @@ void mus_volume(int delta)
     mus_vol += delta;
     if (mus_vol < 0) mus_vol = 0;
     if (mus_vol > 10) mus_vol = 10;
+    if (mus_kind == 2 && loaded)
+        midi_volume();              /* each channel's volume, scaled anew */
     if (!opl_present)
         return;                     /* the MOD mixer reads mus_vol live */
     _disable();
@@ -647,6 +781,8 @@ int mus_vu(void)
     }
     if (mus_kind == 1) {
         target = mod_vu * 10;           /* 100 = full scale */
+    } else if (mus_kind == 2) {
+        target = (int)((long)midi_level() * mus_vol / 10);
     } else {
         int ch, w = 0;
         unsigned char d;

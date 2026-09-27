@@ -25,10 +25,10 @@ CFLAGS = -q -bcl=dos -0 -mm -os -wx -s -k4096
 TOOL_CFLAGS = -q -bcl=dos -0 -ms -os -wx -s -k4096
 
 SRCS = src/wave86.c src/ui.c src/vga.c src/scan.c src/ini.c src/music.c \
-       src/mod.c src/cpu.c src/net.c src/theme.c
+       src/mod.c src/midi.c src/cpu.c src/net.c src/theme.c
 
 MUSIC = $(wildcard music/*.IMF music/*.imf music/*.WLF music/*.wlf \
-                   music/*.MOD music/*.mod)
+                   music/*.MOD music/*.mod music/*.MID music/*.mid)
 
 all: build/WAVE86.EXE build/WAVE.BAT build/WAVE86.INI build/WAVE86.DEF build/MEMLIM.EXE music-files thumbs net cdrom
 
@@ -167,12 +167,12 @@ build/mtcp-inc/.stamp: $(wildcard net/mtcp/*/*.H net/mtcp/*/*.h net/*.H net/dhcp
 # WAVEGET plays the soundtrack while a game comes in, so the launcher's
 # music engine and CPU probe are built again in large model and linked in.
 COMMA := ,
-WAVEGET_EXTRA := music.obj,mod.obj,cpu.obj
+WAVEGET_EXTRA := music.obj,mod.obj,midi.obj,cpu.obj
 
 build/WAVEGET.EXE: net/WAVEGET.CPP net/WAVEGET.CFG $(MTCP_SRC) build/mtcp-inc/.stamp \
-                   src/music.c src/mod.c src/cpu.c src/wave86.h
+                   src/music.c src/mod.c src/midi.c src/cpu.c src/wave86.h
 	@mkdir -p build/net/waveget
-	cd build/net/waveget && for f in music mod cpu; do wcc -0 -ml -os -wx -q $(abspath src)/$$f.c -fo=$$f.obj || exit 1; done
+	cd build/net/waveget && for f in music mod midi cpu; do wcc -0 -ml -os -wx -q $(abspath src)/$$f.c -fo=$$f.obj || exit 1; done
 	$(call MTCP_BUILD,waveget,net,$(WAVEGET_EXTRA))
 
 build/DHCP.EXE: net/dhcp/DHCP.CPP net/dhcp/DHCP.CFG $(MTCP_SRC) build/mtcp-inc/.stamp

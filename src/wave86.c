@@ -48,6 +48,7 @@ void ui_game_edit(const char *title, const char *const *labels, const char *cons
 #define K_RIGHT 0x4D00
 #define K_F1    0x3B00
 #define K_F3    0x3D00
+#define K_F4    0x3E00
 #define K_DEL   0x5300
 #define PAGE    14              /* rows in a list */
 #define QROWS   12              /* rows in the queue box */
@@ -82,12 +83,62 @@ extern volatile int mus_cseg;
 extern volatile unsigned mus_coff;
 extern int mus_loops;
 extern FILE *mod_dumpf;
+extern unsigned char __far *midi_log;       /* midi.c: the bytes sent, for /mustest */
+extern unsigned midi_log_len, midi_log_cap;
+extern unsigned long midi_clk;
 
 /* /keys <script>, for the test harness: these come out of getkey() before
    the keyboard does, and with /dump the screen is dumped when they run
-   out. ~ Enter, ` Esc, { } left and right, ! F3, _ space. */
+   out. ~ Enter, ` Esc, { } left and right, [ ] up and down, ! F3,
+   ^ F1, $ F4, # Del, _ space. */
 static const char *opt_keys = NULL;
 static void quit(void);
+
+/*
+ * Ctrl-C, Ctrl-Break and DOS's critical errors must not end the launcher
+ * behind its back: DOS would drop it with the timer still hooked and a
+ * MIDI note still sounding. Ctrl-C and Ctrl-Break quit it the way Esc
+ * does, at the next key; a critical error (a drive with no disk in it)
+ * fails the call that met it rather than asking Abort, Retry, Fail over
+ * the screen. DOS puts both vectors back when the launcher exits, and a
+ * game run from here without WAVE.BAT gets them as they were.
+ */
+static volatile int break_hit = 0;
+static void (__interrupt __far *old_int23)(void);
+static void (__interrupt __far *old_int24)(void);
+
+static void __interrupt __far on_break(void)
+{
+    break_hit = 1;              /* IRET: DOS carries on with the call */
+}
+
+static int __far on_crit(unsigned deverr, unsigned errcode, unsigned __far *devhdr)
+{
+    (void)errcode;
+    (void)devhdr;
+    if (deverr & 0x0800)
+        return _HARDERR_FAIL;
+    if (deverr & 0x2000)
+        return _HARDERR_IGNORE;
+    return _HARDERR_ABORT;      /* DOS allows nothing else */
+}
+
+static void guard_breaks(int on)
+{
+    static int saved = 0;
+    if (!saved) {
+        old_int23 = _dos_getvect(0x23);
+        old_int24 = _dos_getvect(0x24);
+        saved = 1;
+    }
+    if (on) {
+        _dos_setvect(0x23, on_break);
+        _harderr(on_crit);
+    } else {
+        _dos_setvect(0x23, old_int23);
+        _dos_setvect(0x24, old_int24);
+    }
+}
 
 static unsigned getkey(void)
 {
@@ -103,6 +154,7 @@ static unsigned getkey(void)
             case '}': return K_RIGHT;
             case '!': return K_F3;
             case '^': return K_F1;
+            case '$': return K_F4;
             case '#': return K_DEL;
             case '[': return K_UP;
             case ']': return K_DOWN;
@@ -117,6 +169,8 @@ static unsigned getkey(void)
         }
     }
     while (!_bios_keybrd(_KEYBRD_READY)) {
+        if (break_hit)
+            quit();                 /* Ctrl-C or Ctrl-Break, seen by DOS */
         mus_poll();                 /* idle: keep the playlist moving */
         ui_music_tick();            /* ... and the VU meter bouncing */
     }
@@ -933,6 +987,7 @@ static int find_title(int net, int from, int again)
     X(g09, "M",     "MUSIC ON/OFF",            K_MUSIC) \
     X(g10, "+/-",   "VOLUME CONTROL",          '+') \
     X(g11, "</>",   "PREVIOUS/NEXT SONG",      '>') \
+    X(g17, "F4",    "MUSIC STYLE",             K_F4) \
     X(g12, "ESC",   "QUIT TO DOS",             0x1B)
 #define NET_MENU(X) \
     X(n01, "ENTER", "INSTALL IT, OR THE QUEUE", 0x0D) \
@@ -947,6 +1002,7 @@ static int find_title(int net, int from, int again)
     X(n10, "M",     "MUSIC ON/OFF",            K_MUSIC) \
     X(n11, "+/-",   "VOLUME CONTROL",          '+') \
     X(n12, "</>",   "PREVIOUS/NEXT SONG",      '>') \
+    X(n14, "F4",    "MUSIC STYLE",             K_F4) \
     X(n13, "ESC",   "BACK TO THE GAMES",       0x1B)
 /* the text and the tables live in far memory: the data segment is full */
 #define MENU_TEXT(id, k, l, c) static const char __far id##k_[] = k, id##l_[] = l;
@@ -955,7 +1011,7 @@ GAMES_MENU(MENU_TEXT)
 NET_MENU(MENU_TEXT)
 static const MenuItem __far menu_games[] = { GAMES_MENU(MENU_ITEM) };
 static const MenuItem __far menu_net[]   = { NET_MENU(MENU_ITEM) };
-#define MENU_ROWS 8
+#define MENU_ROWS 9
 static int menu_sel[2];         /* where the bar was, per view */
 
 /* The PicoMEM's sound cards, switched from the menu: PMINIT takes the
@@ -1005,13 +1061,14 @@ static unsigned menu_pick(int net, int cur)
     const MenuItem __far *items = net ? menu_net : menu_games;
     int n = net ? (int)(sizeof(menu_net) / sizeof(*menu_net)) : (int)(sizeof(menu_games) / sizeof(*menu_games));
     int sel = menu_sel[net], i;
-    unsigned char dim[16];
+    unsigned char dim[2 * MENU_ROWS];
     int nomusic = !mus_present || !mus_ntracks;
 
     for (i = 0; i < n; i++) {
         unsigned c = items[i].code;
         int d = 0;
         if (c == K_MUSIC || c == '+' || c == '-' || c == '<' || c == '>') d = nomusic;
+        else if (c == K_F4) d = !mus_present;      /* a style can bring tracks back */
         else if (net) {
             if (c == 'q') d = !net_qcount;
             else if (c == 'p') d = !net_count || !net_get(cur)->netplay;
@@ -1443,7 +1500,9 @@ static void hand_off(const char *msg)
     text_mode_plain();
     printf("%s\n", msg);
     printf("(type WAVE instead to give games all memory)\n");
+    guard_breaks(0);                /* the game gets DOS's Ctrl-C and critical errors */
     system(RUNBAT);
+    guard_breaks(1);
     remove(RUNBAT);
     remove(OLDBAT);
 
@@ -1869,17 +1928,77 @@ static void music_key(void)
 {
     char msg[80];
     if (!mus_present) {
-        ui_status("NO ADLIB OR SOUND BLASTER FOUND (adlib=1 IN WAVE86.INI FORCES IT).");
+        ui_status("NO ADLIB, SOUND BLASTER OR MPU-401 FOUND (SEE WAVE86 /DIAG).");
         return;
     }
     if (!mus_ntracks) {
-        sprintf(msg, "NO TRACKS IN %s%sMUSIC", home_dir,
-                home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
+        if (cfg_musicstyle)
+            sprintf(msg, "NO %s TRACKS TO PLAY HERE. F4 CHOOSES ANOTHER STYLE.",
+                    cfg_musicstyle == 1 ? "MIDI" : cfg_musicstyle == 2 ? "MOD" : "ADLIB");
+        else
+            sprintf(msg, "NO TRACKS IN %s%sMUSIC", home_dir,
+                    home_dir[strlen(home_dir) - 1] == '\\' ? "" : "\\");
         ui_status(msg);
         return;
     }
     mus_toggle();
     ui_status(NULL);
+}
+
+/*
+ * F4: which tracks in MUSIC\ play - all of them, or one kind - in a box
+ * like the menu's, each with how many there are for this machine's cards.
+ * The choice goes into WAVE86.INI as musicstyle=. Returns what the status
+ * line should say, or NULL.
+ */
+static char __far style_lbl[4][32];
+static MenuItem __far style_items[4];
+
+static const char *music_style(void)
+{
+    static const char *const what[4] = { "ALL", "MIDI (MPU-401)", "MOD (BLASTER)", "ADLIB (FM)" };
+    static const char __far *const keys[4] = { "1", "2", "3", "4" };
+    static char msg[64];
+    unsigned char dim[4];
+    char title[32], buf[40];
+    int i, sel = cfg_musicstyle, count[4];
+
+    if (!mus_present)
+        return "NO ADLIB, SOUND BLASTER OR MPU-401 FOUND (SEE WAVE86 /DIAG).";
+    for (i = 0; i < 4; i++) {
+        count[i] = mus_style_count(i);
+        if (count[i] < 0)
+            sprintf(buf, "%-15sNO CARD", what[i]);
+        else
+            sprintf(buf, "%-15s%2d TRACK%s", what[i], count[i], count[i] == 1 ? "" : "S");
+        _fstrcpy(style_lbl[i], buf);
+        style_items[i].key = keys[i];
+        style_items[i].label = style_lbl[i];
+        style_items[i].code = '1' + i;
+        dim[i] = (unsigned char)(count[i] <= 0);
+    }
+    sprintf(title, " MUSIC STYLE: %s ", what[sel]);
+    for (;;) {
+        unsigned k;
+        int pick = -1;
+        ui_menu(title, style_items, 4, sel, dim);
+        k = getkey();
+        if (k == 0x1B || k == K_F4)
+            return NULL;
+        if (k >= '1' && k <= '4') pick = k - '1';
+        else if (k == 0x0D) pick = sel;
+        else if (k == K_UP) sel = (sel + 3) % 4;
+        else if (k == K_DOWN) sel = (sel + 1) % 4;
+        if (pick >= 0 && !dim[pick]) {
+            mus_set_style(pick);
+            ini_write_global("musicstyle", mus_style_name(pick));
+            sprintf(msg, "MUSIC STYLE %s: %d TRACK%s.", what[pick], mus_ntracks,
+                    mus_ntracks == 1 ? "" : "S");
+            return msg;
+        }
+        if (pick >= 0)
+            sel = pick;         /* nothing to play there: the bar goes to it, no more */
+    }
 }
 
 /* a download landed whole, but the scan found nothing to run in the folder */
@@ -1929,6 +2048,7 @@ int main(int argc, char **argv)
     remove(RUNBAT);
     remove(OLDBAT);
     getcwd(launcher_dir, PATH_LEN);
+    guard_breaks(1);
 
     /* DOS hands us our full path in argv[0]: resources live beside it,
        so "wave" works from anywhere on the PATH */
@@ -2105,6 +2225,8 @@ int main(int argc, char **argv)
             (unsigned long __far *)MK_FP(0x40, 0x6C);
         unsigned long t0;
         mod_dumpf = fopen("MODDUMP.RAW", "wb");
+        midi_log = (unsigned char __far *)_fmalloc(60000U);
+        midi_log_cap = midi_log ? 60000U : 0;
         mus_init();                     /* starts silent ... */
         mus_toggle();                   /* ... then the test presses M */
         t0 = *ticks;
@@ -2118,9 +2240,19 @@ int main(int argc, char **argv)
                "order=%d row=%d\n",
                cpu_level(), sb_present, sb_rate, mod_irqs(),
                mod_playing, mod_order, mod_row);
-        mus_shutdown();
+        mus_shutdown();                 /* its note-offs go in the log too */
+        printf("midi: mpu=%d port=%X clk=%lu bytes=%u\n",
+               mpu_present, mpu_port, midi_clk, midi_log_len);
         if (mod_dumpf) fclose(mod_dumpf);
         mod_dumpf = NULL;
+        if (midi_log_len) {             /* MIDILOG.BIN: every byte to the MPU */
+            int h;
+            unsigned n;
+            if (_dos_creat("MIDILOG.BIN", _A_NORMAL, &h) == 0) {
+                _dos_write(h, midi_log, midi_log_len, &n);
+                _dos_close(h);
+            }
+        }
         return 0;
     }
 
@@ -2193,6 +2325,12 @@ int main(int argc, char **argv)
             if (k == 'm' || k == 'M') k = K_MUSIC;
             switch (k) {
             case K_MUSIC: music_key(); continue;
+            case K_F4: {
+                const char *m = music_style();
+                net_redraw(nsel, ntop);
+                if (m) ui_status(m);
+                continue;
+            }
             case K_UP:   nsel--; break;
             case K_DOWN: nsel++; break;
             case K_PGUP: case K_LEFT:  turn_page(&nsel, &ntop, net_count, -1); nold = -1; break;
@@ -2312,6 +2450,12 @@ int main(int argc, char **argv)
         case K_MUSIC:
             music_key();
             break;
+        case K_F4: {
+            const char *m = music_style();
+            redraw(sel, top);
+            if (m) ui_status(m);
+            continue;
+        }
         case K_UP:   sel--; break;
         case K_DOWN: sel++; break;
         case K_PGUP: case K_LEFT:  turn_page(&sel, &top, game_count, -1); old = -1; break;
