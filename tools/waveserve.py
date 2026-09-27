@@ -1173,6 +1173,17 @@ UPDATE_NAMES = ["WAVE86.EXE", "WAVEGET.EXE", "DRVOFF.EXE", "MEMLIM.EXE", "SLOWDO
 UPDATE_DIR = None
 
 
+def netdrive_packaged(here):
+    """the release package's NetDrive server for this machine, from its
+    netdrive/ folder (Michael Brutman's build for every platform), or None"""
+    import platform
+    m = platform.machine().lower()
+    arch = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(m, "arm_5" if m.startswith("arm") else m)
+    osname = {"darwin": "darwin", "win32": "windows"}.get(sys.platform, "linux")
+    p = os.path.join(here, "netdrive", f"netdrive_{osname}_{arch}" + (".exe" if osname == "windows" else ""))
+    return p if os.path.exists(p) else None
+
+
 def update_set():
     """What a client gets from /update: the freshly built programs in build/,
     plus everything under --update DIR, which wins on a name clash (that is
@@ -1767,6 +1778,7 @@ def main():
         os.makedirs(NETDRIVE_DIR, exist_ok=True)
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         binary = a.netdrive_server or next((p for p in (os.path.join(here, "build", "netdrive"),
+                                                        netdrive_packaged(here),
                                                         shutil.which("netdrive")) if p and os.path.exists(p)), None)
         if binary:
             import subprocess, atexit
@@ -1776,6 +1788,9 @@ def main():
                                    "-session_scoped_writes_dir", sessions],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             atexit.register(nd.kill)
+            # a kill while the server is still starting (the torrent's metadata can
+            # take a while) exits cleanly too, so NetDrive goes with it
+            signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
             time.sleep(1.0)                 # a port already taken shows at once (and it exits 0)
             if nd.poll() is not None:
                 err = [l for l in (nd.stdout.read() or "").splitlines() if l.strip()]
@@ -1784,7 +1799,8 @@ def main():
             else:
                 MON.log(f"NetDrive server on UDP {NETDRIVE_PORT}, images in {NETDRIVE_DIR}")
         else:
-            MON.log(f"no NetDrive server binary (make netdrive); run one yourself on port {NETDRIVE_PORT}")
+            MON.log(f"no NetDrive server binary for this machine (make netdrive, or netdrive/ in a release);"
+                    f" run one yourself on port {NETDRIVE_PORT}")
 
     if not a.root and not a.tdc and not a.torrent:
         ap.error("give an eXoDOS folder, --torrent FILE and/or --tdc DIR")

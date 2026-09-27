@@ -722,9 +722,9 @@ On the SD card (SDHC, FAT16/FAT32/exFAT), from its root:
 Then in the PicoMem BIOS Setup (S at the card's "Press S for Setup" prompt):
 Disk menu, HDD0 = this image and PicoMEM Boot Code on; Other menu, NE2000 on
 at port 300, IRQ 3. Jumpers on the board: IRQ 7 (the card's own) and DMA 1
-(Sound Blaster, GUS). C:\\AUTOEXEC.BAT on the image has those numbers at its
-top, and WAVE86.INI's server= wants the address of the Mac running make
-waveserve. The work files are in {work}.""")
+(Sound Blaster, GUS). C:\\AUTOEXEC.BAT on the image has those numbers in its
+commands, and WAVE86.INI's server= wants the address of the machine running
+the server (make waveserve, or the release's server zip). The work files are in {work}.""")
 
 
 if __name__ == "__main__":

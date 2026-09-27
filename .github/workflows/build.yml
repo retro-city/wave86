@@ -5,12 +5,20 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  workflow_dispatch:        # the PicoMEM image by hand, as an artifact
+
+permissions:
+  contents: write           # the release for a tag
 
 jobs:
   dos:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: The release's version, from the tag (v0.6 -> 0.6)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "RELEASE_VER=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: The third-party pieces are what the repository says they are
         run: make check-third-party
@@ -20,6 +28,9 @@ jobs:
 
       - name: Build the DOS side
         run: make dist
+
+      - name: The server, packaged (wave86-<version>-server.zip)
+        run: make server-release
 
       - name: Test the server's torrent reader
         run: python3 tools/test_torrentfs.py
@@ -34,3 +45,40 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
+
+  picomem:
+    # The EDR-DOS disk for a PicoMEM 2, built and boot-tested in dosbox-x:
+    # on macOS, with Homebrew's dosbox-x and mtools, as on the machine the
+    # images are made on. After the dos job, so the release exists by then.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: dos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The release's version, from the tag (v0.6 -> 0.6)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "RELEASE_VER=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: dosbox-x and mtools
+        run: brew install dosbox-x mtools
+
+      - name: Open Watcom V2 (host tools for macOS)
+        run: make toolchain
+
+      - name: The EDR-DOS image, built, boot-tested and zipped (wave86-<version>-picomem-hdd.zip)
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: make picomem-release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wave86-picomem-hdd
+          path: dist/*-picomem-hdd.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*-picomem-hdd.zip

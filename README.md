@@ -440,10 +440,26 @@ and `lib286`. By hand, the same three folders into `toolchain/` will do.
 The Makefile picks the host tools for the machine it runs on (`armo64`,
 `bino64` or `binl64` under `toolchain/`); the GitHub workflow in
 `.github/workflows/build.yml` does the same on Linux and attaches the
-zip to every build, and to a release for a tag like `v0.1`.
+zips to every build, and to a release for a tag like `v0.6`, which then
+carries three:
 
-The code is compiled for the 8086 instruction set with the small memory
-model, and comes out around 75 KB.
+    wave86-0.6-dos.zip           the DOS side (make dist)
+    wave86-0.6-server.zip        the server, ready to run: waveserve and the
+                                 files it uses, the DOS programs it hands to
+                                 WAVEGET UPDATE, NetDrive's server for macOS,
+                                 Linux and Windows, the eXoDOS torrent, a
+                                 settings file and a README (make server-release)
+    wave86-0.6-picomem-hdd.zip   the EDR-DOS disk for a PicoMEM 2 and its
+                                 README (make picomem-release)
+
+The version in the last two is the tag's (`RELEASE_VER=`; the launcher's
+own version when built by hand). The image is built on a macOS runner
+with Homebrew's dosbox-x and mtools, boot tests and all, after the Linux
+job has made the release; the Actions tab can also build it by hand
+(Run workflow), as an artifact.
+
+The code is compiled for the 8086 instruction set with the medium memory
+model (far code, near data), and comes out around 90 KB.
 
 ## Screenshots in the details pane
 

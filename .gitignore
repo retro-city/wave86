@@ -17,8 +17,10 @@ music/razorgirl.xm
 music/techno.mod
 music/warrior.mod
 music/worms.mod
-# the collection's torrents: not ours to publish (the Lite one is private)
+# the collection's torrents: the Lite one is private; the eXoDOS one goes
+# in the server release (the user's decision, 2026-09-27)
 *.torrent
+!exodos/eXoDOS.torrent
 build_*/
 # worktrees the Claude desktop app makes for its agents
 .claude/worktrees/

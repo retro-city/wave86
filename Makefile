@@ -194,6 +194,42 @@ dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 	cd dist && rm -f wave86-$(VERSION)-dos.zip && zip -q -r wave86-$(VERSION)-dos.zip wave86
 	@ls -la dist/wave86-$(VERSION)-dos.zip
 
+# The release packages beside the DOS zip, named after RELEASE_VER (the
+# tag without its v in CI; the launcher's own version otherwise):
+#   make server-release    wave86-<ver>-server.zip: waveserve and what it
+#                          uses, the DOS programs it hands to WAVEGET UPDATE,
+#                          NetDrive's server for every platform, the eXoDOS
+#                          torrent, a settings file and docs/README-SERVER.txt
+#   make picomem-release   wave86-<ver>-picomem-hdd.zip: the EDR-DOS PicoMEM
+#                          image (make picomem-image) and docs/README-PICOMEM.txt
+RELEASE_VER ?= $(VERSION)
+SERVER_PKG = dist/wave86-$(RELEASE_VER)-server
+SERVER_TOOLS = waveserve.py waveconsole.py makethumb.py torrentfs.py fat16.py
+server-release: dist build/SLOWDOWN.COM
+	rm -rf $(SERVER_PKG) && mkdir -p $(SERVER_PKG)/tools $(SERVER_PKG)/build $(SERVER_PKG)/netdrive
+	cp $(addprefix tools/,$(SERVER_TOOLS)) $(SERVER_PKG)/tools/
+	cp build/WAVE86.EXE build/WAVEGET.EXE build/DRVOFF.EXE build/MEMLIM.EXE build/SLOWDOWN.COM build/SLOWDOWN.DOC build/WAVE86.DEF $(SERVER_PKG)/build/
+	unzip -q -o -j $(ND_ZIP) -d $(SERVER_PKG)/netdrive && chmod +x $(SERVER_PKG)/netdrive/netdrive_*
+	cp exodos/eXoDOS.torrent $(SERVER_PKG)/
+	sed -e 's|^exodos=.*|exodos=|' -e 's|^torrent=.*|torrent=eXoDOS.torrent|' -e 's|^netdrive_server=.*|netdrive_server=|' \
+	    -e 's|server (build/netdrive) is started|server (netdrive/) is started|' -e 's|empty: build/netdrive, else|empty: the one in netdrive/ for this machine, else|' \
+	    waveserve.ini > $(SERVER_PKG)/waveserve.ini
+	cp docs/README-SERVER.txt $(SERVER_PKG)/README.txt
+	cp LICENSE $(SERVER_PKG)/LICENSE.txt
+	printf '#!/bin/sh\n# WAVE86 server: README.txt says what it needs\ncd "$$(dirname "$$0")" && exec python3 tools/waveserve.py "$$@"\n' > $(SERVER_PKG)/run-server.sh
+	chmod +x $(SERVER_PKG)/run-server.sh
+	printf '@echo off\r\nrem WAVE86 server: README.txt says what it needs\r\ncd /d "%%~dp0"\r\npython tools\\waveserve.py %%*\r\n' > $(SERVER_PKG)/run-server.bat
+	cd dist && rm -f wave86-$(RELEASE_VER)-server.zip && zip -q -r wave86-$(RELEASE_VER)-server.zip wave86-$(RELEASE_VER)-server
+	@ls -la dist/wave86-$(RELEASE_VER)-server.zip
+
+picomem-release: picomem-image
+	rm -rf dist/picomem && mkdir -p dist/picomem
+	cp build/pmwave-edrdos.img dist/picomem/
+	cp docs/README-PICOMEM.txt dist/picomem/README.txt
+	cp THIRD-PARTY.md LICENSE dist/picomem/
+	cd dist/picomem && rm -f ../wave86-$(RELEASE_VER)-picomem-hdd.zip && zip -q -9 ../wave86-$(RELEASE_VER)-picomem-hdd.zip pmwave-edrdos.img README.txt THIRD-PARTY.md LICENSE
+	@ls -la dist/wave86-$(RELEASE_VER)-picomem-hdd.zip
+
 # A ready-made disk for a PicoMem 2 (tools/mkimage.py): EDR-DOS, the
 # launcher in C:\WAVE86, the card's DOS tools in C:\PICOMEM, mTCP in
 # C:\MTCP, the Gravis UltraSound files in C:\ULTRASND, booting into WAVE86
@@ -413,5 +449,5 @@ test: all
 clean:
 	rm -rf build
 
-.PHONY: all run test dostest dosrun netdrive waveserve dist picomem-image picomem-folders bootsector clean music music-files thumbs net cdrom \
+.PHONY: all run test dostest dosrun netdrive waveserve dist server-release picomem-release picomem-image picomem-folders bootsector clean music music-files thumbs net cdrom \
         slowdown toolchain check-third-party update-third-party update-picomem update-mtcp update-netdrive update-cdmke update-gus update-dosutils update-edrdos update-slowdown
