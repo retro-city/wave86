@@ -203,7 +203,9 @@ dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 #   make server-release    wave86-<ver>-server.zip: waveserve and what it
 #                          uses, the DOS programs it hands to WAVEGET UPDATE,
 #                          NetDrive's server for every platform, the eXoDOS
-#                          torrent, a settings file and docs/README-SERVER.txt
+#                          torrent, requirements.txt, a settings file,
+#                          run-server.sh and .bat (tools/release/) and
+#                          docs/README-SERVER.txt
 #   make picomem-release   wave86-<ver>-picomem-hdd.zip: the EDR-DOS PicoMEM
 #                          image (make picomem-image) and docs/README-PICOMEM.txt
 RELEASE_VER ?= $(VERSION)
@@ -215,15 +217,14 @@ server-release: dist build/SLOWDOWN.COM
 	cp build/WAVE86.EXE build/WAVEGET.EXE build/DRVOFF.EXE build/MEMLIM.EXE build/SLOWDOWN.COM build/SLOWDOWN.DOC build/WAVE86.DEF $(SERVER_PKG)/build/
 	unzip -q -o -j $(ND_ZIP) -d $(SERVER_PKG)/netdrive && chmod +x $(SERVER_PKG)/netdrive/netdrive_*
 	cp exodos/eXoDOS.torrent $(SERVER_PKG)/
-	sed -e 's|^exodos=.*|exodos=|' -e 's|^torrent=.*|torrent=eXoDOS.torrent|' -e 's|^netdrive_server=.*|netdrive_server=|' \
+	sed -e 's|^exodos=.*|exodos=|' -e 's|^torrent=.*|torrent=eXoDOS.torrent|' -e 's|^netdrive_server=.*|netdrive_server=|' -e 's|^firstrun=.*|firstrun=1|' \
 	    -e 's|server (build/netdrive) is started|server (netdrive/) is started|' -e 's|empty: build/netdrive, else|empty: the one in netdrive/ for this machine, else|' \
 	    waveserve.ini > $(SERVER_PKG)/waveserve.ini
 	cp docs/README-SERVER.txt $(SERVER_PKG)/README.txt
 	cp requirements.txt $(SERVER_PKG)/
 	cp LICENSE $(SERVER_PKG)/LICENSE.txt
-	printf '#!/bin/sh\n# WAVE86 server: README.txt says what it needs; .venv is used when it is there\ncd "$$(dirname "$$0")" || exit 1\nPY=python3\n[ -x .venv/bin/python ] && PY=.venv/bin/python\nexec "$$PY" tools/waveserve.py "$$@"\n' > $(SERVER_PKG)/run-server.sh
+	cp tools/release/run-server.sh tools/release/run-server.bat $(SERVER_PKG)/
 	chmod +x $(SERVER_PKG)/run-server.sh
-	printf '@echo off\r\nrem WAVE86 server: README.txt says what it needs; .venv is used when it is there\r\ncd /d "%%~dp0"\r\nset PY=python\r\nif exist .venv\\Scripts\\python.exe set PY=.venv\\Scripts\\python.exe\r\n%%PY%% tools\\waveserve.py %%*\r\n' > $(SERVER_PKG)/run-server.bat
 	cd dist && rm -f wave86-$(RELEASE_VER)-server.zip && zip -q -r wave86-$(RELEASE_VER)-server.zip wave86-$(RELEASE_VER)-server
 	@ls -la dist/wave86-$(RELEASE_VER)-server.zip
 

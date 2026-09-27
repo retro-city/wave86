@@ -11,7 +11,7 @@ network as the DOS machine.
 What is in this folder
 ----------------------
     run-server.sh      starts the server (macOS, Linux)
-    run-server.bat     the same for Windows (untested)
+    run-server.bat     the same for Windows, installing what it needs first
     waveserve.ini      the settings, one per line, each with what it does
     eXoDOS.torrent     the eXoDOS v6.04 collection's torrent, from the eXo
                        project (www.retro-exo.com)
@@ -45,18 +45,39 @@ to 3.13; with 3.14 use the packages above instead):
     python3 -m venv .venv
     .venv/bin/pip install -r requirements.txt
 
-On Windows, with Python 3.13 from python.org and ffmpeg from ffmpeg.org
-on the PATH:
+On Windows, unpack the whole zip and start run-server.bat in the
+unpacked folder (double-click it, or type it in a command prompt there).
+It looks for a Python from 3.9 to 3.13 for x64 or x86, the Visual C++
+runtime libtorrent needs, and ffmpeg, and offers to install what is
+missing with winget (Python.Python.3.13, Microsoft.VCRedist.2015+.x64,
+Gyan.FFmpeg; winget comes with App Installer, from the Microsoft
+Store). Then it makes .venv here with that Python, installs
+requirements.txt into it the first time, and starts the server. A
+Python 3.14 alone will not do, nor an ARM64 one: pip has no libtorrent
+for them, so on ARM64 Windows it installs the x64 Python, which Windows
+11 runs as well. A "no" to FFmpeg is remembered in ffmpeg-no.txt. Behind
+a proxy, set HTTPS_PROXY before the first start, for pip.
+run-server.bat --help lists the server's options.
 
-    py -3.13 -m venv .venv
-    .venv\Scripts\pip install -r requirements.txt
-
-run-server.sh and run-server.bat use .venv when it is there, and the
-system's python3 otherwise.
+run-server.sh uses .venv when it is there, and the system's python3
+otherwise.
 
 Starting it
 -----------
-    ./run-server.sh
+    ./run-server.sh          (macOS, Linux)
+    run-server.bat           (Windows)
+
+The first time, the server asks where eXoDOS is:
+
+    a) On demand, via BitTorrent - the torrent file, eXoDOS.torrent from
+       this folder unless you name another
+    b) Local install - the eXoDOS (or eXoDOS Lite) folder, the one with
+       eXo/eXoDOS in it
+
+and writes the answer into waveserve.ini: torrent= or exodos=, with the
+other emptied, so a local install turns the torrent off. It asks only on
+a terminal; --setup asks again, and firstrun=1 in waveserve.ini does it
+at the next start.
 
 The console shows what the DOS machines are fetching and how the swarm is
 doing; q stops the server. With no terminal (a service, a log file) it

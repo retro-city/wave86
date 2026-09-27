@@ -1114,7 +1114,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # overrides a line for one run. Each key is one option of main()'s parser.
 
 INI_KEYS = {                    # key in the file -> (option, kind)
-    "cache": ("cache", "path"), "cd": ("cd", "bool"), "exodos": ("root", "path"),
+    "cache": ("cache", "path"), "cd": ("cd", "bool"), "exodos": ("root", "path"), "firstrun": ("firstrun", "bool"),
     "headless": ("headless", "bool"), "log": ("log", "path"), "max_mb": ("max_mb", "int"),
     "netdrive": ("netdrive", "path"), "netdrive_port": ("netdrive_port", "int"),
     "netdrive_server": ("netdrive_server", "path"), "port": ("port", "int"), "rescan": ("rescan", "int"),
@@ -1125,6 +1125,110 @@ INI_KEYS = {                    # key in the file -> (option, kind)
     "torrent_connections": ("torrent_connections", "int"), "interface": ("interface", "text"),
     "update": ("update", "path"),
 }
+
+
+def write_ini_keys(path, values):
+    """keys of the settings file set where they stand, the comments and the
+    rest kept; one the file does not have yet goes at its end"""
+    lines = open(path, encoding="utf-8", errors="replace").read().split("\n") if os.path.isfile(path) else [""]
+    done = set()
+    for i, line in enumerate(lines):
+        t = line.strip()
+        if not t or t[0] in ";#" or "=" not in t:
+            continue
+        k = t.partition("=")[0].strip().lower()
+        if k in values and k not in done:
+            lines[i] = f"{k}={values[k]}"
+            done.add(k)
+    rest = [f"{k}={v}" for k, v in values.items() if k not in done]
+    if rest:
+        while lines and lines[-1] == "":
+            lines.pop()
+        lines += [""] + rest + [""]
+    tmp = path + ".new"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines))
+    os.replace(tmp, path)
+
+
+def ini_path_text(p, ini):
+    """a path as the settings file keeps it: relative to the file's folder
+    when it is in there, from ~ when it is in the home folder"""
+    p = os.path.abspath(os.path.expanduser(p))
+    base = os.path.dirname(os.path.abspath(ini))
+    home = os.path.expanduser("~")
+    if os.path.commonpath([p, base]) == base:
+        return os.path.relpath(p, base).replace(os.sep, "/")
+    if os.path.commonpath([p, home]) == home:
+        return "~/" + os.path.relpath(p, home).replace(os.sep, "/")
+    return p
+
+
+def first_run(a, ini):
+    """Where eXoDOS is, asked on the terminal: on demand through a torrent,
+    or a local install. The answer goes into the settings file - the one
+    source set, the other emptied, so a local install turns the torrent
+    off - and into a for this run. False when the user left."""
+    import waveconsole
+
+    def shown(p):
+        home = os.path.expanduser("~")
+        return "~" + p[len(home):] if p and p.startswith(home + os.sep) else (p or "")
+
+    def check_torrent(text):
+        p = os.path.abspath(os.path.expanduser(text)) if text else ""
+        if not p or not os.path.isfile(p):
+            return f"No such file: {text or '(nothing typed)'}"
+        try:
+            import torrentfs
+            torrentfs.Torrent(p)
+        except Exception as e:
+            return f"That is not a torrent file this server can read ({e})"
+        return None
+
+    def check_local(text):
+        p = os.path.abspath(os.path.expanduser(text)) if text else ""
+        if not p or not os.path.isdir(p):
+            return f"No such folder: {text or '(nothing typed)'}"
+        if not roots_of(p):
+            return "No eXo/eXoDOS in that folder (nor in an eXoDOS folder inside it)"
+        return None
+
+    included = next((p for p in (os.path.join(HERE, "eXoDOS.torrent"), os.path.join(HERE, "exodos", "eXoDOS.torrent"))
+                     if os.path.isfile(p)), "")
+    guess = next((p for p in (os.path.expanduser("~/eXoDOS"), os.path.expanduser("~/Downloads/eXoDOS"))
+                  if os.path.isdir(p) and roots_of(p)), "")
+    defaults = {"torrent": shown(a.torrent or included), "local": shown(a.root or guess)}
+    note = None
+    try:
+        import libtorrent  # noqa: F401
+    except ImportError:
+        note = "libtorrent is not installed here; README.txt says how to get it"
+    try:
+        answer = waveconsole.setup_dialog(defaults, check_torrent, check_local, note)
+    except Exception:                       # no curses on this Python, or no room to draw
+        answer = waveconsole.setup_plain(defaults, check_torrent, check_local, note)
+    if not answer:
+        return False
+    kind, text = answer
+    p = os.path.abspath(os.path.expanduser(text))
+    if kind == "torrent":
+        a.torrent, a.root = p, None
+        values = {"torrent": None, "exodos": ""}
+    else:
+        a.root, a.torrent = p, None
+        values = {"exodos": None, "torrent": ""}
+    a.firstrun = False
+    if ini and ini.lower() != "none":
+        values = {k: (ini_path_text(p, ini) if v is None else v) for k, v in values.items()}
+        values["firstrun"] = "0"
+        try:
+            write_ini_keys(ini, values)
+            MON.log(f"first run: {'the torrent ' + values['torrent'] if kind == 'torrent' else 'the eXoDOS folder ' + values['exodos']}"
+                    f"{'' if kind == 'torrent' else ', no torrent'}, written to {ini}")
+        except OSError as e:
+            MON.log(f"first run: could not write {ini} ({e}); the answer holds for this run")
+    return True
 
 
 def read_ini(path):
@@ -1807,12 +1911,22 @@ def main():
     ap.add_argument("--config", metavar="FILE", default=os.path.join(HERE, "waveserve.ini"),
                     help="the settings file (default %(default)s; 'none' for none); the command line overrides it")
     ap.add_argument("--no-cd", dest="cd", action="store_false", help="leave the CD games out (cd=0 in the file)")
+    ap.add_argument("--setup", action="store_true", help="ask where eXoDOS is, as on the first run (firstrun=1 in "
+                                                         "the file), and write the answer into the file")
+    ap.set_defaults(firstrun=False)
     pre, _ = ap.parse_known_args()
     ini = read_ini(pre.config)
     ap.set_defaults(**ini)
     a = ap.parse_args()
     for name in ("root", "tdc", "netdrive", "netdrive_server", "update", "torrent", "cache", "thumbs", "log"):
         setattr(a, name, off(getattr(a, name)))
+    # the first run asks where eXoDOS is, before anything starts - unless the
+    # command line says it, or there is no terminal to ask on
+    if (a.firstrun or a.setup) and not (pre.root or pre.torrent or pre.tdc):
+        if a.headless or not (sys.stdin.isatty() and sys.stdout.isatty()):
+            MON.log("first run: no terminal to ask where eXoDOS is on; the settings file is used as it is")
+        elif not first_run(a, pre.config):
+            sys.exit("waveserve: nothing changed; start it again to answer the first-run questions")
     if ini:
         MON.log(f"settings from {pre.config}" + ("" if len(sys.argv) < 2 else ", the command line on top"))
     MON.headless = a.headless or not sys.stdout.isatty()

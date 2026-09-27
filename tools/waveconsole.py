@@ -243,3 +243,147 @@ def run(mon, title_fn, games_fn, actions, swarm_fn=None, held_fn=None):
             scr.refresh()
 
     curses.wrapper(loop)
+
+
+# ---- the first run -------------------------------------------------------
+# Where eXoDOS is: on demand through the torrent, or a local install. The
+# answers come back as ("torrent", path) or ("local", path), or None when
+# the user leaves; the checks are waveserve's (a message, or None when the
+# path will do).
+
+SETUP_TITLE = "WAVE86 server - first run"
+
+
+def setup_dialog(defaults, check_torrent, check_local, torrent_note=None):
+    """The first-run questions in curses. defaults: {"torrent": path,
+    "local": path}; torrent_note: a warning to show under a) (no
+    libtorrent)."""
+    import curses
+
+    def loop(scr):
+        curses.curs_set(0)
+        warn = curses.A_BOLD
+        if curses.has_colors():
+            curses.use_default_colors()
+            curses.init_pair(4, curses.COLOR_YELLOW, -1)
+            warn = curses.color_pair(4) | curses.A_BOLD
+
+        def put(y, x, text, attr=curses.A_NORMAL):
+            h, w = scr.getmaxyx()
+            if 0 <= y < h and x < w - 1:
+                try:
+                    scr.addnstr(y, x, text, w - 1 - x, attr)
+                except curses.error:
+                    pass
+
+        def frame():
+            scr.erase()
+            put(0, 0, " " + SETUP_TITLE + " " * 200, curses.A_REVERSE | curses.A_BOLD)
+
+        while True:
+            frame()
+            put(2, 2, "Where can I find eXoDOS?", curses.A_BOLD)
+            put(4, 4, "a) On demand, via BitTorrent")
+            put(5, 7, "Games are fetched from the swarm when a DOS machine asks for them.", curses.A_DIM)
+            if torrent_note:
+                put(6, 7, torrent_note, warn)
+            put(8, 4, "b) Local install")
+            put(9, 7, "An eXoDOS (or eXoDOS Lite) folder on this machine.", curses.A_DIM)
+            put(11, 2, "Press a or b; Esc quits without changing anything.", curses.A_DIM)
+            scr.refresh()
+            k = scr.getch()
+            if k == 27:
+                return None
+            if k in (ord("a"), ord("A")):
+                kind, label, check = "torrent", "The eXoDOS torrent file:", check_torrent
+            elif k in (ord("b"), ord("B")):
+                kind, label, check = "local", "The eXoDOS folder (the one with eXo/eXoDOS in it):", check_local
+            else:
+                continue
+            text, msg = defaults.get(kind) or "", None
+            while True:
+                text = edit_line(scr, put, frame, label, text, msg, warn)
+                if text is None:
+                    break                       # Esc: back to the question
+                msg = check(text)
+                if msg is None:
+                    return kind, text
+
+    return curses.wrapper(loop)
+
+
+def edit_line(scr, put, frame, label, text, msg, warn):
+    """One line of text, filled in with text: Enter gives it back, Esc
+    gives None."""
+    import curses
+    pos = len(text)
+    curses.curs_set(1)
+    try:
+        while True:
+            frame()
+            h, w = scr.getmaxyx()
+            put(2, 2, label, curses.A_BOLD)
+            width = max(10, w - 6)
+            start = max(0, pos - width + 1)
+            put(4, 2, "[" + " " * width + "]")
+            put(4, 3, text[start:start + width])
+            if msg:
+                put(6, 2, msg, warn)
+            put(8, 2, "Enter takes it; Esc goes back.", curses.A_DIM)
+            try:
+                scr.move(4, 3 + pos - start)
+            except curses.error:
+                pass
+            scr.refresh()
+            try:
+                k = scr.get_wch()
+            except curses.error:
+                continue
+            if k in ("\n", "\r", curses.KEY_ENTER):
+                return text.strip()
+            if k == "\x1b":
+                return None
+            if k in (curses.KEY_BACKSPACE, "\x7f", "\b"):
+                if pos:
+                    text, pos = text[:pos - 1] + text[pos:], pos - 1
+            elif k == curses.KEY_DC:
+                text = text[:pos] + text[pos + 1:]
+            elif k == curses.KEY_LEFT:
+                pos = max(0, pos - 1)
+            elif k == curses.KEY_RIGHT:
+                pos = min(len(text), pos + 1)
+            elif k in (curses.KEY_HOME, "\x01"):
+                pos = 0
+            elif k in (curses.KEY_END, "\x05"):
+                pos = len(text)
+            elif k == "\x15":                   # Ctrl-U: empty it
+                text, pos = "", 0
+            elif isinstance(k, str) and k.isprintable():
+                text, pos = text[:pos] + k + text[pos:], pos + 1
+            msg = None
+    finally:
+        curses.curs_set(0)
+
+
+def setup_plain(defaults, check_torrent, check_local, torrent_note=None, ask=input):
+    """The same questions without curses, one line at a time."""
+    print(SETUP_TITLE)
+    print()
+    print("Where can I find eXoDOS?")
+    print("  a) On demand, via BitTorrent" + (f"  ({torrent_note})" if torrent_note else ""))
+    print("  b) Local install")
+    while True:
+        k = ask("a or b (empty to quit): ").strip().lower()
+        if not k:
+            return None
+        if k in ("a", "b"):
+            break
+    kind, label, check = (("torrent", "The eXoDOS torrent file", check_torrent) if k == "a"
+                          else ("local", "The eXoDOS folder (the one with eXo/eXoDOS in it)", check_local))
+    while True:
+        d = defaults.get(kind) or ""
+        text = ask(f"{label}{f' [{d}]' if d else ''}: ").strip() or d
+        msg = check(text)
+        if msg is None:
+            return kind, text
+        print(msg)

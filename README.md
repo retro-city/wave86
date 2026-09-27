@@ -980,6 +980,12 @@ libtorrent-rasterbar`, `sudo apt install python3-libtorrent`, or
 3.9 to 3.13), which `make waveserve` then uses - and only when a
 torrent is given (`--torrent` or `torrent=`).
 
+The server's zip comes with `firstrun=1` in `waveserve.ini`: started on
+a terminal, it first asks where eXoDOS is - on demand through a torrent
+(the included one by default) or a local install - and writes the answer
+into `torrent=` or `exodos=`, emptying the other, so a local install
+turns the torrent off. `--setup` asks again.
+
 - **The list** is made without the swarm: title and year from the zip's
   name, the folder and the CD flag from the game's eXoDOS conf - out of
   an eXoDOS folder if you give one (a Lite install has all 7,666 confs),
