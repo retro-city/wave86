@@ -1,0 +1,19 @@
+# The WAVE86 server (tools/waveserve.py): Python 3.9 or newer. All it
+# needs beyond Python's own library is libtorrent, for the eXoDOS torrent.
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt       (Windows: .venv\Scripts\pip ...)
+#
+# run-server.sh, run-server.bat and make waveserve use .venv when it is
+# there. pip has libtorrent for Python 3.9 to 3.13 only; on Python 3.14
+# install your system's package instead and skip the venv:
+#   macOS            brew install libtorrent-rasterbar
+#   Debian, Ubuntu   sudo apt install python3-libtorrent
+#
+# The games' pictures need ffmpeg, a program rather than a Python package:
+# brew install ffmpeg, sudo apt install ffmpeg, or ffmpeg.org on the PATH.
+
+libtorrent>=2.0; python_version < "3.14"
+
+# the server's console on Windows; macOS and Linux have curses already
+windows-curses; sys_platform == "win32"

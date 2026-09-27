@@ -102,8 +102,10 @@ build/netdrive: $(ND_ZIP)
 #   make waveserve EXODOS=/Volumes/Games/eXoDOS PORT=8086
 #   make waveserve TORRENT=eXoDOS.torrent WAVESERVE_ARGS="--log serve.log"
 WAVESERVE_ARGS ?=
+# the server's Python: .venv's when there is one (pip install -r requirements.txt)
+PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 waveserve: all build/netdrive build/SLOWDOWN.COM
-	python3 tools/waveserve.py $(if $(EXODOS),$(EXODOS)) $(if $(TDC),--tdc $(TDC)) $(if $(TORRENT),--torrent $(TORRENT)) $(if $(CACHE),--cache $(CACHE)) $(if $(PORT),--port $(PORT)) $(if $(MAX_MB),--max-mb $(MAX_MB)) $(if $(NETDRIVE_DIR),--netdrive $(NETDRIVE_DIR)) $(if $(THUMBS_DIR),--thumbs $(THUMBS_DIR)) $(WAVESERVE_ARGS)
+	$(PYTHON) tools/waveserve.py $(if $(EXODOS),$(EXODOS)) $(if $(TDC),--tdc $(TDC)) $(if $(TORRENT),--torrent $(TORRENT)) $(if $(CACHE),--cache $(CACHE)) $(if $(PORT),--port $(PORT)) $(if $(MAX_MB),--max-mb $(MAX_MB)) $(if $(NETDRIVE_DIR),--netdrive $(NETDRIVE_DIR)) $(if $(THUMBS_DIR),--thumbs $(THUMBS_DIR)) $(WAVESERVE_ARGS)
 
 # CD image drivers for real DOS (cdrom/README.md)
 cdrom: $(wildcard cdrom/*.COM cdrom/*.EXE)
@@ -217,10 +219,11 @@ server-release: dist build/SLOWDOWN.COM
 	    -e 's|server (build/netdrive) is started|server (netdrive/) is started|' -e 's|empty: build/netdrive, else|empty: the one in netdrive/ for this machine, else|' \
 	    waveserve.ini > $(SERVER_PKG)/waveserve.ini
 	cp docs/README-SERVER.txt $(SERVER_PKG)/README.txt
+	cp requirements.txt $(SERVER_PKG)/
 	cp LICENSE $(SERVER_PKG)/LICENSE.txt
-	printf '#!/bin/sh\n# WAVE86 server: README.txt says what it needs\ncd "$$(dirname "$$0")" && exec python3 tools/waveserve.py "$$@"\n' > $(SERVER_PKG)/run-server.sh
+	printf '#!/bin/sh\n# WAVE86 server: README.txt says what it needs; .venv is used when it is there\ncd "$$(dirname "$$0")" || exit 1\nPY=python3\n[ -x .venv/bin/python ] && PY=.venv/bin/python\nexec "$$PY" tools/waveserve.py "$$@"\n' > $(SERVER_PKG)/run-server.sh
 	chmod +x $(SERVER_PKG)/run-server.sh
-	printf '@echo off\r\nrem WAVE86 server: README.txt says what it needs\r\ncd /d "%%~dp0"\r\npython tools\\waveserve.py %%*\r\n' > $(SERVER_PKG)/run-server.bat
+	printf '@echo off\r\nrem WAVE86 server: README.txt says what it needs; .venv is used when it is there\r\ncd /d "%%~dp0"\r\nset PY=python\r\nif exist .venv\\Scripts\\python.exe set PY=.venv\\Scripts\\python.exe\r\n%%PY%% tools\\waveserve.py %%*\r\n' > $(SERVER_PKG)/run-server.bat
 	cd dist && rm -f wave86-$(RELEASE_VER)-server.zip && zip -q -r wave86-$(RELEASE_VER)-server.zip wave86-$(RELEASE_VER)-server
 	@ls -la dist/wave86-$(RELEASE_VER)-server.zip
 

@@ -1870,8 +1870,9 @@ def main():
                                     interface=a.torrent_interface, dht=a.torrent_dht, connections=a.torrent_connections,
                                     log=MON.log, portmap=a.torrent_portmap)
         except ImportError as e:
-            sys.exit(f"--torrent needs libtorrent's Python bindings ({e}): brew install libtorrent-rasterbar, "
-                     "or pip install libtorrent")
+            sys.exit(f"the torrent needs libtorrent's Python bindings ({e}): brew install libtorrent-rasterbar, "
+                     "sudo apt install python3-libtorrent, or pip install -r requirements.txt (Python 3.9 to 3.13); "
+                     "torrent= empty in waveserve.ini, or --torrent '', runs without it")
         TORRENT, SWARM = torrentfs.Tree(t, swarm), swarm
         cache = os.path.abspath(os.path.expanduser(a.cache))
         MON.log(f"torrent {t.name}: {len(t.files)} files, {t.size / 2 ** 30:.0f} GB in {t.num_pieces} pieces of "

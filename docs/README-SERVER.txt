@@ -21,17 +21,38 @@ What is in this folder
                        UPDATE) fetches from here: WAVE86.EXE, WAVEGET.EXE...
     netdrive/          Michael Brutman's mTCP NetDrive server, for macOS
                        (Apple silicon), Linux (x86-64, ARM) and Windows
+    requirements.txt   the Python package the server needs, for pip
 
 What it needs
 -------------
-    Python 3.10 or newer.
-    libtorrent's Python bindings, for the torrent:
-        macOS           brew install libtorrent-rasterbar
-        Debian, Ubuntu  sudo apt install python3-libtorrent
-        elsewhere       pip install libtorrent
-    ffmpeg, for the games' pictures in the launcher (optional):
-        macOS           brew install ffmpeg
-        Debian, Ubuntu  sudo apt install ffmpeg
+Python 3.9 or newer, and libtorrent's Python bindings for the eXoDOS
+torrent. Everything else is in Python's own library. The pictures for
+the launcher's details pane need ffmpeg as well; without it the server
+runs and sends no pictures.
+
+macOS, with Homebrew:
+
+    brew install libtorrent-rasterbar ffmpeg
+
+Debian, Ubuntu, Raspberry Pi OS:
+
+    sudo apt install python3-libtorrent ffmpeg
+
+Anywhere else, or to keep it out of the system's Python, with pip in a
+virtual environment in this folder (pip has libtorrent for Python 3.9
+to 3.13; with 3.14 use the packages above instead):
+
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+
+On Windows, with Python 3.13 from python.org and ffmpeg from ffmpeg.org
+on the PATH:
+
+    py -3.13 -m venv .venv
+    .venv\Scripts\pip install -r requirements.txt
+
+run-server.sh and run-server.bat use .venv when it is there, and the
+system's python3 otherwise.
 
 Starting it
 -----------

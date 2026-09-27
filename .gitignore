@@ -26,3 +26,5 @@ build_*/
 .claude/worktrees/
 __pycache__/
 dist/
+# the server's Python packages (pip install -r requirements.txt)
+.venv/

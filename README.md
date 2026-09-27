@@ -975,8 +975,10 @@ directory costs the piece its last bytes are in, and a game costs the
 pieces its zip overlaps: one, for most of them (and the neighbours in
 the alphabet that share the piece come along). Nothing else is
 downloaded. It needs libtorrent's Python bindings - `brew install
-libtorrent-rasterbar`, or `pip install libtorrent` where there is a
-wheel - and only when a torrent is given (`--torrent` or `torrent=`).
+libtorrent-rasterbar`, `sudo apt install python3-libtorrent`, or
+`pip install -r requirements.txt` in a `.venv` (pip has it for Python
+3.9 to 3.13), which `make waveserve` then uses - and only when a
+torrent is given (`--torrent` or `torrent=`).
 
 - **The list** is made without the swarm: title and year from the zip's
   name, the folder and the CD flag from the game's eXoDOS conf - out of

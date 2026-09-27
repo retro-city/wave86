@@ -14,7 +14,8 @@ blocks until they are. Nothing is downloaded that was not asked for: every
 file starts at priority 0, and what arrives goes into libtorrent's part
 file rather than into 14,011 files on disk. What is held is seeded back.
 
-Only Swarm needs libtorrent (brew install libtorrent-rasterbar). Torrent,
+Only Swarm needs libtorrent (brew install libtorrent-rasterbar, apt install
+python3-libtorrent, or pip install -r requirements.txt). Torrent,
 Tree and TorrentFile are plain Python, and anything with Swarm's have/
 want/read can stand in for it - the tests use one that lives in memory.
 
