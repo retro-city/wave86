@@ -84,9 +84,10 @@ directly, which is handy for a boot-into-game AUTOEXEC.
 ### A ready-made disk for a PicoMem 2
 
 `make picomem-image` builds `build/pmwave-fdos.img`, a 512 MB hard-disk
-image (volume label `PM_WAVE`) that boots FreeDOS straight into the
+image (volume label `WAVE_FD`) that boots FreeDOS straight into the
 launcher on a machine with a PicoMem 2 - or, below, the same image on
-EDR-DOS or on a DOS of your own, named after what it runs: copy it into the `HDD` folder of the card's SD card, pick it
+EDR-DOS (label `WAVE_EDR`) or on a DOS of your own (`WAVE_MS` for MS-DOS),
+named after what it runs: copy it into the `HDD` folder of the card's SD card, pick it
 as HDD0 in the card's BIOS Setup (S at its "Press S for Setup" prompt;
 Disk menu, with PicoMEM Boot Code on), and make `EXODOS` and `CDROM`
 folders on the SD's root for the games and the discs. On the image:

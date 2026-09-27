@@ -141,10 +141,11 @@ def check_layout(img, own_boot=True):
         sys.exit("mkimage: the image would not boot on the card:\n  " + "\n  ".join(problems))
 
 
-LABEL = "PM_WAVE"                 # the volume label, in the BPB and the root directory
+# the volume label, in the BPB and the root directory: it names the DOS on the image
+LABELS = {"fdos": "WAVE_FD", "edrdos": "WAVE_EDR", "msdos": "WAVE_MS", "pcdos": "WAVE_PC", "dos": "WAVE_DOS"}
 
 
-def install_boot_sector(img, off):
+def install_boot_sector(img, off, label):
     """The FreeDOS FAT16 boot sector over IMGMAKE's non-bootable one, the
     way SYS.COM does it: the BPB (bytes 0x0B-0x3D) stays as written but for
     the volume label, the OEM name becomes FRDOS5.1, the BIOS drive 80h."""
@@ -159,7 +160,7 @@ def install_boot_sector(img, off):
         new[11:62] = old[11:62]
         new[3:11] = b"FRDOS5.1"
         new[0x24] = 0x80
-        new[0x2B:0x36] = LABEL.encode("ascii").ljust(11)[:11]
+        new[0x2B:0x36] = label.encode("ascii").ljust(11)[:11]
         f.seek(off)
         f.write(new)
 
@@ -818,10 +819,10 @@ def main():
         check_layout(img, own_boot=False)
         fill_with_mtools(img, off, stage)
     else:
-        install_boot_sector(img, off)
+        install_boot_sector(img, off, LABELS[a.flavour])
         check_layout(img)
         fat16.fill_tree(img, off, stage)
-    mtool("mlabel", img, off, "::" + LABEL)      # the root directory's label entry, what DIR shows
+    mtool("mlabel", img, off, "::" + LABELS[a.flavour])      # the root entry DIR shows, and the BPB field
     listing = mtool("mdir", img, off, "-a", "::/").stdout.upper()       # -a: MS-DOS's SYS hides its files
     system = {"msdos": "IO       SYS", "pcdos": "IBMBIO   COM", "dos": "COMMAND  COM"}.get(a.flavour, "KERNEL   SYS")
     for n in (system, "COMMAND  COM", "CONFIG   SYS", "AUTOEXEC BAT", "WAVE86", "MTCP", "PICOMEM", "ULTRASND"):
@@ -853,7 +854,7 @@ def main():
     size = os.path.getsize(out)
     sdname = os.path.splitext(os.path.basename(out))[0].upper()[:13] + ".IMG"
     print(f"""
-mkimage: {out}: {size:,} bytes, {FLAVOURS[a.flavour]}, boots into WAVE86.
+mkimage: {out}: {size:,} bytes, {FLAVOURS[a.flavour]}, volume label {LABELS[a.flavour]}, boots into WAVE86.
 
 On the SD card (SDHC, FAT16/FAT32/exFAT), from its root:
     HDD\\{sdname:<14} this image (the name before .img: 13 characters at most)
