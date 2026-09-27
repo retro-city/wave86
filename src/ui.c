@@ -247,7 +247,7 @@ void ui_status(const char *msg)
                 CH_DOT, dos_free_kb());
         scr_puts(2, 24, buf, A(8, 0));
     }
-    scr_puts(80 - 2 - 4, 24, "V" VERSION_STR, A(8, 0));
+    scr_puts(80 - 2 - (int)(sizeof("V" VERSION_STR) - 1), 24, "V" VERSION_STR, A(8, 0));   /* right-aligned, whatever its length */
     music_status();
 }
 
