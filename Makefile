@@ -418,14 +418,20 @@ music:
 DOSBOX_NET = -set "ne2000 ne2000=true" -set "ne2000 backend=slirp" \
              -set "ne2000 nicbase=300" -set "ne2000 nicirq=3"
 
+# NETUP.BAT also sets the DOS clock from NTP (mTCP's SNTP) once DHCP is
+# done. SNTP wants the time zone in TZ, as a POSIX rule: this machine's own
+# by default (/etc/localtime ends with it, CET-1CEST,M3.5.0,M10.5.0/3 in
+# Norway), UTC0 when that cannot be read; DOS_TZ= and NTP_SERVER= override.
+DOS_TZ ?= $(or $(shell tail -n 1 /etc/localtime 2>/dev/null | grep -E '^[A-Za-z<][^ ]*$$'),UTC0)
+NTP_SERVER ?= pool.ntp.org
 build/NETUP.BAT: Makefile
 	@mkdir -p build
-	@printf '@echo off\r\nZ:\\SYSTEM\\NE2000.COM 0x60 3 0x300\r\nset MTCPCFG=C:\\BUILD\\MTCP.CFG\r\nset WAVESRV=10.0.2.2:8086\r\nDHCP\r\n' > $@
+	@printf '@echo off\r\nZ:\\SYSTEM\\NE2000.COM 0x60 3 0x300\r\nset MTCPCFG=C:\\BUILD\\MTCP.CFG\r\nset WAVESRV=10.0.2.2:8086\r\nDHCP\r\nset TZ=$(DOS_TZ)\r\nC:\\BUILD\\MTCP\\SNTP -set -retries 2 $(NTP_SERVER)\r\n' > $@
 
 # CYCLES is the machine's speed: 50000 is a fast 486, where dosbox-x's own
 # default of 3000 is an XT (make run CYCLES=3000 to see the launcher on one)
 CYCLES ?= 50000
-run: all build/NETUP.BAT
+run: all build/NETUP.BAT build/mtcp
 	dosbox-x -fastlaunch $(DOSBOX_NET) -set "cpu cycles=$(CYCLES)" -c "mount c ." -c "c:" -c "cd BUILD" \
 	  -c "call NETUP.BAT" -c "WAVE.BAT"
 
