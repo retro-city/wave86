@@ -703,7 +703,7 @@ void ui_game_edit(const char *title, const char *const *labels, const char *cons
     scr_puts(2, MENU_Y, title, A(15, 0));
     for (i = 0; i < n && i < MENU_ROWS; i++) {
         int y = MENU_Y + 1 + i, is_sel = i == sel;
-        const char *v = values[i][0] ? values[i] : "(NONE)";
+        const char *v = values[i][0] ? values[i] : i == 1 ? "(FOUND BY THE SCAN)" : i == 0 ? "(THE FOLDER'S NAME)" : "(NONE)";
         if (is_sel) {
             scr_fill(2, y, 76, 1, ' ', A(15, 5));
             scr_puts(3, y, labels[i], A(14, 5));

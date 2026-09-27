@@ -473,9 +473,15 @@ int net_apply_pending(void)
                 empty = 1;
                 strcpy(emptydir, net_pending_dir);  /* the one the notice names */
                 ini_write_key(dir, "netinstall", "done");
-                if (j >= 0) {                   /* off the list: nothing in it runs */
-                    memmove(&games[j], &games[j + 1], (game_count - j - 1) * sizeof(Game));
-                    game_count--;
+                if (j >= 0) {
+                    const char *se = ini_global("showempty");
+                    if (se && se[0] == '1') {   /* listed dimmed: E sets its program */
+                        games[j].flags &= ~GF_NETPEND;
+                        games[j].exe[0] = 0;
+                    } else {                    /* off the list: nothing in it runs */
+                        memmove(&games[j], &games[j + 1], (game_count - j - 1) * sizeof(Game));
+                        game_count--;
+                    }
                 }
                 continue;
             }

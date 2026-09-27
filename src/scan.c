@@ -60,8 +60,12 @@ static void split_name(const char *fn, char *base, char *ext)
    all - three characters at least */
 static int likeness(const char *base, const char *dirname)
 {
-    char a[9], b[9];
+    char a[9], b[9], d[9];
     unsigned al, bl, i;
+    for (i = 0; i < 8 && dirname[i] && dirname[i] != '.'; i++)
+        d[i] = dirname[i];              /* WOLF3D.V14: the name before the dot */
+    d[i] = 0;
+    dirname = d;
     if (stricmp(base, dirname) == 0)
         return 3;
     al = strlen(base); bl = strlen(dirname);
@@ -221,10 +225,8 @@ static void pick_in(Game *g, const char *sub, Pick *pk)
                     strcpy(pk->setup, full);
                 }
                 sc = score_exe(fn, g->dir);
-                if (sub[0] && sc >= 0) {        /* named like its own subfolder counts too */
-                    int s2 = score_exe(fn, sub);
-                    if (s2 > sc) sc = s2;
-                }
+                if (sc >= 0)                    /* the game's folder decides; a name like the */
+                    sc = sc * 4 + (sub[0] ? likeness(base, sub) : 0);   /* subfolder's breaks ties */
                 if (sc >= 0 && (sc > pk->score ||
                                 (sc == pk->score && (size > pk->size ||
                                                      (size == pk->size && stricmp(full, pk->exe) < 0))))) {
@@ -271,7 +273,9 @@ static void scan_one(Game *g)
        since a redirector drive keeps one search at a time */
     if (!top.exe[0]) {
         static char subs[12][9];
+        char setup0[EXE_LEN];           /* the top's own setup, if the winner has none */
         int n = subfolders(g, subs, 12), i;
+        strcpy(setup0, top.setup);
         for (i = 0; i < n; i++) {
             Pick pk;
             memset(&pk, 0, sizeof(pk));
@@ -281,10 +285,7 @@ static void scan_one(Game *g)
                 strcpy(top.exe, pk.exe);
                 top.score = pk.score;
                 top.size = pk.size;
-                if (!top.setup[0] || pk.setup_rank > top.setup_rank) {
-                    strcpy(top.setup, pk.setup);
-                    top.setup_rank = pk.setup_rank;
-                }
+                strcpy(top.setup, pk.setup[0] ? pk.setup : setup0);   /* the winner's setup */
             }
         }
     }
@@ -541,6 +542,9 @@ int scan_games(void)
                 strncpy(g->dir, dir, FN_LEN - 1);
                 strncpy(g->name, dir, NAME_LEN - 1);
                 if (e) strncpy(g->exe, e, EXE_LEN - 1);
+            } else if (j >= 0 && !games[j].exe[0]) {  /* listed by showempty, nothing there yet */
+                const char *e = ini_game(dir, "netexe");
+                if (e) strncpy(games[j].exe, e, EXE_LEN - 1);
             }
             if (j >= 0)
                 games[j].flags |= GF_NETPEND;

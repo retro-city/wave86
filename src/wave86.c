@@ -1208,7 +1208,15 @@ static void edit_game(int *sel, int *top)
             for (i = 1; i <= 2; i++)            /* a program that is not there is no use */
                 if (val[i][0] && strcmp(val[i], orig[i])) {
                     char path[PATH_LEN + EXE_LEN + 12];
+                    const char *dot = strrchr(val[i], '.');
                     sprintf(path, "%s\\%s\\%s", gamedir, dir, val[i]);
+                    if (!dot || (stricmp(dot, ".EXE") && stricmp(dot, ".COM") && stricmp(dot, ".BAT"))) {
+                        sprintf(msg, "%.21s IS NOT A PROGRAM (EXE, COM, BAT): NOT SAVED", val[i]);
+                        shown = 1;
+                        row = i;
+                        bad = 1;
+                        break;
+                    }
                     if (access(path, 0) != 0) {
                         sprintf(msg, "%.21s IS NOT IN %.8s: NOT SAVED", val[i], dir);
                         shown = 1;
@@ -1222,18 +1230,21 @@ static void edit_game(int *sel, int *top)
             for (i = 0; i < ED_ROWS; i++) {
                 if (!strcmp(val[i], orig[i]))
                     continue;
-                if (val[i][0]) {
-                    wkeys[nw] = keys[i];
-                    wvals[nw++] = val[i];
+                if (val[i][0] || i == 2 || i == 4) {
+                    wkeys[nw] = keys[i];            /* an empty setup= or cd= is none, */
+                    wvals[nw++] = val[i];           /* whatever the scan would find */
                 } else {
-                    ini_remove_key(dir, keys[i]);   /* back to what the scan finds */
+                    ini_remove_key(dir, keys[i]);   /* the name and program: back to the scan's */
                 }
             }
             if (nw)
                 ini_write_keys(dir, wkeys, wvals, nw);
             scan_games();               /* the fields come back from the file */
             i = find_game(dir);
-            if (i >= 0) *sel = i;
+            if (i >= 0) *sel = i;       /* or it left the list: nothing to run, no showempty */
+            else if (*sel >= game_count) *sel = game_count ? game_count - 1 : 0;
+            if (*top > game_count - PAGE) *top = game_count - PAGE;
+            if (*top < 0) *top = 0;
             break;
         }
         switch (k) {
@@ -1406,10 +1417,10 @@ static void run_command(const char *cmd, const char *what)
 
 static void launch(const Game *g, int use_setup)
 {
-    char msg[80];
+    char msg[96];                       /* a setup one folder down is 21 characters */
     write_bat(g, use_setup);
     if (use_setup)
-        sprintf(msg, "WAVE86: Running %s for %s ...", g->setup, g->name);
+        sprintf(msg, "WAVE86: Running %.21s for %.39s ...", g->setup, g->name);
     else
         sprintf(msg, "WAVE86: Running %s ...", g->name);
     hand_off(msg);

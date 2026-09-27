@@ -94,9 +94,9 @@ it under its name; P swaps in the path, program, setup program and
 tags, and back. VGA only.
 E edits a game: its name, the program that starts it, its setup
 program, arguments and CD image. Type into the chosen row, Del empties
-it (the program and setup then go back to what the scan finds), left
-and right step through the programs in the folder, Enter saves them
-into the game's GAMES.INI section. A folder the scan finds nothing to
+it (an empty program goes back to what the scan finds; an empty setup
+or CD image means none), left and right step through the programs in
+the folder, Enter saves them into the game's GAMES.INI section. A folder the scan finds nothing to
 run in is left out, unless showempty=1 in WAVE86.INI lists it dimmed,
 so E can set its program.
 O opens a game's options: CPU SLOWDOWN (SLOWDOWN.COM runs while the
