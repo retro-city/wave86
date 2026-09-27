@@ -48,7 +48,7 @@ to 3.13; with 3.14 use the packages above instead):
 On Windows, unpack the whole zip and start run-server.bat in the
 unpacked folder (double-click it, or type it in a command prompt there).
 It looks for a Python from 3.9 to 3.13 for x64 or x86, the Visual C++
-runtime libtorrent needs, and ffmpeg, and offers to install what is
+runtime libtorrent needs (14.40 or newer), and ffmpeg, and offers to install what is
 missing with winget (Python.Python.3.13, Microsoft.VCRedist.2015+.x64,
 Gyan.FFmpeg; winget comes with App Installer, from the Microsoft
 Store). Then it makes .venv here with that Python, installs
