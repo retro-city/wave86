@@ -130,7 +130,8 @@ void ui_keybar(const Game *sel)
     scr_fill(0, 23, 80, 1, ' ', A(7, 0));
     updown[0] = CH_UP; updown[1] = CH_DOWN; updown[2] = 0;
     (void)updown;
-    keychip(&x, "ENTER", sel && (sel->flags & GF_NETPEND) ? "INSTALL" : "RUN", game_count == 0);
+    keychip(&x, "ENTER", sel && (sel->flags & GF_NETPEND) ? "INSTALL" : "RUN",
+            game_count == 0 || (sel && !sel->exe[0] && !(sel->flags & GF_NETPEND)));
     keychip(&x, "S", "SETUP", !sel || !sel->setup[0] || (sel->flags & GF_NETPEND));
     keychip(&x, "N", "NET", 0);                  /* with no server= it asks; R (rescan) still works */
     keychip(&x, "F2", "NAME", game_count == 0);
@@ -280,7 +281,7 @@ void ui_list(int sel, int top)
         {
             const Game *g = &games[gi];
             int is_sel = (gi == sel);
-            unsigned char at = is_sel ? A(15, 5) : (g->flags & GF_NETPEND) ? A(8, 0) : A(7, 0);
+            unsigned char at = is_sel ? A(15, 5) : ((g->flags & GF_NETPEND) || !g->exe[0]) ? A(8, 0) : A(7, 0);
             char nm[LIST_W];
 
             if (is_sel) {
@@ -389,6 +390,9 @@ void ui_details(int sel)
     if (g->flags & GF_NETPEND) {
         scr_puts(PANE_X + 2, 20, "NOT ALL OF IT IS HERE YET.", A(12, 0));
         scr_puts(PANE_X + 2, 21, "ENTER FETCHES THE REST.", A(8, 0));
+    } else if (!g->exe[0]) {
+        scr_puts(PANE_X + 2, 20, "NO PROGRAM FOUND IN THIS FOLDER.", A(12, 0));
+        scr_puts(PANE_X + 2, 21, "E SETS THE ONE THAT STARTS IT.", A(8, 0));
     } else {
         scr_puts(PANE_X + 2, 20, "PRESS ENTER TO RUN THE GAME.", A(8, 0));
         scr_puts(PANE_X + 2, 21, "THE MENU RETURNS WHEN IT ENDS.", A(8, 0));
@@ -683,6 +687,40 @@ void ui_options(const char *title, const char *const *labels, const char *const 
     {
         int x = 2, y = MENU_Y + MENU_ROWS + 2;
         keychip_at(&x, y, "ARROWS", "CHOOSE", 0);
+        keychip_at(&x, y, "ENTER", "SAVE", 0);
+        keychip_at(&x, y, "ESC", "CANCEL", 0);
+    }
+}
+
+/* E: a game's properties in the box of O. The selected row is typed
+   into (the block is its cursor); left and right step through the
+   programs found in the folder on the rows that take one (can_step). */
+void ui_game_edit(const char *title, const char *const *labels, const char *const *values, int n, int sel, int can_step, const char *msg)
+{
+    int i;
+    scr_fill(0, MENU_Y, 80, 25 - MENU_Y, ' ', A(7, 0));
+    draw_box(0, MENU_Y, 80, 25 - MENU_Y, A(11, 0));
+    scr_puts(2, MENU_Y, title, A(15, 0));
+    for (i = 0; i < n && i < MENU_ROWS; i++) {
+        int y = MENU_Y + 1 + i, is_sel = i == sel;
+        const char *v = values[i][0] ? values[i] : "(NONE)";
+        if (is_sel) {
+            scr_fill(2, y, 76, 1, ' ', A(15, 5));
+            scr_puts(3, y, labels[i], A(14, 5));
+            scr_puts(18, y, values[i], A(15, 5));
+            scr_put(18 + strlen(values[i]), y, CH_BLOCK, A(14, 5));
+        } else {
+            scr_puts(3, y, labels[i], A(3, 0));
+            scr_puts(18, y, v, values[i][0] ? A(7, 0) : A(8, 0));
+        }
+    }
+    if (msg)                            /* in the box: the status line is under it */
+        scr_puts(3, MENU_Y + n + 2, msg, A(12, 0));
+    {
+        int x = 2, y = MENU_Y + MENU_ROWS + 2;
+        keychip_at(&x, y, "TYPE", "EDIT", 0);
+        keychip_at(&x, y, "DEL", "CLEAR", 0);
+        keychip_at(&x, y, "</>", "PROGRAMS", !can_step);
         keychip_at(&x, y, "ENTER", "SAVE", 0);
         keychip_at(&x, y, "ESC", "CANCEL", 0);
     }

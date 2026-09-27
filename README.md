@@ -72,6 +72,7 @@ In the games list:
 | S | run its setup program |
 | / | search; F3 searches on |
 | O | the game's options: CPU slowdown, memory limit, sound mode |
+| E | edit the game: name, program, setup program, arguments, CD image; left and right step through the programs in the folder |
 | P | the details instead of the picture, and back |
 | F2 | rename the game |
 | Del | remove the game and its folder, after a yes |
@@ -332,9 +333,19 @@ the next two sections; `source=exodos` or `source=tdc` (written, with
 `netinstall=` and the other `net...` keys, when an install from the
 server starts: see *A queue, and picking up where it stopped*) shows
 where the game came from in the details. Anything you leave out is
-detected: the launcher prefers a program named like the folder (an EXE
-over a BAT or COM), then `START`, `PLAY`, `GO`, `RUN` or `GAME`, and
-ignores the usual `SETUP`, `INSTALL`, `DOS4GW` and friends.
+detected, in this order: a BAT named like the folder, then `RUN.BAT`,
+then `START`, `PLAY`, `GO` or `GAME` as a batch, then a COM or EXE named
+like the folder, one with a start name, any other COM or EXE, and last
+any other BAT - the bigger file of two that score alike. "Named like the
+folder" is the same name, one starting the other, or one holding the
+other (`KEEN4` in `CKEEN4`). The usual `SETUP`, `INSTALL`, `DOS4GW`,
+`NETWORK`, `ASKECHO` and friends are never picked. A folder with nothing
+to run at the top is looked into one level down, for a game installed
+as `GAMES\DOOM\DOOM\DOOM.EXE`; the program is then `DOOM\DOOM.EXE` and
+the batch starts it from that folder. `E` shows what was found and sets
+another: typed, or stepped through with left and right. A folder with
+nothing to run is left out of the list, unless `showempty=1` in
+`WAVE86.INI` lists it anyway, dimmed, with `E` to set its program.
 
 ### Too fast, or too much memory
 

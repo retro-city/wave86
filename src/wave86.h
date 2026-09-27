@@ -12,13 +12,14 @@
 #define MAX_GAMES   128
 #define NAME_LEN    40
 #define FN_LEN      13      /* 8.3 + NUL */
+#define EXE_LEN     22      /* a program one folder down: SUB\NAME.EXT + NUL */
 #define PATH_LEN    80
 
 typedef struct {
     char dir[FN_LEN];       /* subdirectory name under gamedir */
     char name[NAME_LEN];    /* display name */
-    char exe[FN_LEN];       /* main executable (or .BAT) */
-    char setup[FN_LEN];     /* setup/config program, "" if none */
+    char exe[EXE_LEN];      /* main executable (or .BAT), maybe in a subfolder: SUB\GAME.EXE */
+    char setup[EXE_LEN];    /* setup/config program, "" if none */
     char args[32];          /* extra command line args */
     char sound[8];          /* sound= mode name (PicoGUS etc.) */
     char cdimg[20];         /* CD image mounted while it runs: CD\X.ISO, or cd= */
@@ -76,7 +77,8 @@ extern int ui_show_details;     /* P in the games list: details instead of the p
 int scan_games(void);
 extern unsigned scan_sizes_missing;    /* programs listed as 0 bytes: a redirector quirk */
 void scan_diag(void);                  /* /diag: the first game folder as the scan sees it */
-void scan_fixname(char *name);         /* a listed name into NAME.EXT, whatever form it came in */
+void scan_fixname(char *name);
+int scan_programs(const char *dir, char (*out)[EXE_LEN], int max);   /* E's choices, best first */         /* a listed name into NAME.EXT, whatever form it came in */
 int scan_rmtree(const char *path);  /* a folder and all in it; 0 when gone */
 
 /* --- config (ini.c) --- */

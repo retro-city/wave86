@@ -386,7 +386,7 @@ static int adopt_game(const char *dir, const char *title, const char *exe)
         strncpy(g->dir, dir, FN_LEN - 1);
         strncpy(g->name, title[0] ? title : dir, NAME_LEN - 1);
     }
-    strncpy(games[i].exe, exe, FN_LEN - 1);
+    strncpy(games[i].exe, exe, EXE_LEN - 1);
     return i;
 }
 
@@ -487,7 +487,7 @@ int net_apply_pending(void)
             static const char *const keys[] = { "name", "exe", "source", "netinstall" };
             const char *vals[4];
             if (title[0]) strncpy(games[i].name, title, NAME_LEN - 1);
-            if (exe_here(dir, exe)) strncpy(games[i].exe, exe, FN_LEN - 1);   /* the server's, when it is there */
+            if (exe_here(dir, exe)) strncpy(games[i].exe, exe, EXE_LEN - 1);   /* the server's, when it is there */
             games[i].flags |= stricmp(src, "tdc") == 0 ? GF_TDC : GF_EXODOS;
             games[i].flags &= ~GF_NETPEND;
             vals[0] = games[i].name; vals[1] = games[i].exe; vals[2] = src; vals[3] = "done";

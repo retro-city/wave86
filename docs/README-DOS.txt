@@ -92,6 +92,13 @@ pane, its title screen unless netart= in WAVE86.INI says gameplay, box,
 logo or another kind (netart=0 for none). A game with a picture shows
 it under its name; P swaps in the path, program, setup program and
 tags, and back. VGA only.
+E edits a game: its name, the program that starts it, its setup
+program, arguments and CD image. Type into the chosen row, Del empties
+it (the program and setup then go back to what the scan finds), left
+and right step through the programs in the folder, Enter saves them
+into the game's GAMES.INI section. A folder the scan finds nothing to
+run in is left out, unless showempty=1 in WAVE86.INI lists it dimmed,
+so E can set its program.
 O opens a game's options: CPU SLOWDOWN (SLOWDOWN.COM runs while the
 game does) and MEMORY LIMIT (MEMLIM hides the extended memory beyond
 it: 31 MB for a game that fails with 32 MB and up, like Aladdin), and

@@ -36,6 +36,7 @@ void ui_net_keybar(int cur);
 void ui_queue_box(int n, int sel, int top, const char __far *titles, const unsigned long __far *kbs);
 void ui_menu(const char *title, const MenuItem __far *items, int n, int sel, const unsigned char *dim);
 void ui_options(const char *title, const char *const *labels, const char *const *values, int n, int sel);
+void ui_game_edit(const char *title, const char *const *labels, const char *const *values, int n, int sel, int can_step, const char *msg);
 
 #define K_UP    0x4800
 #define K_DOWN  0x5000
@@ -725,6 +726,7 @@ static void emit_limits(FILE *f, const char *dir, int when)     /* 0 before, 1 a
 static void write_bat(const Game *g, int use_setup)
 {
     const char *prog = use_setup ? g->setup : g->exe;
+    const char *sub = strrchr(prog, '\\');       /* SUB\GAME.EXE: run from SUB */
     const char *dot = strrchr(prog, '.');
     int is_bat = dot && stricmp(dot + 1, "BAT") == 0;
     int dbg = debug_mode();
@@ -791,10 +793,14 @@ static void write_bat(const Game *g, int use_setup)
     /* WAVESHELL, when the boot set it: a batch game runs in that shell -
        the image's item 3 gives 4DOS, swapping, only while an eXoDOS batch
        runs, under FreeCOM, so a game gets the memory 4DOS would hold */
-    fprintf(f, "%s%s", is_bat ? "%WAVESHELL% call " : "", prog);
+    if (sub)
+        fprintf(f, "cd %.*s\n", (int)(sub - prog), prog);
+    fprintf(f, "%s%s", is_bat ? "%WAVESHELL% call " : "", sub ? sub + 1 : prog);
     if (!use_setup && g->args[0])
         fprintf(f, " %s", g->args);
     fprintf(f, "\n");
+    if (sub)                            /* back in the game's folder for what comes after */
+        fprintf(f, "cd %s\\%s\n", gamedir, g->dir);
     if (dbg) {                         /* the disc as it stands, before it goes */
         fprintf(f, "@echo off\npause\n");
         fprintf(f, "echo [WAVE86] the game has finished. CD=%%CD%%\n");
@@ -920,6 +926,7 @@ static int find_title(int net, int from, int again)
     X(g07, "N",     "OPEN NETWORK INSTALL",    'n') \
     X(g08, "P/D",   "DETAILS",                 'p') \
     X(g13, "O",     "GAME OPTIONS",            'o') \
+    X(g16, "E",     "EDIT SELECTED ITEM",      'e') \
     X(g15, "A",     "SOUND CARD (PICOMEM)",    'a') \
     X(g09, "M",     "MUSIC ON/OFF",            K_MUSIC) \
     X(g10, "+/-",   "VOLUME CONTROL",          '+') \
@@ -1145,6 +1152,114 @@ static void game_options(int *sel, int *top)
             if (row < 2 || nmodes) dirty[row] = 1;
             break;
         }
+        }
+    }
+    if (*sel < *top || *sel >= *top + PAGE) *top = *sel > 6 ? *sel - 6 : 0;
+    redraw(*sel, *top);
+}
+
+/*
+ * E: a game's properties - its name, the program that starts it, its
+ * setup program, the arguments and its CD image - in a box like O's, and
+ * into its section of the INI on Enter. The selected row is typed into,
+ * Del empties it, left and right step through the programs in the folder
+ * (and one folder down) on the PROGRAM and SETUP rows. An empty PROGRAM or
+ * SETUP goes back to what the scan finds; a program that is not there is
+ * not saved.
+ */
+#define ED_ROWS 5
+static void edit_game(int *sel, int *top)
+{
+    static const char *const labels[ED_ROWS] = {"NAME", "PROGRAM", "SETUP", "ARGUMENTS", "CD IMAGE"};
+    static const char *const keys[ED_ROWS] = {"name", "exe", "setup", "args", "cd"};
+    static const unsigned char lens[ED_ROWS] = {NAME_LEN, EXE_LEN, EXE_LEN, 32, 20};
+    static char progs[24][EXE_LEN];
+    static char val[ED_ROWS][NAME_LEN], orig[ED_ROWS][NAME_LEN];
+    char dir[FN_LEN], title[NAME_LEN + 12], msg[80];
+    const char *values[ED_ROWS];
+    int nprog, row = 1, i, shown = 0;
+    const Game *g = &games[*sel];
+
+    strcpy(dir, g->dir);
+    sprintf(title, " EDIT: %.40s ", g->name);
+    strcpy(val[0], g->name);
+    strcpy(val[1], g->exe);
+    strcpy(val[2], g->setup);
+    strcpy(val[3], g->args);
+    strcpy(val[4], g->cdimg);
+    for (i = 0; i < ED_ROWS; i++) {
+        strcpy(orig[i], val[i]);
+        values[i] = val[i];
+    }
+    ui_status("SCANNING THE FOLDER ...");
+    nprog = scan_programs(dir, progs, 24);
+    ui_status(NULL);
+    for (;;) {
+        unsigned k;
+        unsigned len = strlen(val[row]);
+        ui_game_edit(title, labels, values, ED_ROWS, row, nprog > 0 && (row == 1 || row == 2), shown ? msg : NULL);
+        k = getkey();
+        shown = 0;
+        if (k == 0x1B)
+            break;
+        if (k == 0x0D) {
+            const char *wkeys[ED_ROWS], *wvals[ED_ROWS];
+            int nw = 0, bad = 0;
+            for (i = 1; i <= 2; i++)            /* a program that is not there is no use */
+                if (val[i][0] && strcmp(val[i], orig[i])) {
+                    char path[PATH_LEN + EXE_LEN + 12];
+                    sprintf(path, "%s\\%s\\%s", gamedir, dir, val[i]);
+                    if (access(path, 0) != 0) {
+                        sprintf(msg, "%.21s IS NOT IN %.8s: NOT SAVED", val[i], dir);
+                        shown = 1;
+                        row = i;
+                        bad = 1;
+                        break;
+                    }
+                }
+            if (bad)
+                continue;
+            for (i = 0; i < ED_ROWS; i++) {
+                if (!strcmp(val[i], orig[i]))
+                    continue;
+                if (val[i][0]) {
+                    wkeys[nw] = keys[i];
+                    wvals[nw++] = val[i];
+                } else {
+                    ini_remove_key(dir, keys[i]);   /* back to what the scan finds */
+                }
+            }
+            if (nw)
+                ini_write_keys(dir, wkeys, wvals, nw);
+            scan_games();               /* the fields come back from the file */
+            i = find_game(dir);
+            if (i >= 0) *sel = i;
+            break;
+        }
+        switch (k) {
+        case K_UP:   if (row > 0) row--; break;
+        case K_DOWN: if (row < ED_ROWS - 1) row++; break;
+        case K_LEFT: case K_RIGHT:
+            if ((row == 1 || row == 2) && nprog) {
+                int at = -1, d = k == K_LEFT ? -1 : 1;
+                for (i = 0; i < nprog; i++)
+                    if (!stricmp(val[row], progs[i])) at = i;
+                if (at < 0 && d < 0) at = 0;    /* from nothing: left lands on the last */
+                at = (at + d + nprog) % nprog;
+                strcpy(val[row], progs[at]);
+            }
+            break;
+        case K_DEL:
+            val[row][0] = 0;
+            break;
+        case 0x08:
+            if (len) val[row][len - 1] = 0;
+            break;
+        default:
+            if (k >= 32 && k < 127 && len < (unsigned)lens[row] - 1) {
+                val[row][len] = (char)(row == 0 || row == 3 ? k : toupper(k));
+                val[row][len + 1] = 0;
+            }
         }
     }
     if (*sel < *top || *sel >= *top + PAGE) *top = *sel > 6 ? *sel - 6 : 0;
@@ -1960,6 +2075,10 @@ int main(int argc, char **argv)
                     net_continue(&games[i]);
                     return 0;
                 }
+                if (!games[i].exe[0]) {
+                    printf("WAVE86: %s has no program to run (E in the launcher sets one).\n", games[i].name);
+                    return 1;
+                }
                 launch(&games[i], 0);   /* returns only when run bare */
                 return 0;
             }
@@ -2210,6 +2329,10 @@ int main(int argc, char **argv)
             if (game_count)
                 game_options(&sel, &top);
             continue;
+        case 'e': case 'E':             /* the game's program, setup, name... */
+            if (game_count)
+                edit_game(&sel, &top);
+            continue;
         case 'p': case 'P': case 'd': case 'D':   /* the details instead of the picture, and back */
             ui_show_details = !ui_show_details;
             ui_details(sel);
@@ -2225,6 +2348,8 @@ int main(int argc, char **argv)
                 if (i >= 0) { sel = i; top = sel > 13 ? sel - 13 : 0; }
                 redraw(sel, top);
                 if (i == -2) net_arrived_notice();
+            } else if (game_count && !games[sel].exe[0]) {
+                ui_status("NO PROGRAM TO RUN IN THIS FOLDER: E SETS ONE.");
             } else if (game_count) {
                 launch(&games[sel], 0);
                 redraw(sel, top);       /* back from a bare-mode run */

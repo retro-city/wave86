@@ -22,6 +22,7 @@ static const char *blacklist[] = {
     "PKUNZIP", "SOUND", "SOUNDRV", "MUSIC", "INTRO", "CATALOG",
     "DEALERS", "ORDER", "HELPME", "README", "UPDATE", "UNINST",
     "SWCBBS", "VESA", "UNIVBE", "CRACK", "UFOCRACK", "FILE_ID",
+    "NETWORK", "ASKECHO", "CWSDPMI", "DOS32A", "PMODEW", "LOADFIX", "CHOICE",
     NULL
 };
 
@@ -54,36 +55,51 @@ static void split_name(const char *fn, char *base, char *ext)
     }
 }
 
-/* score a candidate executable for directory dirname */
+/* how much a program's name looks like the folder's: 3 the same, 2 one
+   starts the other, 1 one holds the other (KEEN4 in CKEEN4), 0 not at
+   all - three characters at least */
+static int likeness(const char *base, const char *dirname)
+{
+    char a[9], b[9];
+    unsigned al, bl, i;
+    if (stricmp(base, dirname) == 0)
+        return 3;
+    al = strlen(base); bl = strlen(dirname);
+    if (al < 3 || bl < 3 || al > 8 || bl > 8)
+        return 0;
+    if (strnicmp(base, dirname, al < bl ? al : bl) == 0)
+        return 2;
+    for (i = 0; i <= al; i++) a[i] = (char)toupper((unsigned char)base[i]);
+    for (i = 0; i <= bl; i++) b[i] = (char)toupper((unsigned char)dirname[i]);
+    return strstr(a, b) || strstr(b, a) ? 1 : 0;
+}
+
+/* How likely a program starts the game in folder dirname, highest first:
+   a BAT named like the folder, RUN.BAT, the other start batches (START,
+   PLAY, GO, GAME), then COM and EXE files - named like the folder, a
+   start name, the rest - and last any other BAT. -1: never the game.
+   Equal scores go to the bigger file. */
 static int score_exe(const char *fn, const char *dirname)
 {
     char base[9], ext[4];
-    int s = 0;
-    unsigned bl, dl;
+    int like, bat;
 
     split_name(fn, base, ext);
-
     if (in_list(base, blacklist))
         return -1;
-
-    if (stricmp(base, dirname) == 0)
-        s += 100;
-    else {
-        bl = strlen(base);
-        dl = strlen(dirname);
-        if (bl >= 3 && dl >= 3) {
-            if (strnicmp(base, dirname, bl < dl ? bl : dl) == 0)
-                s += 60;
-        }
+    bat = stricmp(ext, "BAT") == 0;
+    if (!bat && stricmp(ext, "EXE") != 0 && stricmp(ext, "COM") != 0)
+        return -1;
+    like = likeness(base, dirname);
+    if (bat) {
+        if (like) return 800 + like * 50;
+        if (stricmp(base, "RUN") == 0) return 700;
+        if (in_list(base, starters)) return 650;
+        return 100;
     }
-    if (in_list(base, starters))
-        s += 45;
-
-    if (stricmp(ext, "EXE") == 0) s += 15;
-    else if (stricmp(ext, "BAT") == 0) s += 12;
-    else if (stricmp(ext, "COM") == 0) s += 10;
-
-    return s;
+    if (like) return 350 + like * 50;
+    if (in_list(base, starters)) return 350;
+    return 200;
 }
 
 /* pick setup program by priority */
@@ -154,21 +170,25 @@ void scan_fixname(char *name)
 /* what a game folder is listed with: everything but the volume label */
 #define SCAN_ATTRS (_A_NORMAL | _A_RDONLY | _A_HIDDEN | _A_SYSTEM | _A_SUBDIR | _A_ARCH)
 
-static void scan_one(Game *g)
+/* the best program and setup in one folder: the game's own (sub "") or a
+   folder inside it, whose name then leads the ones found (SUB\GAME.EXE) */
+typedef struct {
+    char exe[EXE_LEN], setup[EXE_LEN];
+    int score, setup_rank;
+    unsigned long size;
+} Pick;
+
+static void pick_in(Game *g, const char *sub, Pick *pk)
 {
-    char pat[PATH_LEN + 16];
+    char pat[PATH_LEN + 32];
     struct find_t ft;
     unsigned rc;
-    char best_exe[FN_LEN] = "";
-    int best_score = -1;
-    char best_setup[FN_LEN] = "";
-    int best_setup_rank = 0;
 
     /* every attribute is asked for and folders and labels skipped here: a
        redirector drive that reads the mask its own way still lists the
        programs. An empty EXE cannot run: a download that is still
        incomplete on the server leaves such files behind. */
-    sprintf(pat, "%s\\%s\\*.*", gamedir, g->dir);
+    sprintf(pat, "%s\\%s%s%s\\*.*", gamedir, g->dir, sub[0] ? "\\" : "", sub);
     rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
     while (rc == 0) {
         const char *fn = ft.name;
@@ -180,7 +200,7 @@ static void scan_one(Game *g)
             if (size == 0) {            /* a redirector drive (the card's SD through
                                            PMDFS) may list no size: ask the file */
                 int h;
-                sprintf(pat, "%s\\%s\\%s", gamedir, g->dir, fn);
+                sprintf(pat, "%s\\%s%s%s\\%s", gamedir, g->dir, sub[0] ? "\\" : "", sub, fn);
                 if ((h = open(pat, O_RDONLY | O_BINARY)) >= 0) {
                     size = filelength(h);
                     close(h);
@@ -188,34 +208,88 @@ static void scan_one(Game *g)
                 scan_sizes_missing++;
             }
             if (size != 0) {
-                char base[9], ext[4];
+                char base[9], ext[4], full[EXE_LEN];
                 int sr, sc;
 
                 split_name(fn, base, ext);
                 if (stricmp(base, "DOS4GW") == 0)
                     g->flags |= GF_DOS4GW;
-
+                if (sub[0]) sprintf(full, "%.8s\\%.12s", sub, fn); else strcpy(full, fn);
                 sr = setup_rank(fn);
-                if (sr > best_setup_rank) {
-                    best_setup_rank = sr;
-                    strcpy(best_setup, fn);
+                if (sr > pk->setup_rank) {
+                    pk->setup_rank = sr;
+                    strcpy(pk->setup, full);
                 }
                 sc = score_exe(fn, g->dir);
-                if (sc > best_score ||
-                    (sc == best_score && sc >= 0 &&
-                     stricmp(fn, best_exe) < 0)) {
-                    if (sc >= 0) {
-                        best_score = sc;
-                        strcpy(best_exe, fn);
-                    }
+                if (sub[0] && sc >= 0) {        /* named like its own subfolder counts too */
+                    int s2 = score_exe(fn, sub);
+                    if (s2 > sc) sc = s2;
+                }
+                if (sc >= 0 && (sc > pk->score ||
+                                (sc == pk->score && (size > pk->size ||
+                                                     (size == pk->size && stricmp(full, pk->exe) < 0))))) {
+                    pk->score = sc;
+                    pk->size = size;
+                    strcpy(pk->exe, full);
                 }
             }
         }
         rc = _dos_findnext(&ft);
     }
+}
 
-    strcpy(g->exe, best_exe);
-    strcpy(g->setup, best_setup);
+/* the folders inside a game's folder, a few (CD\ and THUMBS\ are ours) */
+static int subfolders(const Game *g, char (*out)[9], int max)
+{
+    char pat[PATH_LEN + 16];
+    struct find_t ft;
+    unsigned rc;
+    int n = 0;
+    sprintf(pat, "%s\\%s\\*.*", gamedir, g->dir);
+    rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
+    while (rc == 0 && n < max) {
+        scan_fixname(ft.name);
+        if ((ft.attrib & _A_SUBDIR) && ft.name[0] != '.' && ft.name[0] != '_' &&
+            stricmp(ft.name, "CD") != 0 && stricmp(ft.name, "THUMBS") != 0 && strlen(ft.name) <= 8)
+            strcpy(out[n++], ft.name);
+        rc = _dos_findnext(&ft);
+    }
+    return n;
+}
+
+static void scan_one(Game *g)
+{
+    char pat[PATH_LEN + 16];
+    struct find_t ft;
+    Pick top;
+
+    memset(&top, 0, sizeof(top));
+    top.score = -1;
+    pick_in(g, "", &top);
+    /* nothing to run at the top: a game installed one folder down
+       (GAMES\DOOM\DOOM\DOOM.EXE), looked for once the top listing is done,
+       since a redirector drive keeps one search at a time */
+    if (!top.exe[0]) {
+        static char subs[12][9];
+        int n = subfolders(g, subs, 12), i;
+        for (i = 0; i < n; i++) {
+            Pick pk;
+            memset(&pk, 0, sizeof(pk));
+            pk.score = -1;
+            pick_in(g, subs[i], &pk);
+            if (pk.exe[0] && (pk.score > top.score || (pk.score == top.score && pk.size > top.size))) {
+                strcpy(top.exe, pk.exe);
+                top.score = pk.score;
+                top.size = pk.size;
+                if (!top.setup[0] || pk.setup_rank > top.setup_rank) {
+                    strcpy(top.setup, pk.setup);
+                    top.setup_rank = pk.setup_rank;
+                }
+            }
+        }
+    }
+    strcpy(g->exe, top.exe);
+    strcpy(g->setup, top.setup);
 
     /* a CD image next to the game (CD\*.ISO) is mounted while it runs */
     sprintf(pat, "%s\\%s\\CD\\*.ISO", gamedir, g->dir);
@@ -246,6 +320,51 @@ static void scan_one(Game *g)
             close(h);
         }
     }
+}
+
+/* The programs in a game's folder, and one folder down, best first in the
+   scan's own order (the ones it would never pick last): what E offers
+   with left and right. Returns how many, max at most. */
+int scan_programs(const char *dir, char (*out)[EXE_LEN], int max)
+{
+    static Game tmp;
+    static char subs[12][9];
+    static int score[24];
+    char pat[PATH_LEN + 32];
+    struct find_t ft;
+    unsigned rc;
+    int n = 0, ns, i, j, pass;
+
+    if (max > 24) max = 24;
+    memset(&tmp, 0, sizeof(tmp));
+    strncpy(tmp.dir, dir, FN_LEN - 1);
+    ns = subfolders(&tmp, subs, 12);
+    for (pass = -1; pass < ns && n < max; pass++) {
+        const char *sub = pass < 0 ? "" : subs[pass];
+        sprintf(pat, "%s\\%s%s%s\\*.*", gamedir, dir, sub[0] ? "\\" : "", sub);
+        rc = _dos_findfirst(pat, SCAN_ATTRS, &ft);
+        while (rc == 0 && n < max) {
+            scan_fixname(ft.name);
+            if (!(ft.attrib & (_A_SUBDIR | _A_VOLID)) &&
+                (has_ext(ft.name, "EXE") || has_ext(ft.name, "COM") || has_ext(ft.name, "BAT"))) {
+                char base[9], ext[4];
+                split_name(ft.name, base, ext);
+                if (sub[0]) sprintf(out[n], "%.8s\\%.12s", sub, ft.name); else strcpy(out[n], ft.name);
+                score[n] = score_exe(ft.name, dir);
+                if (score[n] < 0) score[n] = in_list(base, blacklist) ? -2 : -1;
+                n++;
+            }
+            rc = _dos_findnext(&ft);
+        }
+    }
+    for (i = 1; i < n; i++)             /* insertion sort: a folder has a handful */
+        for (j = i; j > 0 && score[j] > score[j - 1]; j--) {
+            char t[EXE_LEN];
+            int ts = score[j];
+            strcpy(t, out[j]); strcpy(out[j], out[j - 1]); strcpy(out[j - 1], t);
+            score[j] = score[j - 1]; score[j - 1] = ts;
+        }
+    return n;
 }
 
 /*
@@ -345,6 +464,8 @@ void scan_diag(void)
            scan_names_fixed, scan_probed_dirs, scan_exe_from_ini, scan_sizes_missing);
 }
 
+static int show_empty = 0;          /* showempty=1: list folders with no program too */
+
 int scan_games(void)
 {
     char pat[PATH_LEN + 8];
@@ -352,6 +473,10 @@ int scan_games(void)
     unsigned rc;
 
     game_count = 0;
+    {
+        const char *v = ini_global("showempty");
+        show_empty = v && v[0] == '1';
+    }
 
     /* Two passes: the folders first, their contents after, so that no
        listing runs inside another - a redirector drive with one search
@@ -390,12 +515,14 @@ int scan_games(void)
                 if (e && e[0]) {
                     sprintf(pat, "%s\\%s\\%s", gamedir, g->dir, e);
                     if (access(pat, 0) == 0) {
-                        strncpy(g->exe, e, FN_LEN - 1);
+                        strncpy(g->exe, e, EXE_LEN - 1);
                         scan_exe_from_ini++;
                     }
                 }
             }
-            if (g->exe[0])
+            /* showempty=1: every folder, the ones with nothing to run too
+               (dimmed; E sets their program) */
+            if (g->exe[0] || show_empty)
                 game_count++;
         }
     }
@@ -413,7 +540,7 @@ int scan_games(void)
                 memset(g, 0, sizeof(Game));
                 strncpy(g->dir, dir, FN_LEN - 1);
                 strncpy(g->name, dir, NAME_LEN - 1);
-                if (e) strncpy(g->exe, e, FN_LEN - 1);
+                if (e) strncpy(g->exe, e, EXE_LEN - 1);
             }
             if (j >= 0)
                 games[j].flags |= GF_NETPEND;

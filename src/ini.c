@@ -212,9 +212,9 @@ void ini_apply(void)
             if (stricmp(key, "name") == 0)
                 set_field(cur->name, NAME_LEN, val);
             else if (stricmp(key, "exe") == 0 && val[0])   /* an empty exe= leaves the scan's */
-                set_field(cur->exe, FN_LEN, val);
+                set_field(cur->exe, EXE_LEN, val);
             else if (stricmp(key, "setup") == 0)
-                set_field(cur->setup, FN_LEN, val);
+                set_field(cur->setup, EXE_LEN, val);
             else if (stricmp(key, "args") == 0)
                 set_field(cur->args, sizeof(cur->args), val);
             else if (stricmp(key, "sound") == 0)
