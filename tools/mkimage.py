@@ -44,7 +44,7 @@ CYL_BYTES = 16 * 63 * 512          # one cylinder as the card counts them
 # with no cdmount_picomem= command, since the PicoMem 2 has none yet: the
 # batch names the disc, asks for it to be loaded on the card, and waits for
 # a key - on D:, and the server left for the owner to fill in.
-INI_SETTINGS = [("gamedir", "W:\\EXODOS"), ("cdrom_storage", "W:\\CDROM"), ("theme", "picomem"),
+INI_SETTINGS = [("gamedir", "W:\\EXODOS"), ("cdrom_storage", "W:\\CDROM"), ("theme", "exodos"),
                 ("imgmount", "PICOMEM"), ("cdrom_letter", "D"), ("server", "")]
 
 def picomem_view(size):

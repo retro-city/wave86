@@ -164,7 +164,7 @@ kernel polls the keyboard and prints nothing - so the prompt says "1 in
 10 seconds" instead. AUTOEXEC.BAT goes to the item's label either way.
 
 WAVE86.INI has `gamedir=W:\EXODOS`, `cdrom_storage=W:\CDROM`,
-`imgmount=PICOMEM`, `cdrom_letter=D` and `theme=picomem`; `server=` is
+`imgmount=PICOMEM`, `cdrom_letter=D` and `theme=exodos`; `server=` is
 yours to fill in. There is no disk cache: one would speed up only C:,
 the image the card serves through its BIOS, never W:, which PMDFS hands
 straight to the card as a network drive. `WAVE86 /diag` prints the

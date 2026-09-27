@@ -25,8 +25,9 @@ off the card and reads odd-sized packets right (the stock NE2000 driver
 does not, the author notes: a download that stalls at the same place
 every time is that). The card's NE2000 defaults to IRQ 3 (BIOS Setup,
 Other menu), while its Sound Blaster and GUS take IRQ 5. Its WAVE86.INI
-says theme=picomem: the launcher in black and gold, after the card;
-theme=exodos or theme=wave86 there brings back the other looks.
+says theme=exodos, the eXoDOS look; theme=picomem there gives the
+launcher the black and gold of the card, and theme=wave86 the synthwave
+one.
 
 Games from a server on the LAN (PicoMem or any NE2000)
 ------------------------------------------------------
