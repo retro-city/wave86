@@ -94,8 +94,10 @@ build/netdrive: $(ND_ZIP)
 
 # The server, on this machine: make waveserve starts it with its console
 # (q stops it). Its settings - the collection, the port, the torrent, where
-# things are kept - are in waveserve.ini, next to this file; a variable on
-# the command line overrides the file for one run. It serves build/ to
+# things are kept - are in waveserve.ini, next to this file: yours, out of
+# git, made from waveserve.def (the defaults, which the server zip ships as
+# its waveserve.ini) the first time; a variable on the command line
+# overrides the file for one run. It serves build/ to
 # WAVEGET UPDATE, so it depends on all: a fresh build is what goes out.
 # SLOWDOWN comes along (build/SLOWDOWN.COM) so the update can carry it.
 #   make waveserve
@@ -203,7 +205,8 @@ dist: all $(if $(filter 1,$(SLOWDOWN_IN_DIST)),build/SLOWDOWN.COM)
 #   make server-release    wave86-<ver>-server.zip: waveserve and what it
 #                          uses, the DOS programs it hands to WAVEGET UPDATE,
 #                          NetDrive's server for every platform, the eXoDOS
-#                          torrent, requirements.txt, a settings file,
+#                          torrent, requirements.txt, waveserve.def as its
+#                          waveserve.ini,
 #                          run-server.sh and .bat (tools/release/) and
 #                          docs/README-SERVER.txt
 #   make picomem-release   wave86-<ver>-picomem-hdd.zip: the EDR-DOS PicoMEM
@@ -217,9 +220,7 @@ server-release: dist build/SLOWDOWN.COM
 	cp build/WAVE86.EXE build/WAVEGET.EXE build/DRVOFF.EXE build/MEMLIM.EXE build/SLOWDOWN.COM build/SLOWDOWN.DOC build/WAVE86.DEF $(SERVER_PKG)/build/
 	unzip -q -o -j $(ND_ZIP) -d $(SERVER_PKG)/netdrive && chmod +x $(SERVER_PKG)/netdrive/netdrive_*
 	cp exodos/eXoDOS.torrent $(SERVER_PKG)/
-	sed -e 's|^exodos=.*|exodos=|' -e 's|^torrent=.*|torrent=eXoDOS.torrent|' -e 's|^netdrive_server=.*|netdrive_server=|' -e 's|^firstrun=.*|firstrun=1|' \
-	    -e 's|server (build/netdrive) is started|server (netdrive/) is started|' -e 's|empty: build/netdrive, else|empty: the one in netdrive/ for this machine, else|' \
-	    waveserve.ini > $(SERVER_PKG)/waveserve.ini
+	cp waveserve.def $(SERVER_PKG)/waveserve.ini
 	cp docs/README-SERVER.txt $(SERVER_PKG)/README.txt
 	cp requirements.txt $(SERVER_PKG)/
 	cp LICENSE $(SERVER_PKG)/LICENSE.txt

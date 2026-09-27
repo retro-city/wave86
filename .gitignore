@@ -28,3 +28,5 @@ __pycache__/
 dist/
 # the server's Python packages (pip install -r requirements.txt)
 .venv/
+# the server's settings on this machine, made from waveserve.def at the first start
+/waveserve.ini

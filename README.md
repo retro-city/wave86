@@ -589,7 +589,9 @@ UPDATE, unpacks the NetDrive server for this machine from
 
 The settings are in `waveserve.ini`, next to the Makefile: one per line,
 alphabetical, each with what it does in a comment above it, as in
-`WAVE86.INI`. They are what the server starts with; where the bare
+`WAVE86.INI`. That file is yours and stays out of git: the first start
+makes it from `waveserve.def`, the defaults, which the server zip also
+ships as its `waveserve.ini`. They are what the server starts with; where the bare
 command line falls back to something else, the comment says so. They
 cover the collection (`exodos=`, `tdc=`, `torrent=`), the port, whether
 CD games are listed, where the NetDrive volumes, the torrent pieces and
@@ -784,7 +786,7 @@ leaves the mounting to it and calls it with `/U` afterwards.
 ### CD images that stay on the server
 
 A 300 MB disc does not have to travel to the DOS disk at all. With
-`netdrive=~/.wave86/cd`, as `waveserve.ini` comes, or by hand
+`netdrive=~/.wave86/cd`, as `waveserve.def` has it, or by hand
 
     python3 tools/waveserve.py ~/Downloads/eXoDOS --port 8086 --cd --netdrive ~/.wave86/cd
 
@@ -962,8 +964,9 @@ eXoDOS is 650 GB; the 486 will ask for a few hundred megabytes of it.
 Give the server the collection's torrent and it lists every game in it,
 and fetches a game from the swarm when somebody asks for that game. The
 eXoDOS torrent comes with WAVE86 (`exodos/eXoDOS.torrent`, and in the
-server zip) and `waveserve.ini` already names it (`torrent=`), so
-`make waveserve` does this unless that line is emptied. By hand:
+server zip) and `waveserve.def`, the default settings, names it
+(`torrent=`), so `make waveserve` does this unless that line is emptied
+in your `waveserve.ini`. By hand:
 
     python3 tools/waveserve.py ~/Downloads/eXoDOS --torrent exodos/eXoDOS.torrent
     python3 tools/waveserve.py none --torrent exodos/eXoDOS.torrent   # no eXoDOS folder at all: "none" in its place
@@ -1205,8 +1208,8 @@ list fetch from a waveserve here, the chain the 486 uses. Needs mtools
     third-party/   the other programs the build needs, kept here with their origins (make update-third-party)
     dos/           FreeDOS boot floppy, CHOICE, CuteMouse and JEMMEX for make dostest, the FAT16 boot sector for make picomem-image
     tools/         waveserve.py, its torrent reader and console, the disk-image builder, the test harness, composers, converters, renderers (host side)
-    waveserve.ini  the server's settings
-    exodos/        the eXoDOS torrent the server reads (torrent= in waveserve.ini)
+    waveserve.def  the server's default settings (your waveserve.ini is made from it)
+    exodos/        the eXoDOS torrent the server reads (torrent= in waveserve.def)
     WAVE86.INI     the launcher's settings
     WAVE.BAT       the loop that runs a game and brings the menu back
     THUMBS/        the game pictures that ship, for the default look and the wave86 one

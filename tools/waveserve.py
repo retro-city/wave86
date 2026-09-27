@@ -1112,6 +1112,26 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The settings live in waveserve.ini next to the Makefile (or --config FILE),
 # one per line, the way WAVE86.INI does it; a flag on the command line
 # overrides a line for one run. Each key is one option of main()'s parser.
+# waveserve.def holds the defaults: the server zip ships it as waveserve.ini,
+# and a checkout without a waveserve.ini gets one made from it at the first
+# start. That one belongs to whoever runs the server, and git leaves it be.
+
+DEF_FILE = os.path.join(HERE, "waveserve.def")
+
+
+def make_ini_from_def(ini):
+    """waveserve.ini from waveserve.def, pointing at the torrent where this
+    checkout keeps it (exodos/) when it is not next to the file"""
+    text = open(DEF_FILE, encoding="utf-8").read()
+    m = re.search(r"(?m)^torrent=(.+)$", text)
+    if m:
+        rel = m.group(1).strip()
+        base = os.path.dirname(os.path.abspath(ini))
+        alt = "exodos/" + os.path.basename(rel)
+        if not os.path.isfile(os.path.join(base, rel)) and os.path.isfile(os.path.join(base, alt)):
+            text = text[:m.start(1)] + alt + text[m.end(1):]
+    with open(ini, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
 
 INI_KEYS = {                    # key in the file -> (option, kind)
     "cache": ("cache", "path"), "cd": ("cd", "bool"), "exodos": ("root", "path"), "firstrun": ("firstrun", "bool"),
@@ -1915,6 +1935,10 @@ def main():
                                                          "the file), and write the answer into the file")
     ap.set_defaults(firstrun=False)
     pre, _ = ap.parse_known_args()
+    if (os.path.abspath(pre.config) == os.path.join(HERE, "waveserve.ini") and not os.path.exists(pre.config)
+            and os.path.isfile(DEF_FILE)):
+        make_ini_from_def(pre.config)
+        MON.log(f"made {pre.config} from waveserve.def: yours from now on")
     ini = read_ini(pre.config)
     ap.set_defaults(**ini)
     a = ap.parse_args()
