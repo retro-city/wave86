@@ -682,16 +682,27 @@ static void emit_limits(FILE *f, const char *dir, int when)     /* 0 before, 1 a
     }
     sprintf(tool, "%s%sSLOWDOWN.COM", home_dir, sep);
     if (access(tool, 0) == 0) {
+        /* SLOWDOWN says so, beep and all, when asked to uninstall while not
+           in memory (/Q keeps only its chatter down, not its errors), so
+           the uninstall runs only when an install of ours left its mark:
+           SLOWDOWN.ON next to the launcher, made when the install went
+           well and removed with the uninstall - after the game, and at
+           the top of the next batch for a game that never got to its end */
+        char mark[PATH_LEN + 16];
+        sprintf(mark, "%s%sSLOWDOWN.ON", home_dir, sep);
         if (when == 0) {
             if ((v = ini_game(dir, "slowdown")) != NULL && slow_arg(v, arg)) {
                 /* ini_global hands out one static buffer: each value is judged before the next call */
                 v = ini_global("slowcache"); nocache = v && v[0] == '0';
                 v = ini_global("slowint70"); int70 = v && v[0] == '1';
-                fprintf(f, "%s /Q /DisableHotKeys %s%s%s\n", tool, arg,
+                fprintf(f, "%s /Q /DisableHotKeys /Beep:No %s%s%s\n", tool, arg,
                         nocache ? " /UseCPUCache:No" : "", int70 ? " /UseInt70" : "");
+                fprintf(f, "if not errorlevel 1 echo 1 > %s\n", mark);
             }
-        } else
-            fprintf(f, "%s /Q /Uninstall > NUL\n", tool);
+        } else {
+            fprintf(f, "if exist %s %s /Q /Uninstall > NUL\n", mark, tool);
+            fprintf(f, "if exist %s del %s\n", mark, mark);
+        }
     }
 }
 

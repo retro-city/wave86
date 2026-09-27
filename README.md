@@ -317,11 +317,16 @@ left as it is, and Enter writes only the settings you changed. The
 batch that runs the game then does, before it:
 
     C:\WAVE86\MEMLIM 24
-    C:\WAVE86\SLOWDOWN.COM /Q /DisableHotKeys /MHz486:25
+    C:\WAVE86\SLOWDOWN.COM /Q /DisableHotKeys /Beep:No /MHz486:25
+    if not errorlevel 1 echo 1 > C:\WAVE86\SLOWDOWN.ON
 
-and after it `MEMLIM /FREE` and `SLOWDOWN /Q /Uninstall` - and those two
-again at the top of every batch, so a game that crashed leaves nothing
-behind for the next one. A folder without the programs changes nothing.
+and after it `MEMLIM /FREE` and, when that mark is there, `SLOWDOWN /Q
+/Uninstall` and the mark's removal - and those again at the top of
+every batch, so a game that crashed leaves nothing behind for the next
+one. The mark is what keeps SLOWDOWN quiet: asked to uninstall while
+not in memory it says so, beep and all, whatever `/Q` says (its errors
+always print), and it used to be asked twice per game. A folder without
+the programs changes nothing.
 
 `MEMLIM` is ours (`src/memlim.c`, 8086 code): it takes extended memory
 through XMS until the largest free block, and the total, are what the
