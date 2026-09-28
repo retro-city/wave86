@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   dos:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04     # pinned: ubuntu-latest moves when GitHub says so
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: The release's version, from the tag (v0.6 -> 0.6)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -35,14 +35,14 @@ jobs:
       - name: Test the server's torrent reader
         run: python3 tools/test_torrentfs.py
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wave86-dos
           path: dist/*.zip
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*.zip
           prerelease: ${{ contains(github.ref_name, '-') }}     # v0.5-pre1 and the like
@@ -54,7 +54,7 @@ jobs:
     needs: dos
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: The release's version, from the tag (v0.6 -> 0.6)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -72,14 +72,14 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: make picomem-release
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wave86-picomem-hdd
           path: dist/*-picomem-hdd.zip
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*-picomem-hdd.zip
           prerelease: ${{ contains(github.ref_name, '-') }}
